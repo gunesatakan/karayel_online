@@ -19,14 +19,15 @@ const { VfxLod } = await importWebModule("apps/web/src/vfx/lod.ts");
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const scene = read("apps/web/src/scenes/GameScene.ts");
 
-test("boy: gelismis iscinin %50 buyugu, GameScene'in isci sabitleriyle ayni hesap", () => {
-  // GameScene: drone dokusu 30, isci olcegi 0.69 * 0.75, gelismis govde orani 0.42.
+test("boy: mutlak (~19,6), iscilerin %10 kuculmesinden bagimsiz; isci hesabi GameScene'le ayni", () => {
+  // GameScene: drone dokusu 30, isci olcegi 0.69 * 0.75 * WORKER_VISUAL_SCALE, gelismis govde orani 0.42.
   assert.match(scene, /const ADVANCED_WORKER_BODY_RADIUS_RATIO = 0\.42;/);
-  assert.match(scene, /const workerScale = isLogisticsWorker \? 0\.69 \* 0\.75 :/);
+  assert.match(scene, /const workerScale = isLogisticsWorker \? 0\.69 \* 0\.75 \* WORKER_VISUAL_SCALE :/);
   assert.match(read("apps/web/src/scenes/PreloaderScene.ts"), /createDroneTexture\(key: string, color: number, accent: number\) \{\n\s+const graphics = this\.make\.graphics\(\{ x: 0, y: 0 \}, false\);\n\s+const size = 30;/);
-  assert.ok(Math.abs(bodies.ADVANCED_WORKER_DISPLAY_DIAMETER - 30 * 0.69 * 0.75 * 0.42 * 2) < 1e-9);
-  assert.equal(bodies.OPERATOR_BODY_SIZE_RATIO, 1.5);
-  assert.ok(Math.abs(bodies.OPERATOR_BODY_DISPLAY_SIZE - bodies.ADVANCED_WORKER_DISPLAY_DIAMETER * 1.5) < 1e-9);
+  assert.ok(Math.abs(bodies.ADVANCED_WORKER_DISPLAY_DIAMETER - 30 * 0.69 * 0.75 * 0.9 * 0.42 * 2) < 1e-9);
+  // Beden eski boyunda: iscinin kuculmeden onceki capi x 1.5 = 19,5615.
+  assert.ok(Math.abs(bodies.OPERATOR_BODY_DISPLAY_SIZE - 19.5615) < 1e-9);
+  assert.ok(Math.abs(bodies.OPERATOR_BODY_SIZE_RATIO - 1.5 / 0.9) < 1e-9);
 });
 
 test("doku: iki operatorun saydam dokusu var, kaynaklari ve yapim araci depoda", () => {

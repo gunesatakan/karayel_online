@@ -52,10 +52,38 @@ test("her kademe resmi pakette ve gercekten saydam", () => {
 });
 
 test("kademe resmi kareyi dolduruyor: cizim boyu kule izi, cikinti payi yok", () => {
-  assert.equal(art.getTowerSpriteSize("warrior-1", 34), 34 * 0.9);
-  assert.equal(art.getTowerSpriteSize("warrior-2", 34), 34 * 0.9);
-  assert.equal(art.getTowerSpriteSize("warrior-4", 34), 34 * 0.9);
-  assert.equal(art.getTowerSpriteSize("warrior-5", 34), 34 * 0.9);
-  assert.equal(art.getTowerSpriteSize("warrior-6", 68), 68 * 0.9);
-  assert.equal(art.getTowerSpriteSize("zeynep-7", 68), (68 / TOWER_ART_DISC_RATIO) * 0.9);
+  // 0.9 resmin kendi payi, 0.8 sahibin "kuleler %20 kucuk" istegi (visual-scale).
+  const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} != ${expected}`);
+  close(art.getTowerSpriteSize("warrior-1", 34), 34 * 0.9 * 0.8);
+  close(art.getTowerSpriteSize("warrior-2", 34), 34 * 0.9 * 0.8);
+  close(art.getTowerSpriteSize("warrior-4", 34), 34 * 0.9 * 0.8);
+  close(art.getTowerSpriteSize("warrior-5", 34), 34 * 0.9 * 0.8);
+  close(art.getTowerSpriteSize("warrior-6", 68), 68 * 0.9 * 0.8);
+  close(art.getTowerSpriteSize("zeynep-7", 68), (68 / TOWER_ART_DISC_RATIO) * 0.9 * 0.8);
+});
+
+test("gorunus olcekleri: kuleler ve mermiler %20, isciler %10 kucuk; duvar ve Abarti ayni", async () => {
+  const scales = await importWebModule("apps/web/src/visual-scale.ts");
+  assert.equal(scales.TOWER_BODY_VISUAL_SCALE, 0.8);
+  assert.equal(scales.PROJECTILE_VISUAL_SCALE, 0.8);
+  assert.equal(scales.WORKER_VISUAL_SCALE, 0.9);
+  // Kenar yapilari: cizim boyu etki dikdortgeni, kuculmuyor.
+  for (const id of ["wall-1", "zeynep-8"]) {
+    assert.equal(art.getTowerBodyVisualScale(id), 1, id);
+    assert.equal(art.getTowerBodySize(id, 34), 34, id);
+    assert.ok(Math.abs(art.getTowerSpriteSize(id, 34) - (34 / TOWER_ART_DISC_RATIO) * 0.9) < 1e-9, id);
+  }
+  // Kule govdeleri kuculuyor; iz (`discSize`) ayni kaliyor, carpan yalnizca cizime.
+  for (const id of ["warrior-1", "zeynep-1", "zeynep-7", "archer-1", "warehouse-1", "repair-depot-1"]) {
+    assert.equal(art.getTowerBodyVisualScale(id), 0.8, id);
+    assert.ok(Math.abs(art.getTowerBodySize(id, 34) - 34 * 0.8) < 1e-9, id);
+  }
+  const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+  // Mermiler: govde, iz ve damga attack-vfx'te tek carpanla; Melis'in dokulu mermisi sahnede.
+  assert.match(read("apps/web/src/vfx/attack-vfx.ts"), /const scale = sceneScale \* PROJECTILE_VISUAL_SCALE;/);
+  assert.match(read("apps/web/src/scenes/GameScene.ts"), /const size = recipe\.silhouette \* scale \* PROJECTILE_VISUAL_SCALE;/);
+  // Abarti govdesi etki dikdortgeniyle ayni kaliyor: govde carpani orada yok.
+  const scene = read("apps/web/src/scenes/GameScene.ts");
+  const abarti = scene.slice(scene.indexOf("private renderAbartiEdgeBody("), scene.indexOf("private renderAbartiEdgeBody(") + 1500);
+  assert.doesNotMatch(abarti, /TOWER_BODY_VISUAL_SCALE|getTowerBodySize/);
 });

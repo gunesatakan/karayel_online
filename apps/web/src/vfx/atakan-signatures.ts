@@ -41,6 +41,7 @@ import {
 } from "./kit";
 import { VfxLod } from "./lod";
 import { getVfxProfile, type VfxProfile } from "./vfx-profiles";
+import { TOWER_BODY_VISUAL_SCALE } from "../visual-scale";
 
 /** Obsesyon yiginin tavani (engine.ts: `max: 10`). */
 export const OBSESSION_MAX_STACK = 10;
@@ -80,7 +81,8 @@ export function getTetherWidth(stack: number, scale: number) {
 
 /** Ucube gostergesinin yaricapi: kule govdesinin hemen disinda. */
 export function getUcubeGaugeRadius(scale: number, cellSize: number) {
-  return Math.max(13 * scale, cellSize * 0.56);
+  // Govdenin ustunde: kule govdesiyle kuculuyor (visual-scale).
+  return Math.max(13 * scale, cellSize * 0.56 * TOWER_BODY_VISUAL_SCALE);
 }
 
 export type SignatureTower = Pick<TowerSnapshot, "id" | "definitionId" | "x" | "y" | "level"> &
@@ -313,7 +315,7 @@ export class AtakanSignatureVfx {
         g.lineStyle(Math.max(0.5, 0.45 * scale), whiteHot(color, 1), base * 1.6 * extra);
         g.lineBetween(tower.x, tower.y, linked.x, linked.y);
       }
-      const half = Math.max(6 * scale, frame.cellSize * 0.42);
+      const half = Math.max(6 * scale, frame.cellSize * 0.42 * TOWER_BODY_VISUAL_SCALE);
       drawBracketCorners(g, linked.x, linked.y, half, half, half * 0.3, Math.max(0.6, 0.8 * scale), color, base * 2);
     }
   }

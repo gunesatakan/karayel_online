@@ -1,4 +1,5 @@
-import { getTowerTier, TOWER_ART_DISC_RATIO } from "@karayel/shared";
+import { getTowerTier, TOWER_ART_DISC_RATIO, towerCatalog } from "@karayel/shared";
+import { TOWER_BODY_VISUAL_SCALE } from "./visual-scale";
 
 /**
  * Kademe basina ayri boyanmis kuleler: seviye 1-4, 5-9 ve 10 icin uc resim
@@ -79,7 +80,25 @@ export function listTieredTowerArt() {
  */
 export const TOWER_VISUAL_SCALE = 0.9;
 
+/** Kenara yerlesen yapilar (duvar, Abarti): cizim boyu etki dikdortgeni, kuculmuyor. */
+const EDGE_PLACED_TOWER_IDS: ReadonlySet<string> = new Set(
+  Object.values(towerCatalog).flat().filter((tower) => tower.engine?.placement?.requiresEdge).map((tower) => tower.id)
+);
+
+/**
+ * Kule govdesinin gorunus carpani (visual-scale): kenar yapilarinda 1.
+ * Izgara izi, dokunma alani ve menzil bunu okumuyor.
+ */
+export function getTowerBodyVisualScale(definitionId: string) {
+  return EDGE_PLACED_TOWER_IDS.has(definitionId) ? 1 : TOWER_BODY_VISUAL_SCALE;
+}
+
+/** Govdenin ekrandaki capi: kule izi (`discSize`) x govde carpani. */
+export function getTowerBodySize(definitionId: string, discSize: number) {
+  return discSize * getTowerBodyVisualScale(definitionId);
+}
+
 export function getTowerSpriteSize(definitionId: string, discSize: number) {
   const size = hasTieredTowerArt(definitionId) || getSupplyTowerArtPath(definitionId) ? discSize : discSize / TOWER_ART_DISC_RATIO;
-  return size * TOWER_VISUAL_SCALE;
+  return size * TOWER_VISUAL_SCALE * getTowerBodyVisualScale(definitionId);
 }

@@ -32,6 +32,7 @@ import {
 } from "./kit";
 import { VfxLod } from "./lod";
 import { TIER_HEAT, TIER_WEIGHT, getBeamVfxProfile, getVfxTier } from "./vfx-profiles";
+import { PROJECTILE_VISUAL_SCALE } from "../visual-scale";
 
 const clampRange = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const lerp = (from: number, to: number, t: number) => from + (to - from) * t;
@@ -454,7 +455,8 @@ export class BeamRenderer {
     }
 
     const life = clampRange((beam.ttlMs ?? 180) / 180, 0, 1);
-    const scale = this.getTowerEffectScale();
+    // Ucan bir atis: mermi gibi kalinligi kuculuyor (visual-scale), boyu ayni.
+    const scale = this.getTowerEffectScale() * PROJECTILE_VISUAL_SCALE;
     const dx = beam.x2 - beam.x1;
     const dy = beam.y2 - beam.y1;
     const length = Math.max(1, Math.hypot(dx, dy));
@@ -521,7 +523,8 @@ export class BeamRenderer {
     // tam parlakliga cikmiyordu (en fazla uc te iki).
     const life = this.getBeamLife(beam);
     const now = this.now;
-    const scale = this.getTowerEffectScale();
+    // Olu atisi ucan bir mermi: kalinligi kuculuyor (visual-scale); halat ve infaz ayni.
+    const scale = this.getTowerEffectScale() * (beam.definitionId === "archer-4-undead-shot" ? PROJECTILE_VISUAL_SCALE : 1);
     const width = Math.max(2, beam.width * scale);
     const dx = beam.x2 - beam.x1;
     const dy = beam.y2 - beam.y1;

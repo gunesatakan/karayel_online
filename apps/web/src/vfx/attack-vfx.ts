@@ -57,6 +57,7 @@ import type { FlashSink, GlowStampSink } from "./flash-pool";
 import { VfxLod } from "./lod";
 import { getVfxProfile, getVfxTier, type VfxProfile, type VfxTierRecipe } from "./vfx-profiles";
 import { COURT_FLASH_GAP_MS, LANCE_OPTIONS, drawDecreeTick, drawZeynepLance, getLanceMode, getZeynepBodyColor } from "./zeynep-signatures";
+import { PROJECTILE_VISUAL_SCALE } from "../visual-scale";
 
 /** Takim arkadasinin kademe 3 eklentileri (tek kaynak kit'te). */
 export { TEAMMATE_EXTRA_ALPHA };
@@ -237,7 +238,10 @@ export class AttackVfx {
    * kucuk): enerjinin dusumu. Takim arkadasinin kademe 3 isisi %70. Govde
    * katmanlari (body ve glow) her karede bastan; cagiran `clear` etmiyor.
    */
-  renderProjectiles(projectiles: readonly ProjectileSnapshot[], now: number, scale: number, isOwn?: (projectile: ProjectileSnapshot) => boolean) {
+  renderProjectiles(projectiles: readonly ProjectileSnapshot[], now: number, sceneScale: number, isOwn?: (projectile: ProjectileSnapshot) => boolean) {
+    // Merminin govdesi, izi ve isi damgasi gorunuste kuculuyor (visual-scale);
+    // carpisma ve vurus noktasi sunucuda, ayni.
+    const scale = sceneScale * PROJECTILE_VISUAL_SCALE;
     this.body.clear();
     this.glow.clear();
     const stamps = this.options.stamps;

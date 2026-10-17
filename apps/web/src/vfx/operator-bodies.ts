@@ -2,6 +2,7 @@ import type Phaser from "phaser";
 import { OPERATOR_BODY_LOW_HP_RATIO, type CharacterId, type GameSnapshot, type OperatorBodySnapshot } from "@karayel/shared";
 import type { FlashSink } from "./flash-pool";
 import type { VfxLod } from "./lod";
+import { WORKER_VISUAL_SCALE } from "../visual-scale";
 
 /**
  * Operator bedenleri (ZentaX, AttackLord): sahadaki govdenin cizimi.
@@ -20,14 +21,19 @@ import type { VfxLod } from "./lod";
 
 /**
  * Gelismis iscinin ekrandaki capi (dunya birimi, harita olcegi 1):
- * GameScene'deki drone dokusu 30 birim, isci olcegi 0.69 x 0.75, gelismis
- * govdenin yaricap orani 0.42 (`ADVANCED_WORKER_BODY_RADIUS_RATIO`).
+ * GameScene'deki drone dokusu 30 birim, isci olcegi 0.69 x 0.75 x
+ * `WORKER_VISUAL_SCALE`, gelismis govdenin yaricap orani 0.42
+ * (`ADVANCED_WORKER_BODY_RADIUS_RATIO`).
  */
-export const ADVANCED_WORKER_DISPLAY_DIAMETER = 30 * 0.69 * 0.75 * 0.42 * 2;
-/** Sahibin istegi: beden gelismis isciden %50 buyuk. */
-export const OPERATOR_BODY_SIZE_RATIO = 1.5;
-/** Bedenin gorunen en uzun kenari (dunya birimi, olcek 1): ~19,6. */
-export const OPERATOR_BODY_DISPLAY_SIZE = ADVANCED_WORKER_DISPLAY_DIAMETER * OPERATOR_BODY_SIZE_RATIO;
+export const ADVANCED_WORKER_DISPLAY_DIAMETER = 30 * 0.69 * 0.75 * WORKER_VISUAL_SCALE * 0.42 * 2;
+/**
+ * Bedenin gorunen en uzun kenari (dunya birimi, olcek 1): ~19,6, mutlak.
+ * Ilk istek "gelismis isciden %50 buyuk"tu (iscinin kuculmeden onceki capi
+ * x 1.5); isciler %10 kuculunce beden ayni boyda kaldi, artik isciye bagli degil.
+ */
+export const OPERATOR_BODY_DISPLAY_SIZE = 30 * 0.69 * 0.75 * 0.42 * 2 * 1.5;
+/** Bedenin gelismis isciye orani (bilgi icin): ~1,67. */
+export const OPERATOR_BODY_SIZE_RATIO = OPERATOR_BODY_DISPLAY_SIZE / ADVANCED_WORKER_DISPLAY_DIAMETER;
 /** Dokuda icerigin kare tuvale orani (tools/build-operator-bodies.mjs %6 pay). */
 export const OPERATOR_BODY_TEXTURE_CONTENT = 1 / 1.06;
 

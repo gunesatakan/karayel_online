@@ -55,7 +55,8 @@ import { Room } from "colyseus.js";
 import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
 import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signatures";
 import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEventInput, type CourtFrame, type ReceiptContext } from "../vfx/zeynep-signatures";
-import { getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_SCALE } from "../tower-art";
+import { getTowerBodySize, getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_SCALE } from "../tower-art";
+import { PROJECTILE_VISUAL_SCALE, WORKER_VISUAL_SCALE } from "../visual-scale";
 import { arcade } from "../arcade";
 import { getArcadeRunScore } from "../arcade-score";
 import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
@@ -5117,7 +5118,7 @@ export class GameScene extends Phaser.Scene {
       const owner = this.describePlayer(message.serverOwnerId);
       const toast: TeamNoticeToast = { ...getServerLinkJoinedText(owner.name), color: owner.color };
       this.game.events.emit("game:hud-team-notice", toast);
-      this.playTowerPulse(tower, this.getMapCellSize() * getTowerGridSpan(tower.definitionId), SERVER_LINK_JOIN_COLOR, false);
+      this.playTowerPulse(tower, getTowerBodySize(tower.definitionId, this.getMapCellSize() * getTowerGridSpan(tower.definitionId)), SERVER_LINK_JOIN_COLOR, false);
     });
   }
 
@@ -5161,7 +5162,7 @@ export class GameScene extends Phaser.Scene {
     }
     const tower = this.towerSnapshots.get(message.towerId);
     const x = tower?.x ?? message.x;
-    const discSize = this.getMapCellSize() * getTowerGridSpan(tower?.definitionId ?? "");
+    const discSize = getTowerBodySize(tower?.definitionId ?? "", this.getMapCellSize() * getTowerGridSpan(tower?.definitionId ?? ""));
     const y = (tower?.y ?? message.y) - discSize / 2 - COMBO_LABEL_LIFT_PX;
     const lifetimeMs = FEEDBACK_KIND_RULES.combo.visualMs;
     const decision = this.feedback?.emit("combo", { own, x, y, lifetimeMs });
@@ -5425,7 +5426,7 @@ export class GameScene extends Phaser.Scene {
     if (kind === "eater" && typeof enemy.drain === "string") {
       const target = this.towerSnapshots.get(enemy.drain);
       if (target) {
-        drawEaterDrain(graphics, enemy.x, enemy.y, target.x, target.y, cellSize * getTowerGridSpan(target.definitionId), options);
+        drawEaterDrain(graphics, enemy.x, enemy.y, target.x, target.y, getTowerBodySize(target.definitionId, cellSize * getTowerGridSpan(target.definitionId)), options);
       }
     }
     if (this.specialNotices.noteKind(kind)) {
@@ -5970,7 +5971,7 @@ export class GameScene extends Phaser.Scene {
       for (const hit of message.hits) {
         const tower = this.towerSnapshots.get(hit.towerId);
         if (!tower) continue;
-        const size = cellSize * getTowerGridSpan(tower.definitionId);
+        const size = getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId));
         this.flashStructureHit(tower.x, tower.y, size, reducedMotion, style.body, style.edge);
         if (!reducedMotion) this.punchTower(tower.id, true);
         this.showStructureDamage(hit.towerId, tower.x, tower.y - size * 0.3, hit.amount, now);
@@ -7870,7 +7871,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         id: tower.id,
         x: tower.x,
         y: tower.y,
-        size: cellSize * getTowerGridSpan(tower.definitionId),
+        size: getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId)),
         wall: this.isEdgePlacedDefinition(tower.definitionId)
       });
     }
@@ -8653,7 +8654,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const cellSize = this.getMapCellSize();
     for (const tower of this.latestPerfSnapshot?.towers ?? []) {
       if (tower.ownerId !== this.localSessionId || !this.canTowerHoldCard(tower)) continue;
-      const radius = cellSize * getTowerGridSpan(tower.definitionId) * 0.62;
+      const radius = getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId)) * 0.62;
       frame.lineStyle(2, pick.color, 0.9 * pulse).strokeCircle(tower.x, tower.y, radius);
     }
   }
@@ -8761,7 +8762,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const cellSize = this.getMapCellSize();
     for (const tower of this.latestPerfSnapshot?.towers ?? []) {
       if (!towerIds.has(tower.id)) continue;
-      this.playTowerPulse(tower, cellSize * getTowerGridSpan(tower.definitionId), color, card.scope.kind === "targeted");
+      this.playTowerPulse(tower, getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId)), color, card.scope.kind === "targeted");
     }
     if (card.scope.kind !== "targeted" && getCardTowerReach(card) === "none") {
       this.showNotice(t("scene.card.applied", { name: card.name }));
@@ -8827,7 +8828,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const play = () => {
       const tower = this.latestPerfSnapshot?.towers.find((entry) => entry.id === towerId);
       if (!tower) return;
-      const discSize = this.getMapCellSize() * getTowerGridSpan(tower.definitionId);
+      const discSize = getTowerBodySize(tower.definitionId, this.getMapCellSize() * getTowerGridSpan(tower.definitionId));
       const strong = style === "equip";
       const still = this.feedback?.reducedMotion ?? false;
       this.combatVfx?.emitTowerMoment({
@@ -9825,10 +9826,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Applying the generic painted-art overhang would make its circular base
       // spill into neighbours.
       const spriteSize = getTowerSpriteSize(tower.definitionId, discSize);
+      // Govdeye yapisik cizimler (halka, tac, can cubugu, nabiz) govdenin
+      // gorunen capini izliyor (visual-scale); iz ve dokunma alani `discSize`.
+      const bodySize = getTowerBodySize(tower.definitionId, discSize);
 
-      this.playTowerLevelUpIfChanged(tower, discSize);
+      this.playTowerLevelUpIfChanged(tower, bodySize);
       if (landing) {
-        this.playTowerLanding(tower, rendered, discSize, now);
+        this.playTowerLanding(tower, rendered, bodySize, now);
       }
 
       const texture = getTowerTextureKey(tower.definitionId, tower.level, tower.characterId);
@@ -9837,8 +9841,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // bosuna yeniden ciziyordu. Durumu okuyan gorseller blogun disinda.
       const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.ucubePerks?.join(",") ?? ""}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
       if (rendered.key !== key) {
-        this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2, this.getTowerTierColor(tower, getTowerTier(tower.level)));
-        if (this.shouldDrawTowerCrown(tower)) this.drawTowerCrown(rendered.halo, tower.x, tower.y, discSize / 2);
+        this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, bodySize / 2, this.getTowerTierColor(tower, getTowerTier(tower.level)));
+        if (this.shouldDrawTowerCrown(tower)) this.drawTowerCrown(rendered.halo, tower.x, tower.y, bodySize / 2);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
@@ -9867,7 +9871,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha((tower.status === "Tukenmis" || tower.disabled ? 0.42 : tower.ownerId === this.localSessionId ? 1 : 0.78) * this.getTowerEquipAlpha(tower));
       rendered.halo.setVisible(!edgePlaced && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled);
-      this.drawTowerHealthBar(rendered.healthBar, tower, discSize);
+      this.drawTowerHealthBar(rendered.healthBar, tower, bodySize);
       if (tower.id === this.selectedPlacedTowerId) {
         this.drawSelectedTowerResources(tower, discSize);
       }
@@ -10498,7 +10502,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (intensity <= 0) return;
 
     const cellSize = this.getMapCellSize();
-    const footprintRadius = cellSize * getTowerGridSpan(tower.definitionId) * 0.47;
+    const footprintRadius = getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId)) * 0.47;
     const phase = performance.now() / 210;
     const flameCount = 5 + Math.round(intensity * 9);
     const glowAlpha = 0.025 + intensity * 0.13;
@@ -10809,7 +10813,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const waveCount = perkCount >= 3 ? 4 : 2;
     const phase = (Date.now() % 900) / 900;
     const effectScale = this.getTowerEffectScale();
-    const discRadius = (this.getMapCellSize() * getTowerGridSpan(tower.definitionId)) / 2;
+    const discRadius = getTowerBodySize(tower.definitionId, this.getMapCellSize() * getTowerGridSpan(tower.definitionId)) / 2;
     const jagUnit = discRadius * 0.03;
     for (let waveIndex = 0; waveIndex < waveCount; waveIndex += 1) {
       const radius = discRadius * (0.84 + waveIndex * 0.022);
@@ -10905,7 +10909,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         // Siluet profilden (12-16 birim), carpisma boyundan (8) degil. Kademe
         // 2-3te doku beyaz-sicak cekirdege dogru isiniyor (pastel ara ton yok).
         const recipe = getVfxTier(profile, projectile.tier);
-        const size = recipe.silhouette * scale;
+        const size = recipe.silhouette * scale * PROJECTILE_VISUAL_SCALE;
         sprite.setDisplaySize(size, size);
         const tint = toTier(projectile.tier) >= 2 ? recipe.core : 0xffffff;
         if (sprite.tintTopLeft !== tint) sprite.setTint(tint);
@@ -10976,7 +10980,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       sprite.setPosition(drone.x, drone.y);
       const isLogisticsWorker = (HIRABLE_WORKER_ROLES as readonly string[]).includes(drone.mode);
-      const workerScale = isLogisticsWorker ? 0.69 * 0.75 : drone.mode === "attack" ? 1.55 : 1.38;
+      // Lojistik iscinin govdesi gorunuste %10 kucuk (visual-scale); yol ve
+      // secme alani ayni. Operator bedenleri bundan bagimsiz (operator-bodies).
+      const workerScale = isLogisticsWorker ? 0.69 * 0.75 * WORKER_VISUAL_SCALE : drone.mode === "attack" ? 1.55 : 1.38;
       sprite.setScale(workerScale * mapEntityScale * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
       const tint = drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : drone.mode === "repairer" ? 0xf472b6 : 0xffffff;
@@ -11885,7 +11891,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         if (!tower) {
           continue;
         }
-        const radius = (cellSize * getTowerGridSpan(tower.definitionId)) / 2;
+        const radius = getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId)) / 2;
         graphics.fillStyle(0xfacc15, 0.12 * alpha);
         graphics.fillCircle(tower.x, tower.y, radius * 1.34);
         graphics.fillStyle(0xfde68a, 0.2 * alpha);
@@ -12146,7 +12152,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         return [];
       }
       // Can cubugunun (disk ustu - 8 px) hemen ustu.
-      const discSize = cellSize * getTowerGridSpan(tower.definitionId);
+      const discSize = getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId));
       return [{ id, x: tower.x, y: tower.y - discSize / 2 - 11 }];
     });
 
