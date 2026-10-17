@@ -385,10 +385,18 @@ test("Atakan çizimi: terminal yeşili aksan ve kod biti yok; kademe ağırlıkl
       const all = [...body.calls, ...glow.calls, ...events.calls];
       return {
         accent: all.some(([name, a, b]) => (name === "lineStyle" && b === ACCENT) || (name === "fillStyle" && a === ACCENT)),
-        width: Math.max(...all.filter(([name]) => name === "lineStyle").map(([, width]) => width))
+        width: Math.max(...all.filter(([name]) => name === "lineStyle").map(([, width]) => width)),
+        bodyWidth: Math.max(...body.calls.filter(([name]) => name === "lineStyle").map(([, width]) => width))
       };
     });
     for (const [index, entry] of drawn.entries()) assert.equal(entry.accent, false, `${id} kademe ${index + 1}: terminal yesili aksan`);
+    if (id === "warrior-4" || id === "warrior-6") {
+      // Sahibin istegi: Obsesyon ve Ucube mermisi seviye 5 ve 10'da buyumuyor,
+      // kademe renkte ve efektte (tests/atakan-shots.test.mjs). Govde cizgisi
+      // kademe 1'in kalinliginda kaliyor.
+      for (const entry of drawn) assert.ok(entry.bodyWidth <= drawn[0].bodyWidth * 1.2 + 1e-9, `${id} mermi kalinlasiyor: ${drawn.map((item) => item.bodyWidth.toFixed(2)).join(" / ")}`);
+      continue;
+    }
     assert.ok(drawn[0].width < drawn[1].width && drawn[1].width < drawn[2].width, `${id} cizgi agirlasmiyor: ${drawn.map((entry) => entry.width.toFixed(2)).join(" / ")}`);
   }
 });

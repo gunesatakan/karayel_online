@@ -589,5 +589,7 @@ export const ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER = 2;
  *
  * Kare olcusune bagli, cunku orantiyi belirleyen sey haritanin kendisi: sabit
  * 92 piksel kulenin menzilinden bile uzun bir cubuk cizip ekrani doldurmustu.
+ * 1,4 kare de uzun bulundu: 2/3'u (~0,93 kare). Gorunen govde ile vurus
+ * parcasi ayni boy -- ikisi de bu sabitten.
  */
-export const ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS = 1.4;
+export const ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS = (1.4 * 2) / 3;

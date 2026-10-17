@@ -21,7 +21,7 @@
  * - `flashes`: pisirilmis dokulu ADD parlamalari (havuzlu).
  */
 import type { ProjectileSnapshot } from "@karayel/shared";
-import { drawObsessionShot, drawUcubeShot, type AtakanShotInput } from "./atakan-shots";
+import { drawObsessionShot, drawUcubeShot, getAtakanShotGlowSize, getAtakanShotHue, type AtakanShotInput } from "./atakan-shots";
 import { drawCombatProjectile } from "./combat-vfx";
 import {
   SCORCH,
@@ -257,7 +257,12 @@ export class AttackVfx {
       const moving = Math.abs(vx) + Math.abs(vy) > 0.01;
       const angle = moving ? Math.atan2(vy, vx) : 0;
       // Zeynep: govde ve iz mizragin kipinin tonunda.
-      const hue = profile.court ? getZeynepBodyColor(projectile.definitionId, recipe.color) : recipe.color;
+      // Obsesyon ve Ucube: kademe boyu degil tonu degistiriyor (atakan-shots).
+      const hue = profile.court
+        ? getZeynepBodyColor(projectile.definitionId, recipe.color)
+        : profile.silhouette === "gaze" || profile.silhouette === "arc"
+          ? getAtakanShotHue(profile.silhouette, tier, recipe.color)
+          : recipe.color;
 
       // Iz: kisa ve sert; LOD'da en son kisalan (en az iki nokta). Obsesyon ve
       // Ucube kendi izlerini ciziyor (bakis kamasi, simsek); kayit yine tutuluyor.
@@ -311,7 +316,10 @@ export class AttackVfx {
       // Isi: kademe 2-3'te tek, kucuk ADD damga (Melis'in dokulu mermisinde her kademede).
       // Kalin govdenin (Ucube) isisi de genis: alan degil cap buyuyor.
       if (tier >= 2 || profile.silhouette === "sprite") {
-        const size = radius * (tier >= 3 ? 3.2 : tier >= 2 ? 2.6 : 2) * Math.sqrt(recipe.thickness);
+        // Obsesyon ve Ucube'de damga kademeyle buyumuyor; yalnizca alfasi artiyor.
+        const size = profile.silhouette === "gaze" || profile.silhouette === "arc"
+          ? getAtakanShotGlowSize(profile.silhouette, radius, recipe.thickness)
+          : radius * (tier >= 3 ? 3.2 : tier >= 2 ? 2.6 : 2) * Math.sqrt(recipe.thickness);
         const alpha = (tier >= 3 ? 0.42 * extra : tier >= 2 ? 0.32 : 0.22);
         if (stamps) {
           stamps.stamp(projectile.x, projectile.y, hue, size, alpha);
@@ -583,7 +591,12 @@ export class AttackVfx {
     event.radius = input.radius ?? 0;
     event.size = input.size ?? 0;
     event.flash = false;
-    event.body = profile.court ? getZeynepBodyColor(input.definitionId, recipe.color) : recipe.color;
+    // Obsesyon ve Ucube'nin namlusu ve carpmasi da merminin kademe tonunda.
+    event.body = profile.court
+      ? getZeynepBodyColor(input.definitionId, recipe.color)
+      : profile.silhouette === "gaze" || profile.silhouette === "arc"
+        ? getAtakanShotHue(profile.silhouette, recipe.tier, recipe.color)
+        : recipe.color;
     return event;
   }
 

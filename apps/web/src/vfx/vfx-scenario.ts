@@ -669,8 +669,8 @@ export const GALLERY_COURT_CELL = 22;
 export const COURT_LANCE_PHASE_MS = 4000;
 export const COURT_LANCE_MODES = ["dual", "kin", "copy", "broken"] as const;
 export const COURT_LANCE_CYCLE_MS = COURT_LANCE_PHASE_MS * COURT_LANCE_MODES.length;
-/** Galerideki ayna isini: gorunen boy ve hiz (oyunda 4 kare, 930 birim/sn). */
-const COURT_RAY_LENGTH = 36;
+/** Galerideki ayna isini: gorunen boy ve hiz (oyunda ~0,93 kare, 930 birim/sn; eskiden 36). */
+const COURT_RAY_LENGTH = 24;
 const COURT_RAY_SPEED = 260;
 
 export function getCourtLanceMode(now: number) {

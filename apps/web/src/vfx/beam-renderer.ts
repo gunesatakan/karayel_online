@@ -1,4 +1,5 @@
 import { GAME_SPEED_MULTIPLIER, ZEYNEP_SYNTHESIS_BURN_TICK_MS, type BeamSnapshot } from "@karayel/shared";
+import { getAtakanShotHue } from "./atakan-shots";
 import { drawPressureWave, getTierEdge } from "./combat-vfx";
 import { fillRayPath } from "./zeynep-signatures";
 import {
@@ -25,6 +26,7 @@ import {
   strokeProfile,
   whiteHot,
   strokeRing,
+  toTier,
   type CrackleOptions,
   type VfxGraphics
 } from "./kit";
@@ -852,7 +854,8 @@ export class BeamRenderer {
     const tier = beam.tier ?? 1;
     const profile = getBeamVfxProfile(beam.definitionId, rawColor);
     const recipe = getVfxTier(profile, tier);
-    const color = grounded(rawColor);
+    // Zincir mermiyle ayni tonda: seviye 5 ve 10'da mermi gibi iyon yesili ve mavi.
+    const color = getAtakanShotHue("arc", toTier(tier), grounded(rawColor));
     const extra = this.ownBeam ? 1 : TEAMMATE_TRIM_ALPHA;
     const life = clamp01((beam.ttlMs ?? CHAIN_LIFE_MS) / 60);
     const glow = this.glowGraphics ?? graphics;
@@ -860,7 +863,7 @@ export class BeamRenderer {
 
     if (tier >= 2 && this.lod.smoke) {
       // Dusum ADD katmaninda, tonun kendisinde: tek renk ailesi.
-      strokePolyline(glow, points, segments + 1, body + 4 * visualScale, recipe.color, 0.18 * life);
+      strokePolyline(glow, points, segments + 1, body + 4 * visualScale, color, 0.18 * life);
     }
     strokePolyline(graphics, points, segments + 1, body, color, 0.95 * life);
     if (tier >= 2) {
