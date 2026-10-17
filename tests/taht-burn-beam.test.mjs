@@ -62,3 +62,11 @@ test("ek efektler kademeye bagli: cekirdek/kilif, sekme kivilcimi, uzun iz", () 
   assert.match(signatureSource, /if \(event\.tier < 2 \|\| still \|\| !this\.options\.lod\.sparks\) return;/);
   assert.match(attackSource, /tier >= 3 \? 2 : tier >= 2 \? 1\.5 : 1/);
 });
+
+test("Gosteri + Hiza isininin ok basi 2/3; obur mizrak isini ayni", async () => {
+  const { TAHT_RAY_HEAD_SCALE } = await importWebModule("apps/web/src/vfx/beam-renderer.ts");
+  assert.equal(TAHT_RAY_HEAD_SCALE, 2 / 3);
+  assert.match(source, /this\.drawMirrorSpear\(beam, rayColor, TAHT_RAY_HEAD_SCALE\);/);
+  assert.match(source, /beam\.definitionId === "zeynep-3"\) \{\n\s+this\.drawMirrorSpear\(beam, color\);/);
+  assert.match(source, /const tip = width \* 0\.85 \* headScale;/);
+});

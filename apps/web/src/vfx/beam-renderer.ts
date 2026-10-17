@@ -87,6 +87,8 @@ const grounded = groundHueCached;
  * (`taht-tiers`). Yanik isininin kalinligi yalnizca gorselde yarida.
  */
 export { TAHT_BURN_BEAM_TIER_COLORS, TAHT_BURN_BEAM_WIDTH_SCALE, getTahtBurnBeamColor } from "./taht-tiers";
+/** Gosteri + Hiza isininin ok basi gorunuste 2/3 (sahibin istegi, 2026-10); govde ve vurus bandi ayni. */
+export const TAHT_RAY_HEAD_SCALE = 2 / 3;
 
 export type BeamRenderOptions = {
   /** Efekt saati (ms). */
@@ -269,7 +271,7 @@ export class BeamRenderer {
       this.drawBeamTierHeat(beam, grounded(color));
     } else if (beam.definitionId === "zeynep-3-ray") {
       const rayColor = getTahtRayBeamColor(beam);
-      this.drawMirrorSpear(beam, rayColor);
+      this.drawMirrorSpear(beam, rayColor, TAHT_RAY_HEAD_SCALE);
       this.drawTahtRayCore(beam, grounded(rayColor));
     } else if (beam.definitionId === "zeynep-3") {
       this.drawMirrorSpear(beam, color);
@@ -747,7 +749,7 @@ export class BeamRenderer {
    * beyaz-sicak cekirdek, 3'te genis omuzlar). Sekmenin kendi isareti
    * `ZeynepSignatureVfx`te.
    */
-  private drawMirrorSpear(beam: BeamSnapshot, rawColor: number) {
+  private drawMirrorSpear(beam: BeamSnapshot, rawColor: number, headScale = 1) {
     const g = this.beamGraphics;
     if (!g) return;
     const color = grounded(rawColor);
@@ -777,8 +779,8 @@ export class BeamRenderer {
     const hl = Math.max(1, Math.hypot(hx, hy));
     const ux = hx / hl;
     const uy = hy / hl;
-    const tip = width * 0.85;
-    const half = width * 0.38;
+    const tip = width * 0.85 * headScale;
+    const half = width * 0.38 * headScale;
     g.fillStyle(whiteHot(color, TIER_HEAT[tier - 1]), 0.95);
     g.fillTriangle(head.x + ux * tip, head.y + uy * tip, head.x - uy * half, head.y + ux * half, head.x + uy * half, head.y - ux * half);
   }
