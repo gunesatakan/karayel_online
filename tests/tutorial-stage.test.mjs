@@ -425,3 +425,46 @@ test("uretim secimi tur degismese de sayiliyor; baskasinin ya da gecersiz secim 
     cleanup(room);
   }
 });
+
+test("teslimat bildirimi: yalnizca elle cephaneye atanmis tasiyici, ogreticide ve seyrek", async () => {
+  const { room, client } = await tutorialRoom();
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  try {
+    room.ensureLogisticsWorkers();
+    const spot = findBuildableSpot(room, "zeynep-1");
+    send(room, client, "placeTower", { ...spot, definitionId: "zeynep-1" });
+    arrive(room, client);
+    const tower = [...room.towers.values()].find((entry) => entry.definition.id === "zeynep-1");
+    const worker = [...room.drones.values()].find((drone) => drone.ownerId === "solo" && drone.mode === "energyTransport");
+    assert.ok(tower && worker, "kule ya da tasiyici yok");
+    const delivered = () => progressOf(client).filter((entry) => entry.action === "ammoDelivered").length;
+
+    room.applyAmmoTransportArrival(worker, tower, false);
+    assert.equal(delivered(), 0, "otomatik tasiyici sayildi");
+    room.workerAssignments.set(worker.id, { sourceTowerId: tower.id, product: "energy" });
+    room.applyAmmoTransportArrival(worker, tower, false);
+    assert.equal(delivered(), 0, "enerji tasiyicisi sayildi");
+    room.workerAssignments.set(worker.id, { sourceTowerId: tower.id, product: "materials" });
+    room.applyAmmoTransportArrival(worker, tower, false);
+    assert.equal(delivered(), 0, "hammadde tasiyicisi sayildi");
+
+    room.workerAssignments.set(worker.id, { sourceTowerId: tower.id, product: "bullet" });
+    room.applyAmmoTransportArrival(worker, tower, false);
+    assert.equal(delivered(), 1);
+    room.applyAmmoTransportArrival(worker, tower, false);
+    assert.equal(delivered(), 1, "iki saniyede ikinci bildirim");
+    now += 2500;
+    room.applyAmmoTransportArrival(worker, tower, false);
+    assert.equal(delivered(), 2);
+
+    room.tutorialMode = false;
+    now += 2500;
+    room.applyAmmoTransportArrival(worker, tower, false);
+    assert.equal(delivered(), 2, "ogretici disinda bildirim");
+  } finally {
+    Date.now = realNow;
+    cleanup(room);
+  }
+});

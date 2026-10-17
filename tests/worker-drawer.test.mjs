@@ -250,8 +250,8 @@ test("egitim: isci adimlari Isci cekmecesi -> bolum -> asil dugme", () => {
   assert.match(manageBuilder, /list\.className = "worker-list";/);
   assert.match(ui, /viewport\.className = "worker-development__viewport";/);
   // Hedef secimi tabloyu okuyor; Envanter'e bakan isci hedefi yok.
-  assert.match(tutorial, /pickTutorialTarget\(TUTORIAL_TARGETS\[id\]/);
-  for (const id of ["hire", "assign", "workerTree", "repairer"]) {
+  assert.match(tutorial, /pickTutorialTarget\(getTutorialTargets\(id, controls\.tutorialFacts\)/);
+  for (const id of ["hire", "assign", "workerTree", "repairer", "gatherer", "materials", "ammoCarrier"]) {
     assert.ok(TUTORIAL_TARGETS[id].every((selector) => !/inventory|gold-shop/.test(selector)), id);
   }
   // Isci adimlarinin metni iki dilde kisa; hicbiri Envanter'i anmiyor.

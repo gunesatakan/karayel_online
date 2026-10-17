@@ -3463,6 +3463,8 @@ export class MatchRoom extends Room<MatchState> {
    * Kosu ilerleme yazmiyor (sonuc ve kosu raporu yaratici isaretli gidiyor).
    */
   private tutorialMode = false;
+  /** Ogretici teslimat bildiriminin oyuncu basina son ani (`noteTutorialAmmoDelivery`). */
+  private tutorialAmmoNoticeAt = new Map<string, number>();
   /** Dogrudan baslatilan tek kisilik oda (`autoStart`): ozel, listede yok, yabanci giremiyor. */
   private soloRoom = false;
   /**
@@ -3823,6 +3825,23 @@ export class MatchRoom extends Room<MatchState> {
     this.finishDefenseSummary();
     this.closeRunWave(false);
     this.finishMatch("victory");
+  }
+
+  /**
+   * Ogretici: elle cephaneye atanmis tasiyici bir kuleye muhimmat goturdu.
+   * Adim motoru ("teslimat" adimi) ilk teslimati bekliyor; oyuncu basina iki
+   * saniyede en fazla bir mesaj.
+   */
+  private noteTutorialAmmoDelivery(worker: DroneModel) {
+    if (!this.tutorialMode || !worker.ownerId) return;
+    const product = this.workerAssignments.get(worker.id)?.product;
+    if (!product || product === "energy" || product === "materials") return;
+    const now = Date.now();
+    if (now - (this.tutorialAmmoNoticeAt.get(worker.ownerId) ?? 0) < 2000) return;
+    this.tutorialAmmoNoticeAt.set(worker.ownerId, now);
+    const client = this.clients.find((entry) => entry.sessionId === worker.ownerId);
+    const progress: TutorialProgressMessage = { action: "ammoDelivered" };
+    client?.send("tutorial:progress", progress);
   }
 
   /** Ogreticide bir dongu temizlendi: ayni dalga yeniden, nexus dolu. */
@@ -12491,6 +12510,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private applyAmmoTransportArrival(worker: DroneModel, target: TowerModel, hadNoAmmo: boolean) {
     const now = this.runtime.now();
+    this.noteTutorialAmmoDelivery(worker);
     if (worker.cargoSpecial || this.hasWorkerSkill(worker, "ammo-special-payload")) {
       target.ammoPayloadUntil = now + 20_000;
       target.ammoPayloadKind = worker.cargoAmmoPayloadKind ?? "special";

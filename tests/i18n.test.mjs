@@ -108,6 +108,31 @@ test("egitim metinleri iki dilde; Ingilizcede Turkce harf yok", () => {
       }
     }
   }
+  // Muhimmat zinciri: her sayfa, her uretim (hammaddesiyle), bosta tasiyici yok ve teslimat oncesi/sonrasi; iki dilde 170 karakter.
+  const base = { definitionIds: [], upgraded: false, hired: 0, manualAssignments: 0, repairers: 0, treeUnlocks: 0 };
+  for (const locale of ["tr", "en"]) {
+    setLocaleForTest(locale);
+    for (const production of ["bullet", "auraCrystal", "powerCrystal"]) {
+      const variants = [
+        { ...base, production },
+        { ...base, production, ammoDelivered: true },
+        { ...base, production, workers: [{ mode: "energyTransport", manual: true, product: "energy", sourceDefinitionId: "zeynep-10" }] }
+      ];
+      for (const id of ["chain", "gatherer", "materials", "ammoCarrier", "delivery"]) {
+        for (const facts of variants) {
+          for (const page of [0, 1]) {
+            const copy = getTutorialCopy(id, true, { page, facts });
+            assert.ok(copy.body.length <= 170, `${locale}/${id}/${production}/${page}: ${copy.body.length}`);
+            assert.doesNotMatch(copy.body, /{[a-z]+}/, `${locale}/${id}: doldurulmamis yer tutucu`);
+            if (locale === "en") assert.doesNotMatch(`${copy.title} ${copy.body} ${copy.ack ?? ""}`, /[ğüşıöçĞÜŞİÖÇ]/, `${id} Ingilizcede Turkce`);
+          }
+        }
+      }
+    }
+  }
+  setLocaleForTest("en");
+  assert.equal(getTutorialCopy("chain", true, { page: 0 }).ack, "NEXT");
+  assert.match(getTutorialCopy("gatherer", true, { facts: { ...base, production: "powerCrystal" } }).body, /Power core needs Power crystal/);
   setLocaleForTest("tr");
   assert.equal(getTutorialCopy("xpGold").ack, "ANLADIM");
   assert.equal(getTutorialCopy("shop", false).reopen, "MAĞAZAYI AÇ");

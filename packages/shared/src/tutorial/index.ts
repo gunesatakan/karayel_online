@@ -27,7 +27,9 @@ export type TutorialActionId =
   | "card"
   | "shop"
   | "skill"
-  | "ultimate";
+  | "ultimate"
+  /** Elle atanmis bir cephane tasiyicisi bir kuleye muhimmat teslim etti (sunucu kendisi yolluyor). */
+  | "ammoDelivered";
 
 /**
  * Izlenen istemci mesajlari ve sayildiklari eylem. Kule ayarlarinin bes

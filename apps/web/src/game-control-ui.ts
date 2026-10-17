@@ -1149,6 +1149,8 @@ export function setupGameControlUi(game: Phaser.Game) {
           if (!active) dispatch({ action: "setWorkerProduct", product });
         });
         button.setAttribute("aria-pressed", String(active));
+        // Egitim (tutorial.ts) urun dugmesini etiketinden bagimsiz bulsun.
+        button.dataset.workerProduct = product;
         return button;
       }), "worker-pick__products");
       group.setAttribute("role", "group");

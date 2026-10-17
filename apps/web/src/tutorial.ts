@@ -1,12 +1,19 @@
 import type Phaser from "phaser";
 import {
+  AMMO_RECIPES,
   REPAIR_DEPOT_TOWER_ID,
+  RESOURCE_NAMES,
+  RESOURCE_NAMES_EN,
   WALL_TOWER_ID,
   towerCatalog,
+  type AmmoType,
+  type ResourceKind,
+  type TransportProduct,
   type TutorialPrepareId,
   type TutorialProgressMessage
 } from "@karayel/shared";
-import { onLocaleChange, t } from "./i18n";
+import { getLocale, onLocaleChange, t } from "./i18n";
+import { formatTransportProduct } from "./worker-roster";
 
 /**
  * Ogretici asamasi (Eğitim): butun mekanikleri sirayla gosteren adim motoru.
@@ -36,6 +43,12 @@ export const TUTORIAL_STEPS = [
   "depot",
   "armory",
   "production",
+  // Muhimmat zinciri: yatak -> toplayici -> depo -> tasiyici -> cephanelik -> tasiyici -> kule.
+  "chain",
+  "gatherer",
+  "materials",
+  "ammoCarrier",
+  "delivery",
   "repairDepot",
   "repairer",
   "xpGold",
@@ -49,7 +62,17 @@ export const TUTORIAL_STEPS = [
 export type TutorialStepId = (typeof TUTORIAL_STEPS)[number];
 
 /** Yalnizca okunup ANLADIM ile gecilen bilgi adimlari. */
-export const TUTORIAL_ACK_STEPS: readonly TutorialStepId[] = ["workerTypes", "xpGold"];
+export const TUTORIAL_ACK_STEPS: readonly TutorialStepId[] = ["workerTypes", "chain", "xpGold", "delivery"];
+
+/**
+ * Birden fazla sayfali bilgi adimlari: tek metin 170 karaktere sigmiyor.
+ * Son sayfadan once dugme İLERİ, son sayfada ANLADIM.
+ */
+export const TUTORIAL_PAGES: Readonly<Partial<Record<TutorialStepId, number>>> = { chain: 2, delivery: 2 };
+
+export function getTutorialPageCount(id: TutorialStepId) {
+  return TUTORIAL_PAGES[id] ?? 1;
+}
 
 /** Ilk kule kurulunca kurulum bitiyor (Devam): dusmanlar yavasca gelmeye basliyor. */
 export const TUTORIAL_COMBAT_STEP: TutorialStepId = "tower";
@@ -57,7 +80,8 @@ export const TUTORIAL_COMBAT_STEP: TutorialStepId = "tower";
 /** Menudeki tek seferlik "Öğreticiyi oyna" kartinin cihazdaki kaydi. */
 export const TUTORIAL_OFFER_STORAGE_KEY = "uzay_tutorial_offer_v1";
 
-export type TutorialRun = { step: number; done: boolean };
+/** `page`: cok sayfali bilgi adiminda acik sayfa (yoksa 0). */
+export type TutorialRun = { step: number; done: boolean; page?: number };
 
 /**
  * Oyunun o anki hali (sahne snapshot'tan kuruyor, `tutorialFacts`). Hedefi
@@ -79,6 +103,24 @@ export type TutorialFacts = {
   repairers: number;
   /** Isci agacinda acilmis gelistirme sayisi. */
   treeUnlocks: number;
+  /** Oyuncunun cephaneliginin urettigi muhimmat (cephanelik yoksa yok). */
+  production?: AmmoType;
+  /** Oyuncunun iscileri: rol (sunucu modu), elle mi atandi ve isi. */
+  workers?: readonly TutorialWorkerFact[];
+  /** Elle atanmis bir cephane tasiyicisi bir kuleye teslimat yapti mi. */
+  ammoDelivered?: boolean;
+};
+
+export type TutorialWorkerFact = {
+  /** Sunucunun isci modu: "crystalCollector" (Toplama), "energyTransport" (Taşıma), "repairer". */
+  mode: string;
+  manual: boolean;
+  /** Toplayicinin atandigi yatagin turu. */
+  nodeKind?: ResourceKind;
+  /** Tasiyicinin urunu. */
+  product?: TransportProduct;
+  /** Tasiyicinin atandigi binanin tanim kimligi. */
+  sourceDefinitionId?: string;
 };
 
 /** Motorun girdisi: sunucunun olcumu, oyunun hali, ANLADIM ya da GEÇ. */
@@ -182,9 +224,53 @@ export function isTutorialStepSatisfied(id: TutorialStepId, facts: TutorialFacts
       return facts.upgraded;
     case "workerTree":
       return facts.treeUnlocks > 0;
+    case "gatherer": {
+      const material = getTutorialMaterial(facts);
+      return Boolean(facts.production) && (facts.workers ?? []).some((worker) => worker.mode === "crystalCollector" && worker.manual && worker.nodeKind === material);
+    }
+    case "materials":
+      return (facts.workers ?? []).some((worker) => isArmoryCarrier(worker, "materials"));
+    case "ammoCarrier":
+      return Boolean(facts.production) && (facts.workers ?? []).some((worker) => isArmoryCarrier(worker, facts.production!));
     default:
       return false;
   }
+}
+
+/** Elle cephaneye (Cephane Divanı gibi) bu urunle atanmis tasiyici. */
+function isArmoryCarrier(worker: TutorialWorkerFact, product: TransportProduct) {
+  return worker.mode === "energyTransport" && worker.manual && worker.product === product
+    && worker.sourceDefinitionId !== undefined && classifyTutorialBuild(worker.sourceDefinitionId) === "armory";
+}
+
+/** Cephaneligin uretimi; cephanelik yoksa (adim gecildi) varsayilan projektil. */
+export function getTutorialProduction(facts: TutorialFacts | undefined): AmmoType {
+  return facts?.production ?? "bullet";
+}
+
+/** Uretimin tarifindeki hammadde (projektil -> barut...). */
+export function getTutorialMaterial(facts: TutorialFacts | undefined): ResourceKind {
+  return AMMO_RECIPES[getTutorialProduction(facts)];
+}
+
+/**
+ * Tasiyici adiminda bosta Taşıma iscisi yok mu. Bosta: elle bir ise atanmamis.
+ * Elle enerjiye atanmis tasiyici yoksa otomatik enerji tasiyan biri enerjide
+ * kalmali (onu alan oyuncu cephaneligi ve kuleleri enerjisiz birakir), o
+ * bosta sayilmiyor. Bosta yoksa adim once isci aldiriyor (İşe Al cercevede).
+ */
+export function tutorialNeedsCarrierHire(id: TutorialStepId, facts: TutorialFacts | undefined) {
+  if (id !== "materials" && id !== "ammoCarrier") return false;
+  const carriers = (facts?.workers ?? []).filter((worker) => worker.mode === "energyTransport");
+  const auto = carriers.filter((worker) => !worker.manual);
+  const energyCovered = carriers.some((worker) => worker.manual && worker.product === "energy");
+  const autoOnEnergy = auto.some((worker) => worker.product === undefined || worker.product === "energy");
+  return auto.length - (!energyCovered && autoOnEnergy ? 1 : 0) <= 0;
+}
+
+/** Teslimat adiminin ANLADIM'i: ilk teslimat goruldu. */
+export function isTutorialDeliveryReady(facts: TutorialFacts | undefined) {
+  return facts?.ammoDelivered === true;
 }
 
 /** Adimi ilerletir. Saf: ayni girdi ayni cikti. */
@@ -196,8 +282,11 @@ export function advanceTutorial(run: TutorialRun, signal: TutorialSignal): Tutor
   switch (signal.kind) {
     case "skip":
       return next();
-    case "ack":
-      return TUTORIAL_ACK_STEPS.includes(id) ? next() : run;
+    case "ack": {
+      if (!TUTORIAL_ACK_STEPS.includes(id)) return run;
+      const page = run.page ?? 0;
+      return page + 1 < getTutorialPageCount(id) ? { ...run, page: page + 1 } : next();
+    }
     case "progress":
       return isTutorialStepCompletedBy(id, signal.progress) ? next() : run;
     case "state":
@@ -241,6 +330,14 @@ export const TUTORIAL_TARGETS: Readonly<Record<TutorialStepId, readonly string[]
   depot: [".game-controls__tower-grid", '[data-launch="towers"]'],
   armory: [".game-controls__tower-grid", '[data-launch="towers"]'],
   production: [".ts-section--controls", ".tower-sheet"],
+  chain: ['[data-launch="worker"]'],
+  // Toplayici: Yonetim'de Toplama satiri, sonra haritada yatak (secim seridi).
+  gatherer: [".game-controls__drawer.worker-pick", ".worker-row--gatherer", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
+  // Tasiyici satirlarindan hangisinin bosta oldugu satirda yazmiyor: liste butun olarak.
+  materials: ['[data-worker-product="materials"]:not(.is-active)', ".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
+  // Urune ozel dugme `getTutorialTargets`ta en basa ekleniyor.
+  ammoCarrier: [".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
+  delivery: ['.ts-bar[data-key="ammo"]', ".ts-stock", ".tower-sheet"],
   repairDepot: [".game-controls__tower-grid", '[data-launch="towers"]'],
   repairer: [".game-controls__worker-hire", '[data-worker-tab="hire"]', '[data-launch="worker"]'],
   // Tecrube Detay panelinde; panel kapaliysa ust seritteki altin.
@@ -253,6 +350,18 @@ export const TUTORIAL_TARGETS: Readonly<Record<TutorialStepId, readonly string[]
   ultimate: [".game-controls__action--ultimate", '[data-launch="skills"]']
 };
 
+/**
+ * O anki hedef zinciri: tasiyici adiminda bosta tasiyici yoksa İşe Al;
+ * cephane tasiyicisinda uretimin urun dugmesi en basta; teslimat geldiyse
+ * once cephaneligin stok blogu.
+ */
+export function getTutorialTargets(id: TutorialStepId, facts: TutorialFacts | undefined): readonly string[] {
+  if (tutorialNeedsCarrierHire(id, facts)) return TUTORIAL_TARGETS.hire;
+  if (id === "ammoCarrier") return [`[data-worker-product="${getTutorialProduction(facts)}"]:not(.is-active)`, ...TUTORIAL_TARGETS.ammoCarrier];
+  if (id === "delivery" && isTutorialDeliveryReady(facts)) return [".ts-stock", '.ts-bar[data-key="ammo"]', ".tower-sheet"];
+  return TUTORIAL_TARGETS[id];
+}
+
 /** Ilk gorunen hedef; hicbiri yoksa yok. Saf (gorunurluk disaridan). */
 export function pickTutorialTarget<T>(selectors: readonly string[], find: (selector: string) => T | undefined): { selector: string; element: T } | undefined {
   for (const selector of selectors) {
@@ -264,13 +373,31 @@ export function pickTutorialTarget<T>(selectors: readonly string[], find: (selec
 
 export type TutorialCopy = { title: string; body: string; ack?: string; reopen?: string };
 
+/** Hammaddenin adi, secili dilde (kule panelinin stok blogu da boyle yaziyor). */
+function materialName(kind: ResourceKind) {
+  return (getLocale() === "tr" ? RESOURCE_NAMES : RESOURCE_NAMES_EN)[kind];
+}
+
 /**
  * Kutunun metni. `windowOpen`: kart ve magaza adiminda pencere ekranda mi;
- * kapaliysa kutu onu yeniden acan bir dugme gosteriyor.
+ * kapaliysa kutu onu yeniden acan bir dugme gosteriyor. `context`: cok
+ * sayfali adimin sayfasi ve muhimmat zinciri adimlarinin okudugu oyun hali
+ * (uretilen muhimmat, hammaddesi, bosta tasiyici, ilk teslimat).
  */
-export function getTutorialCopy(id: TutorialStepId, windowOpen = true): TutorialCopy {
-  const copy: TutorialCopy = { title: t(`tutorial.${id}.title`), body: t(`tutorial.${id}.body`) };
-  if (TUTORIAL_ACK_STEPS.includes(id)) copy.ack = t("tutorial.ack");
+export function getTutorialCopy(id: TutorialStepId, windowOpen = true, context: { page?: number; facts?: TutorialFacts } = {}): TutorialCopy {
+  const facts = context.facts;
+  // {ammo}: cephaneligin uretim secicisindeki ad; {product}: tasiyicinin urun dugmesindeki ad (ayni muhimmat).
+  const params = { ammo: t(`controls.tower.production.${getTutorialProduction(facts)}`), product: formatTransportProduct(getTutorialProduction(facts)), material: materialName(getTutorialMaterial(facts)) };
+  const page = Math.max(0, Math.min(getTutorialPageCount(id) - 1, context.page ?? 0));
+  const copy: TutorialCopy = { title: t(`tutorial.${id}.title`), body: t(`tutorial.${id}.body`, params) };
+  if (page === 1) copy.body = t(id === "delivery" ? "tutorial.delivery.body2" : "tutorial.chain.body2", params);
+  if (tutorialNeedsCarrierHire(id, facts)) copy.body = t("tutorial.carrier.hire");
+  if (TUTORIAL_ACK_STEPS.includes(id)) copy.ack = t(page + 1 < getTutorialPageCount(id) ? "tutorial.next" : "tutorial.ack");
+  // Teslimat: ilk muhimmat kuleye varana dek bekleme metni, dugme yok (GEÇ var).
+  if (id === "delivery" && !isTutorialDeliveryReady(facts)) {
+    copy.body = t("tutorial.delivery.wait", params);
+    delete copy.ack;
+  }
   if ((id === "card" || id === "shop") && !windowOpen) copy.reopen = t(id === "card" ? "tutorial.card.reopen" : "tutorial.shop.reopen");
   return copy;
 }
@@ -434,7 +561,9 @@ export function setupTutorial(game: Phaser.Game) {
     if (!inTutorialMatch() || run.done) return false;
     const before = run;
     run = advanceTutorial(run, signal);
-    if (run === before || run.step === before.step) return false;
+    if (run === before) return false;
+    // Ayni adimda sonraki sayfa: yalnizca kutu yeniden yaziliyor.
+    if (run.step === before.step) return run.page !== before.page && signal.kind === "ack";
     const leaving = TUTORIAL_STEPS[before.step];
     // Ilk kule: kurulum bitiyor, dusmanlar yavasca gelmeye basliyor.
     if (leaving === TUTORIAL_COMBAT_STEP) command({ type: "continue" });
@@ -528,12 +657,12 @@ export function setupTutorial(game: Phaser.Game) {
       // Cerceve yok, kutu alt kenarda; Yenile satirini ortmuyor.
       return { element: null, anchor: "bottom", avoid: document.querySelector(TUTORIAL_CARD_AVOID_SELECTOR) };
     }
-    const picked = pickTutorialTarget(TUTORIAL_TARGETS[id], (selector) => {
+    const picked = pickTutorialTarget(getTutorialTargets(id, controls.tutorialFacts), (selector) => {
       const element = document.querySelector<HTMLElement>(selector);
       return element && isOnScreen(element) ? element : undefined;
     });
     const drawer = document.querySelector<HTMLElement>(".game-controls__drawer") ?? undefined;
-    if (id === "xpGold") return { element: picked?.element ?? null, anchor: "hud" };
+    if (id === "xpGold" || id === "chain") return { element: picked?.element ?? null, anchor: "hud" };
     return { element: picked?.element ?? null, anchor: drawer && measure(drawer) ? drawer : undefined };
   };
 
@@ -647,7 +776,9 @@ export function setupTutorial(game: Phaser.Game) {
     const target = overlayAvoid
       ? { element: null, anchor: "bottom" as const, avoid: document.querySelector(overlayAvoid) }
       : findTarget(id);
-    render(`${id}:${windowOpen}`, getTutorialCopy(id, windowOpen), run.step + 1, target.element, target.anchor, target.avoid);
+    const copy = getTutorialCopy(id, windowOpen, { page: run.page, facts: controls.tutorialFacts });
+    // Anahtar metinden: sayfa, bosta tasiyici ya da ilk teslimat degisince kutu yeniden yaziliyor.
+    render(`${id}:${windowOpen}:${run.page ?? 0}:${copy.body}:${copy.ack ?? ""}`, copy, run.step + 1, target.element, target.anchor, target.avoid);
   };
 
   window.setInterval(tick, TICK_MS);

@@ -1754,6 +1754,8 @@ export class GameScene extends Phaser.Scene {
    * ve ilerleme kapilari buna bakiyor; magaza dalga icinde de aciliyor.
    */
   private tutorialMode = false;
+  /** Ogretici: elle atanmis cephane tasiyicisi bir kuleye teslimat yapti mi (sunucudan). */
+  private tutorialAmmoDelivered = false;
   /**
    * Odanin gercek asamasi, her snapshot'ta sunucudan.
    *
@@ -1919,6 +1921,7 @@ export class GameScene extends Phaser.Scene {
     this.creativeRequested = data.creative === true;
     this.tutorialRequested = data.tutorial === true && !this.creativeRequested;
     this.tutorialMode = false;
+    this.tutorialAmmoDelivered = false;
     this.hudState = { ...this.hudState, tutorial: false };
     this.selectedStage = getStage(data.stage).id;
     this.roomStage = undefined;
@@ -4264,13 +4267,29 @@ export class GameScene extends Phaser.Scene {
   private getTutorialFacts(): TutorialFacts {
     const ownTowers = [...this.towerSnapshots.values()].filter((tower) => tower.ownerId === this.localSessionId && (tower.hp === undefined || tower.hp > 0));
     const ownDrones = (this.workerRosterSource?.drones ?? []).filter((drone) => drone.ownerId === this.localSessionId);
+    const nodes = listResourceNodes(this.workerRosterSource?.crystalNodes, this.workerRosterSource?.ammoNodes);
     return {
       definitionIds: ownTowers.map((tower) => tower.definitionId),
       upgraded: ownTowers.some((tower) => (tower.level ?? 1) > 1),
       hired: this.localPlayerSnapshot?.hiredWorkers?.length ?? 0,
       manualAssignments: ownDrones.filter((drone) => drone.assignment && !drone.autoAssigned).length,
       repairers: ownDrones.filter((drone) => drone.mode === "repairer").length,
-      treeUnlocks: this.localPlayerSnapshot?.workerSkillIds?.length ?? 0
+      treeUnlocks: this.localPlayerSnapshot?.workerSkillIds?.length ?? 0,
+      // Muhimmat zinciri adimlari: cephaneligin uretimi ve iscilerin elle isleri.
+      production: ownTowers.find((tower) => tower.resourceProvider === "ammunition")?.productionAmmo ?? (ownTowers.some((tower) => tower.resourceProvider === "ammunition") ? "bullet" : undefined),
+      workers: ownDrones.map((drone) => {
+        const manual = Boolean(drone.assignment) && !drone.autoAssigned;
+        const nodeId = drone.assignment?.nodeId;
+        const sourceTowerId = drone.assignment?.sourceTowerId;
+        return {
+          mode: drone.mode,
+          manual,
+          nodeKind: nodeId ? nodes.find((node) => node.id === nodeId)?.kind : undefined,
+          product: drone.assignment?.product,
+          sourceDefinitionId: sourceTowerId ? this.towerSnapshots.get(sourceTowerId)?.definitionId : undefined
+        };
+      }),
+      ammoDelivered: this.tutorialAmmoDelivered
     };
   }
 
@@ -7414,7 +7433,14 @@ export class GameScene extends Phaser.Scene {
       this.emitControlState();
     });
     // Ogretici: sunucunun olctugu, gercekten yapilmis eylem; adim motoruna gidiyor.
-    room.onMessage("tutorial:progress", (progress: TutorialProgressMessage) => this.game.events.emit("game:tutorial-progress", progress));
+    room.onMessage("tutorial:progress", (progress: TutorialProgressMessage) => {
+      // Ilk teslimat kalici bir olgu: "teslimat" adimi sonra gelse de goruyor.
+      if (progress?.action === "ammoDelivered" && !this.tutorialAmmoDelivered) {
+        this.tutorialAmmoDelivered = true;
+        this.emitControlState();
+      }
+      this.game.events.emit("game:tutorial-progress", progress);
+    });
     room.onMessage("enemy:spawn", (enemy: StaticEnemySnapshot) => this.staticEnemySnapshots.set(enemy.id, enemy));
     room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => {
       this.staticTowerSnapshots.set(tower.id, tower);

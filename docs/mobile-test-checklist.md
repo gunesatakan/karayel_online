@@ -52,7 +52,7 @@ Her maddenin sonuna ✅ / ❌ ve kısa bir not yaz. ❌ için cihaz modelini, ta
   - İşçi › Yönetim: işçiye dokununca çekmece tek satıra iniyor, harita görünüyor; kaynağa ya da binaya dokununca atanıyor, İptal geri dönüyor.
   - Dalga sürerken satırlara dokunuş kaçmıyor; yük ve kalan sayıları akıyor.
   - İşçi › Ağaç parmakla kaydırılabiliyor.
-- [ ] **Eğitim (ana menü › Eğitim):** ZentaX ile ayrı bölüm açılıyor; 19 adım sırayla geliyor, her adım yapılınca geçiyor; GEÇ ve ANLADIM çalışıyor; nexus ölmüyor; son adımdan sonra kısa zafer ve yalnızca "Ana Menü" düğmeli rapor. İlk kez açan cihazda ana menüde "Öğreticiyi oyna / Şimdi değil" kartı bir kez çıkıyor.
+- [ ] **Eğitim (ana menü › Eğitim):** ZentaX ile ayrı bölüm açılıyor; 24 adım sırayla geliyor, her adım yapılınca geçiyor (mühimmat zinciri: toplayıcı → hammadde taşıyıcısı → cephane taşıyıcısı → teslimat); GEÇ ve ANLADIM çalışıyor; nexus ölmüyor; son adımdan sonra kısa zafer ve yalnızca "Ana Menü" düğmeli rapor. İlk kez açan cihazda ana menüde "Öğreticiyi oyna / Şimdi değil" kartı bir kez çıkıyor.
 - [ ] **Maç sonu:** birkaç dalga sonra kaybet ya da kazan; maç raporu tam görünüyor. Ana menü, Tekrar ve Sonraki aşama düğmeleri çalışıyor.
 - [ ] **İngilizce maç:** aynı akışı EN ile tekrarla; kesilen ya da taşan yazı var mı?
 
