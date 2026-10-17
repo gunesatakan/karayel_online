@@ -955,6 +955,8 @@ const LOCAL_ECHO_TIMEOUT_MS = 2500;
 const CAST_WAVE_TOWER_LIMIT = 8;
 /** Kule panelinin altindaki satis dugmesinin yuksekligi (dunya birimi). */
 const SELL_BUTTON_HEIGHT = 20;
+/** Performans alevinin cizildigi en dusuk yogunluk (~%54 performans); altindaki pilot isik gorunmuyordu. */
+const PERFORMANCE_FLAME_MIN_INTENSITY = 0.15;
 
 /**
  * Etki kalemlerinin ekranda okunacak adlari.
@@ -3281,7 +3283,8 @@ export class GameScene extends Phaser.Scene {
       localSessionId: this.localSessionId,
       map: this.selectedMapData,
       cellSize: this.getMapCellSize(),
-      bounds: getMapWorldBounds(this.selectedMapData)
+      bounds: getMapWorldBounds(this.selectedMapData),
+      pending: this.pendingPlacements
     });
     // Hayaletin menzili, o karede alacagi haliyle (yalnizlik dahil). Ayni
     // kare ve ayni sahada yeniden cizilmiyor.
@@ -10384,6 +10387,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    // Kenar yapilarinin (duvar, Abarti) govdesi duragan: yalnizca durumu
+    // degisince yeniden cizilir. Her karede cizilen govde, 40 duvarli sahada
+    // telefonun kare suresinin buyuk kismini Phaser'in yeniden ucgenlemesine
+    // harciyordu (2026-10 uretim kaydi).
+    if (this.isEdgePlacedDefinition(tower.definitionId)) {
+      const broken = tower.disabled === true || (tower.hp !== undefined && tower.hp <= 0);
+      const key = `${tower.x}|${tower.y}|${tower.orientation ?? ""}|${tower.definitionId}|${tower.id === this.selectedPlacedTowerId}|${broken}|${tower.gate === true}|${this.getMapCellSize()}`;
+      if (this.edgeBodyKeys.get(graphics) === key) return;
+      this.edgeBodyKeys.set(graphics, key);
+    }
     graphics.clear();
     this.renderTowerPerformanceFlames(graphics, tower);
     this.renderOrbitBlades(graphics, tower);
@@ -10401,6 +10414,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.renderServerReactorArcs(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
   }
+
+  /** Kenar yapisi govdesinin son cizildigi durum (`renderTowerSpriteEffects`). */
+  private readonly edgeBodyKeys = new WeakMap<Phaser.GameObjects.Graphics, string>();
 
   private readonly serverReactorInput: ServerReactorInput = { x: 0, y: 0, half: 0, rotation: 0, tier: 1, now: 0, still: false, alpha: 1 };
 
@@ -10497,9 +10513,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private renderTowerPerformanceFlames(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    if (tower.resourceProvider) return;
-    const intensity = getTowerPerformanceFlameIntensity(tower.performance ?? 0.5);
-    if (intensity <= 0) return;
+    // Performansi olmayan yapi (duvar, kenar yapisi) alev almiyor; eskiden
+    // varsayilan %50 ile her duvara gorunmez bir pilot alev ciziliyordu.
+    if (tower.resourceProvider || tower.performance === undefined || this.isEdgePlacedDefinition(tower.definitionId)) return;
+    const intensity = getTowerPerformanceFlameIntensity(tower.performance);
+    // %50'deki pilot isik (%3 alfa) gorunmuyor ama kule basina ~225 cizim
+    // komutu her karede yeniden ucgenleniyordu.
+    if (intensity < PERFORMANCE_FLAME_MIN_INTENSITY) return;
 
     const cellSize = this.getMapCellSize();
     const footprintRadius = getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId)) * 0.47;
@@ -10560,12 +10580,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     const segments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal", this.getEdgeLength(tower.definitionId));
-    const phase = (performance.now() % 1200) / 1200;
     const selected = tower.id === this.selectedPlacedTowerId;
     // Yikilan yapi haritadan silinmez -- onarilabilmesi buna bagli -- ama ayakta
     // duruyormus gibi de gorunmemeli: govde sonuyor ve ortasindan aciliyor.
     const broken = tower.disabled === true || (tower.hp !== undefined && tower.hp <= 0);
-    const pulse = 0.72 + Math.sin(phase * Math.PI * 2) * 0.16;
+    // Cekirdek nabzi yok: govde duragan cizilip onbellekte tutuluyor.
+    const pulse = 0.78;
     const thickness = Math.max(5, this.getMapCellSize() * 0.16) * TOWER_VISUAL_SCALE;
     const glowWidth = thickness * (selected ? 4.2 : 3.2);
     const coreWidth = Math.max(2, thickness * 0.42);
@@ -11165,11 +11185,23 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const x = tower.x - width / 2;
     const y = tower.y - discSize / 2 - TOWER_HEALTH_BAR_LIFT_PX;
     const ratio = Phaser.Math.Clamp((tower.hp ?? 0) / Math.max(1, tower.maxHp ?? 1), 0, 1);
+    // Tam canda cubuk yok (iscilerde de oyle); cubuk yalnizca degisince
+    // yeniden ciziliyor. Duz dikdortgen: yuvarlak kose her karede yeniden
+    // ucgenleniyordu.
+    const full = ratio >= 1;
+    const key = full ? "full" : `${x}|${y}|${width}|${Math.round(ratio * width)}`;
+    if (this.healthBarKeys.get(graphics) === key) return;
+    this.healthBarKeys.set(graphics, key);
     graphics.clear();
-    graphics.fillStyle(0x020617, 0.94).fillRoundedRect(x - 1, y - 1, width + 2, height + 2, 2);
+    graphics.setVisible(!full);
+    if (full) return;
+    graphics.fillStyle(0x020617, 0.94).fillRect(x - 1, y - 1, width + 2, height + 2);
     graphics.fillStyle(ratio > 0.5 ? 0x22c55e : ratio > 0.2 ? 0xf59e0b : 0xef4444, 1)
-      .fillRoundedRect(x, y, width * ratio, height, 1);
+      .fillRect(x, y, width * ratio, height);
   }
+
+  /** Can cubugunun son cizildigi durum (`drawTowerHealthBar`). */
+  private readonly healthBarKeys = new WeakMap<Phaser.GameObjects.Graphics, string>();
 
   /**
    * Secili yapinin haritadaki paneli.
