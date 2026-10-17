@@ -2479,6 +2479,32 @@ type DroneModel = DroneSnapshot & {
   cargoAmmoPayloadKind?: "refined" | "special";
 };
 
+/** `workerStepCache` kaydi: aramanin okudugu her sey ve sonucu. */
+type WorkerStepCacheEntry = {
+  ownerId: string;
+  targetTowerId: DroneModel["targetTowerId"];
+  logisticsPhase: DroneModel["logisticsPhase"];
+  mode: DroneModel["mode"];
+  startCol: number;
+  startRow: number;
+  goalCol: number;
+  goalRow: number;
+  goalOpen: boolean;
+  map: EditableMapData;
+  cols: number;
+  rows: number;
+  cellBuild: number;
+  edgeBuild: number;
+  bans: Set<string> | undefined;
+  banVersion: number;
+  banSize: number;
+  /** Aramanin baktigi yapilar; `edge[i]` kenar mi, `blocked[i]` o gunku cevap. */
+  towers: TowerModel[];
+  edge: boolean[];
+  blocked: boolean[];
+  step: { col: number; row: number } | undefined;
+};
+
 type WorkerBanCellMessage = {
   x?: number;
   y?: number;
@@ -2951,7 +2977,14 @@ export class MatchRoom extends Room<MatchState> {
   private matchResultPayload?: MatchResultPayload;
   private insightElapsed = 0;
   private logisticsClock = 0;
-  private deliveryWaitingSince = new Map<string, number>();
+  /**
+   * Teslimat bekleyen kulenin bekleme baslangici, kaynak basina ayri: kule
+   * kimligi -> saat. Eskiden tek sozlukte `${kaynak}:${kule}` anahtariyla
+   * duruyordu ve `selectDeliveryTarget` her cagrida butun anahtarlari
+   * on ek karsilastirip kesiyordu. Kayitlar ve degerleri birebir ayni
+   * (kaynak + kule cifti bir anahtar), siralari da kaynak icinde ayni.
+   */
+  private readonly deliveryWaitingSince = { ammo: new Map<string, number>(), energy: new Map<string, number>() };
   private previewRequestTimes = new Map<string, number>();
   private towerInsightCache = new WeakMap<TowerModel, { at: number; value: string }>();
   /**
@@ -3153,14 +3186,29 @@ export class MatchRoom extends Room<MatchState> {
    * baglamaz.
    */
   private workerBannedCells = new Map<string, Set<string>>();
+  /** Herhangi bir oyuncunun yasak kumesi her degistiginde artiyor (`workerStepCache`). */
+  private workerBanVersion = 0;
   /** Surunun en son hangi hucrede yogunlastigi; kayma uyarisi buna bakar. */
   private lastMainGate?: { col: number; row: number };
   /** Hucre -> kule; dogrusal `getTowerAtCell` taramasinin yerine gecer. */
   private towerCellIndex = new Map<string, TowerModel>();
   private towerCellIndexDirty = true;
+  /**
+   * `towerCellIndex`in dizi hali: `cells[row * cols + col]`, yalnizca harita
+   * icindeki tamsayi kareler. Indeksle ayni dongude ve ayni yazma sirasiyla
+   * kuruluyor (ayni kareye iki yapi yazarsa ikisinde de sonuncusu kaliyor),
+   * yani harita icindeki her kare icin `towerCellIndex.get("col:row")` ile ayni
+   * kayit. Isci aramasi her komsuda dizgi anahtar kuruyordu. `cols`/`rows`
+   * kurulumdaki harita olcusu; okuyan taraf olcu tutmuyorsa diziyi kullanmiyor.
+   */
+  private towerCellGrid?: { cols: number; rows: number; cells: Array<TowerModel | undefined> };
+  /** Hucre indeksinin kac kez kuruldugu; indeks yalnizca kurulurken degisiyor (`workerStepCache`). */
+  private towerCellIndexBuild = 0;
   /** Kenar -> yapi; kare kaplamayan yapilar burada tutulur. */
   private edgeStructureIndex = new Map<string, TowerModel>();
   private edgeStructureIndexDirty = true;
+  /** Kenar indeksinin kac kez kuruldugu (`workerStepCache`). */
+  private edgeStructureIndexBuild = 0;
   /** `edgeStructureIndex`in dizi hali; indeksle birlikte kuruluyor. */
   private edgeStructureGrid?: { stride: number; vertical: Array<TowerModel | undefined>; horizontal: Array<TowerModel | undefined> };
 
@@ -3171,6 +3219,8 @@ export class MatchRoom extends Room<MatchState> {
     this.mainGateDirty = true;
     this.towerCellIndexDirty = true;
     this.edgeStructureIndexDirty = true;
+    // Isci aramasi onbellegi kurulum sayaciyla zaten tutmazdi; yalnizca bellek.
+    this.workerStepCache.clear();
     // Harita karesi degismis olabilir (Bariyer): ucanlarin nexus hedefleri yeniden.
     this.nexusPointCache = undefined;
     // Ozel dusmanlarin yol alani da yerlesimden; bir sonraki soruda yeniden kuruluyor.
@@ -3212,15 +3262,41 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     this.towerCellIndex.clear();
+    const map = this.activeMap;
+    const gridCols = map.cols;
+    const gridRows = map.rows;
+    // Gecersiz olcude (olmamali) dizi bos kaliyor ve okuyan taraf olcu
+    // tutmadigi icin eski, anahtarli yola donuyor.
+    const gridValid = Number.isInteger(gridCols) && Number.isInteger(gridRows) && gridCols > 0 && gridRows > 0;
+    const cells: Array<TowerModel | undefined> = gridValid ? new Array<TowerModel | undefined>(gridCols * gridRows).fill(undefined) : [];
     for (const tower of this.towers.values()) {
       // Kenara oturan yapilar kare kaplamaz; hucre indeksine girmezler.
       if (tower.definition.engine?.placement?.requiresEdge) continue;
       for (const cell of this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)) {
         this.towerCellIndex.set(`${cell.col}:${cell.row}`, tower);
+        if (gridValid && Number.isInteger(cell.col) && Number.isInteger(cell.row) && isInsideMap(map, cell.col, cell.row)) {
+          cells[cell.row * gridCols + cell.col] = tower;
+        }
       }
     }
+    this.towerCellGrid = gridValid ? { cols: gridCols, rows: gridRows, cells } : undefined;
+    this.towerCellIndexBuild += 1;
     this.towerCellIndexDirty = false;
     return this.towerCellIndex;
+  }
+
+  /**
+   * `getTowerCellIndex().get(`${col}:${row}`)`. Dizinin kapsadigi tamsayi
+   * karede dizi halinden (ayni kayit, bkz. `towerCellGrid`), digerlerinde
+   * anahtarla. Indeks kirliyse once yeniden kuruluyor, eskisi gibi.
+   */
+  private getIndexedTowerAt(col: number, row: number) {
+    const index = this.getTowerCellIndex();
+    const grid = this.towerCellGrid;
+    if (grid && Number.isInteger(col) && Number.isInteger(row) && col >= 0 && row >= 0 && col < grid.cols && row < grid.rows) {
+      return grid.cells[row * grid.cols + col];
+    }
+    return index.get(`${col}:${row}`);
   }
 
   /**
@@ -3251,6 +3327,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
     this.edgeStructureGrid = { stride, vertical, horizontal };
+    this.edgeStructureIndexBuild += 1;
     this.edgeStructureIndexDirty = false;
     return this.edgeStructureIndex;
   }
@@ -3265,14 +3342,35 @@ export class MatchRoom extends Room<MatchState> {
     return this.edgeStructureGrid!;
   }
 
-  /** Iki komsu hucre arasindaki gecise oturmus yapi. */
+  /**
+   * Iki komsu hucre arasindaki gecise oturmus yapi.
+   *
+   * Kenar dizinin kapsadigi tamsayi kenarda dizi halinden okunuyor: dizi
+   * indeksle ayni dongude, ayni sirayla yaziliyor ve segmentler tamsayi
+   * (`getEdgeSegments` yuvarlayip tamsayi sinirlara kirpiyor), yonleri de
+   * yalnizca "vertical"/"horizontal" (`placeTower` iki degerden birini
+   * yaziyor), yani kapsanan her kenarda dizgi anahtarli kayitla ayni yapi.
+   * Kapsanmayan kenar (harita disi, tamsayi olmayan) eskisi gibi anahtarla.
+   */
   private getEdgeStructure(from: { col: number; row: number }, to: { col: number; row: number }) {
     const index = this.getEdgeStructureIndex();
     if (from.row === to.row) {
-      return index.get(`vertical:${Math.max(from.col, to.col)}:${from.row}`);
+      const col = Math.max(from.col, to.col);
+      const row = from.row;
+      const grid = this.edgeStructureGrid!;
+      if (Number.isInteger(col) && Number.isInteger(row) && col >= 0 && col < grid.stride && row >= 0 && row * grid.stride + col < grid.vertical.length) {
+        return grid.vertical[row * grid.stride + col];
+      }
+      return index.get(`vertical:${col}:${row}`);
     }
     if (from.col === to.col) {
-      return index.get(`horizontal:${from.col}:${Math.max(from.row, to.row)}`);
+      const col = from.col;
+      const row = Math.max(from.row, to.row);
+      const grid = this.edgeStructureGrid!;
+      if (Number.isInteger(col) && Number.isInteger(row) && col >= 0 && col < grid.stride && row >= 0 && row * grid.stride + col < grid.horizontal.length) {
+        return grid.horizontal[row * grid.stride + col];
+      }
+      return index.get(`horizontal:${col}:${row}`);
     }
     return undefined;
   }
@@ -11324,7 +11422,10 @@ export class MatchRoom extends Room<MatchState> {
     worker.vx = worker.vy = 0;
     const gatherer = worker.mode === "crystalCollector" || worker.mode === "ammoCollector";
     const assignment = worker.assignment!;
-    const owned = [...this.towers.values()].filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0);
+    // Sahibin ayakta yapilari. Her cagrida butun kulelerden bir dizi
+    // kurulup suzuluyordu; asagidaki dallar ayni suzgeci kendi suzgecleriyle
+    // ayni sirada tek geciste uyguluyor (ayni elemanlar, ayni sira).
+    const owned = (tower: TowerModel) => tower.ownerId === worker.ownerId && tower.hp > 0;
     const nearest = (towers: TowerModel[]) => towers.sort((a, b) => distanceSq(a.x, a.y, worker.x, worker.y) - distanceSq(b.x, b.y, worker.x, worker.y))[0];
     if (gatherer) {
       const node = this.getEconomyNodes().find((entry) => entry.id === assignment.nodeId);
@@ -11335,9 +11436,12 @@ export class MatchRoom extends Room<MatchState> {
       }
       const kind = worker.cargoResource ?? node.kind;
       const stock = (tower: TowerModel) => kind === "energy" ? tower.energy : tower.materials?.[kind] ?? 0;
-      const candidates = owned.filter((tower) => (kind === "energy" ? tower.definition.resourceProvider === "energy"
-        : tower.definition.id === "warehouse-1")
-        && stock(tower) < (kind === "energy" ? getResourceProviderCapacity(tower.level) : getWarehouseCapacity(tower.level)));
+      const candidates: TowerModel[] = [];
+      for (const tower of this.towers.values()) {
+        if (owned(tower) && (kind === "energy" ? tower.definition.resourceProvider === "energy"
+          : tower.definition.id === "warehouse-1")
+          && stock(tower) < (kind === "energy" ? getResourceProviderCapacity(tower.level) : getWarehouseCapacity(tower.level))) candidates.push(tower);
+      }
       const depot = nearest(candidates);
       if (!depot) return;
       worker.targetTowerId = depot.id;
@@ -11365,8 +11469,19 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (assignment.product === "materials") { this.updateMaterialCarrier(worker, seconds); return; }
     const product = assignment.product ?? "energy";
-    const source = assignment.sourceTowerId ? owned.find((tower) => tower.id === assignment.sourceTowerId)
-      : nearest(owned.filter((tower) => tower.definition.resourceProvider === (product === "energy" ? "energy" : "ammunition")));
+    // Atanmis kaynak: kule kimligi `towers` anahtarinin kendisi (tek yazim
+    // `towers.set(tower.id, ...)`, kimlik sonradan degismiyor), yani o
+    // kimlikteki tek kule; sahip ve can suzgeci aynen.
+    const assignedSource = assignment.sourceTowerId ? this.towers.get(assignment.sourceTowerId) : undefined;
+    const providers: TowerModel[] = [];
+    if (!assignment.sourceTowerId) {
+      const provider = product === "energy" ? "energy" : "ammunition";
+      for (const tower of this.towers.values()) {
+        if (owned(tower) && tower.definition.resourceProvider === provider) providers.push(tower);
+      }
+    }
+    const source = assignment.sourceTowerId ? assignedSource && owned(assignedSource) ? assignedSource : undefined
+      : nearest(providers);
     const resource = product === "energy" ? "energy" : "ammo";
     const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
     const target = (worker.cargo ?? 0) > 0 && locked && locked.ownerId === worker.ownerId && locked.hp > 0
@@ -11398,7 +11513,7 @@ export class MatchRoom extends Room<MatchState> {
       if (product === "energy") this.applyEnergyWorkerArrival(worker, target);
       else this.applyAmmoTransportArrival(worker, target, hadNoAmmo);
       this.awardDeliveryGold(target, amount, resource);
-      this.deliveryWaitingSince.delete(`${resource}:${target.id}`);
+      this.deliveryWaitingSince[resource].delete(target.id);
     }
     if (worker.cargo <= 0) { worker.logisticsPhase = "pickup"; worker.targetTowerId = undefined; }
   }
@@ -11482,6 +11597,31 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
+  /** Oturum -> rol -> `logistics-<oturum>-<rol>`. */
+  private readonly baseWorkerIds = new Map<string, Map<string, string>>();
+
+  /**
+   * `logistics-${ownerId}-${mode}`, ayni icerikte ama her tick yeniden
+   * kurulmadan. `ensureLogisticsWorkers` her tick her oyuncunun her iscisi
+   * icin kimligi dizgi birlestirerek kurup sozlukte ariyordu; yeni dizginin
+   * her seferinde duzlestirilip ozetlenmesi o dongunun maliyetinin cogunu
+   * olusturuyordu. Kimlik yalnizca iki parcadan uretiliyor, yani saklanan
+   * dizgi her zaman yeniden kurulacak olanla ayni.
+   */
+  private getBaseWorkerId(ownerId: string, mode: string) {
+    let byMode = this.baseWorkerIds.get(ownerId);
+    if (!byMode) {
+      byMode = new Map();
+      this.baseWorkerIds.set(ownerId, byMode);
+    }
+    let id = byMode.get(mode);
+    if (id === undefined) {
+      id = `logistics-${ownerId}-${mode}`;
+      byMode.set(mode, id);
+    }
+    return id;
+  }
+
   private ensureLogisticsWorkers() {
     // Kurulumda kadro tam baslar: olum bir dalganin cezasi, kalici kayip degil.
     //
@@ -11517,7 +11657,9 @@ export class MatchRoom extends Room<MatchState> {
         const mode = worker.role as DroneSnapshot["mode"];
         const legacySuffix = Boolean((worker as HiredWorker & { legacySuffix?: boolean }).legacySuffix);
         const suffix = index >= baseWorkerModes.length ? `:${legacySuffix ? `extra${index - baseWorkerModes.length}` : worker.id ?? `extra${index - baseWorkerModes.length}`}` : "";
-        const id = `logistics-${ownerId}-${mode}${suffix}`;
+        // Temel dort iscinin kimligi her tick ayni dizgi: tek kez kurulup
+        // saklaniyor (bkz. `getBaseWorkerId`); icerik birebir ayni.
+        const id = suffix === "" ? this.getBaseWorkerId(ownerId, mode) : `logistics-${ownerId}-${mode}${suffix}`;
         if (this.drones.has(id)) {
           continue;
         }
@@ -11686,7 +11828,7 @@ export class MatchRoom extends Room<MatchState> {
   /** Isci hucreye girebilir mi: ayakta yapi yok ya da o yapi isciye acik. */
   private isWorkerCellOpen(col: number, row: number, worker?: DroneModel) {
     if (!isInsideMap(this.activeMap, col, row)) return false;
-    const standing = this.getTowerCellIndex().get(`${col}:${row}`);
+    const standing = this.getIndexedTowerAt(col, row);
     if (!standing || standing.hp <= 0) return true;
     return this.canWorkerEnterStructure(worker, standing);
   }
@@ -11767,6 +11909,334 @@ export class MatchRoom extends Room<MatchState> {
     if (!isInsideMap(map, start.col, start.row) || !Number.isInteger(start.col) || !Number.isInteger(start.row)) {
       return this.searchWorkerStepByKey(worker, start, goal, goalOpen);
     }
+    // Hucre ve kenar indeksinin dizi halleri bu haritanin olcusunde mi. Kirli
+    // indeks ilk okumada bu haritadan yeniden kuruluyor, yani o da uyuyor.
+    // Uymayan (olmamasi gereken) durumda eski, `canWorkerEnter`li yol.
+    const cols = map.cols;
+    const rows = map.rows;
+    const cellGrid = this.towerCellGrid;
+    const cellGridFits = this.towerCellIndexDirty
+      ? Number.isInteger(cols) && Number.isInteger(rows) && cols > 0 && rows > 0
+      : cellGrid !== undefined && cellGrid.cols === cols && cellGrid.rows === rows;
+    const edgeGrid = this.edgeStructureGrid;
+    const edgeGridFits = this.edgeStructureIndexDirty
+      || (edgeGrid !== undefined && edgeGrid.stride === cols + 1 && edgeGrid.vertical.length === (cols + 1) * (rows + 1));
+    if (!cellGridFits || !edgeGridFits) return this.searchWorkerStepByIndex(worker, start, goal, goalOpen);
+    return this.searchWorkerStepByGrid(worker, start, goal, goalOpen);
+  }
+
+  /**
+   * `searchWorkerStepByIndex`in aynisi, giris kurali (`canWorkerEnter`)
+   * komsu basina dizilerden okunuyor: yasak kare tablosu, `towerCellGrid` ve
+   * `edgeStructureGrid`. Dizgi anahtar yok, tampon da her aramada yeniden
+   * ayrilmiyor. Ayni kuyruk, ayni komsu sirasi (asagi, sol, sag, yukari), ayni
+   * kosul sirasi (gorulmus mu, yasak mi, kare acik mi, kenar acik mi) ve
+   * yapilarin cani/kapisi yine okuma aninda: sonuc adim adim ayni.
+   *
+   * Indeksler de eskisi gibi tembel: kirli indeks, eski yolun ilk kez okuyacagi
+   * anda (ilk kare / ilk kenar sorusu) yeniden kuruluyor; aramanin hic kenar
+   * sormadigi durumda kenar indeksi burada da kurulmuyor.
+   *
+   * Sonuc `workerStepCache`te saklaniyor (bkz. orada): teslimat adayi yoklamasi
+   * ayni isci, ayni hedef ve ayni kare icin her tick ayni aramayi yapiyordu.
+   */
+  private searchWorkerStepByGrid(
+    worker: DroneModel,
+    start: { col: number; row: number },
+    goal: { col: number; row: number },
+    goalOpen: boolean
+  ) {
+    const map = this.activeMap;
+    const cols = map.cols;
+    // `isWorkerCellBanned`: sahipsiz isciye yasak yok; tablo arama boyunca degismiyor.
+    const ownerBans = worker?.ownerId ? this.workerBannedCells.get(worker.ownerId) : undefined;
+    // Kayit isci -> hedef kule -> evre; anahtar dizgisi kurulmuyor.
+    const phaseSlot = worker?.logisticsPhase === "pickup" ? 1 : worker?.logisticsPhase === "deliver" ? 2 : 0;
+    if (worker) {
+      const cached = this.workerStepCache.get(worker.id)?.get(worker.targetTowerId)?.[phaseSlot];
+      if (cached && this.isWorkerStepCacheValid(cached, worker, start, goal, goalOpen, ownerBans)) {
+        return cached.step ? { col: cached.step.col, row: cached.step.row } : undefined;
+      }
+    }
+    const size = cols * map.rows;
+    const scratch = this.getWorkerSearchScratch(size);
+    const seen = scratch.seen;
+    const stamp = scratch.stamp;
+    const firstStep = scratch.firstStep;
+    const queue = scratch.queue;
+    const banned = ownerBans && ownerBans.size > 0 ? this.fillWorkerBanGrid(scratch.banned, ownerBans, map) : undefined;
+    // Aramanin cevabina giren her yapi ve verdigi cevap (onbellegin dogrulamasi).
+    const consulted = scratch.consulted;
+    const consultedTowers = scratch.consultedTowers;
+    const consultedEdge = scratch.consultedEdge;
+    const consultedBlocked = scratch.consultedBlocked;
+    consulted.clear();
+    consultedTowers.length = 0;
+    consultedEdge.length = 0;
+    consultedBlocked.length = 0;
+    const consult = (tower: TowerModel, edge: boolean, blocked: boolean) => {
+      const bit = edge ? 2 : 1;
+      const mask = consulted.get(tower) ?? 0;
+      if ((mask & bit) !== 0) return;
+      consulted.set(tower, mask | bit);
+      consultedTowers.push(tower);
+      consultedEdge.push(edge);
+      consultedBlocked.push(blocked);
+    };
+    let tail = 0;
+    const startIndex = start.row * cols + start.col;
+    queue[tail++] = startIndex;
+    seen[startIndex] = stamp;
+    firstStep[startIndex] = 0;
+    // Hedef kosulu (`isWorkerDeliveryReach`) bu nesneyi yalnizca okuyor.
+    const cell = { col: start.col, row: start.row };
+    let cellTowers: Array<TowerModel | undefined> | undefined;
+    let edges: { stride: number; vertical: Array<TowerModel | undefined>; horizontal: Array<TowerModel | undefined> } | undefined;
+    let result: { col: number; row: number } | undefined;
+    search: for (let head = 0; head < tail; head += 1) {
+      const index = queue[head];
+      const col = index % cols;
+      const row = (index - col) / cols;
+      cell.col = col;
+      cell.row = row;
+      // `isWorkerDeliveryReach` adim adim: ayni mesafe, ayni kenar sorusu
+      // (`getEdgeStructure` -> `isWorkerEdgeOpen`), yalnizca kenar kaydediliyor.
+      let reached: boolean;
+      if (goalOpen) {
+        reached = col === goal.col && row === goal.row;
+      } else {
+        const distance = Math.abs(cell.col - goal.col) + Math.abs(cell.row - goal.row);
+        if (distance === 0) reached = true;
+        else if (distance !== 1) reached = false;
+        else {
+          const goalEdge = this.getEdgeStructure(cell, goal);
+          if (!goalEdge) reached = true;
+          else {
+            const blocked = !(goalEdge.hp <= 0) && goalEdge.gate !== true;
+            consult(goalEdge, true, blocked);
+            reached = !blocked;
+          }
+        }
+      }
+      if (reached) {
+        const step = firstStep[index];
+        result = step === 0 ? undefined : { col: (step - 1) % cols, row: Math.floor((step - 1) / cols) };
+        break search;
+      }
+      // `getGridNeighbors` sirasi: asagi, sol, sag, yukari.
+      for (let direction = 0; direction < 4; direction += 1) {
+        const neighborCol = col + WORKER_NEIGHBOR_COL_STEPS[direction];
+        const neighborRow = row + WORKER_NEIGHBOR_ROW_STEPS[direction];
+        if (!isInsideMap(map, neighborCol, neighborRow)) continue;
+        const neighborIndex = neighborRow * cols + neighborCol;
+        if (seen[neighborIndex] === stamp) continue;
+        // `canWorkerEnter`: once yasak kare...
+        if (banned !== undefined && banned[neighborIndex] === 1) continue;
+        // ...sonra `isWorkerCellOpen`: ayakta yapi yok ya da isciye acik...
+        cellTowers ??= this.getTowerCellGridCells();
+        const standing = cellTowers[neighborIndex];
+        if (standing) {
+          const blocked = !(standing.hp <= 0) && !this.canWorkerEnterStructure(worker, standing);
+          consult(standing, false, blocked);
+          if (blocked) continue;
+        }
+        // ...en son `isWorkerEdgeOpen` (`getEdgeStructure` ile ayni kenar:
+        // dikey gecis buyuk sutunda, yatay gecis buyuk satirda).
+        edges ??= this.getEdgeStructureGrid();
+        const edge = direction === 0 ? edges.horizontal[neighborRow * edges.stride + col]
+          : direction === 1 ? edges.vertical[row * edges.stride + col]
+          : direction === 2 ? edges.vertical[row * edges.stride + neighborCol]
+          : edges.horizontal[row * edges.stride + col];
+        if (edge) {
+          const blocked = !(edge.hp <= 0) && edge.gate !== true;
+          consult(edge, true, blocked);
+          if (blocked) continue;
+        }
+        seen[neighborIndex] = stamp;
+        firstStep[neighborIndex] = firstStep[index] !== 0 ? firstStep[index] : neighborIndex + 1;
+        queue[tail++] = neighborIndex;
+      }
+    }
+    // Iki indeks de temizse (arama ikisini de okudu ya da zaten kuruluydu)
+    // sonuc saklaniyor; kirli kalan indeksle saklamak, bir sonraki aramanin
+    // yapacagi yeniden kurulumu atlamak olurdu.
+    if (worker && !this.towerCellIndexDirty && !this.edgeStructureIndexDirty) {
+      let byTarget = this.workerStepCache.get(worker.id);
+      if (!byTarget) {
+        byTarget = new Map();
+        this.workerStepCache.set(worker.id, byTarget);
+      }
+      let slots = byTarget.get(worker.targetTowerId);
+      if (!slots) {
+        slots = [undefined, undefined, undefined];
+        byTarget.set(worker.targetTowerId, slots);
+      }
+      slots[phaseSlot] = {
+        ownerId: worker.ownerId,
+        targetTowerId: worker.targetTowerId,
+        logisticsPhase: worker.logisticsPhase,
+        mode: worker.mode,
+        startCol: start.col,
+        startRow: start.row,
+        goalCol: goal.col,
+        goalRow: goal.row,
+        goalOpen,
+        map,
+        cols,
+        rows: map.rows,
+        cellBuild: this.towerCellIndexBuild,
+        edgeBuild: this.edgeStructureIndexBuild,
+        bans: ownerBans,
+        banVersion: this.workerBanVersion,
+        banSize: ownerBans?.size ?? 0,
+        towers: consultedTowers.slice(),
+        edge: consultedEdge.slice(),
+        blocked: consultedBlocked.slice(),
+        step: result ? { col: result.col, row: result.row } : undefined
+      };
+    }
+    return result;
+  }
+
+  /**
+   * Isci aramasinin sonucu, isci + hedef kule + evre basina son arama.
+   *
+   * Teslimat adayi yoklamasi (`selectDeliveryTarget`) bekleyen ya da yuruyen
+   * her tasiyici icin her tick ayni hedefe ayni kareden ayni aramayi
+   * yapiyordu (kayitlarda aramalarin %96'si bir oncekinin aynisi). Sonuc
+   * yeniden kullaniliyor, ama yalnizca aramanin okudugu her sey ayniysa:
+   *
+   * - iscinin aramaya giren alanlari (sahip, hedef kule, evre, rol), baslangic,
+   *   hedef ve hedefin acik olup olmadigi;
+   * - harita (nesne ve olcu);
+   * - hucre ve kenar indeksi: ikisi de temiz ve o aramadan beri yeniden
+   *   kurulmamis (kurulum sayaci). Indeks yalnizca yeniden kurulurken
+   *   degisiyor, yani her hucrenin yapisi ve her kenarin yapisi ayni;
+   * - oyuncunun yasak kare kumesi: ayni nesne, ayni boy ve o aramadan beri
+   *   hicbir yasak degismemis (`workerBanVersion`, tek yazan
+   *   `toggleWorkerBannedCell`);
+   * - aramanin baktigi her yapinin cevabi: hucredeki yapi icin "can sifirin
+   *   ustunde ve isci giremez", kenardaki icin "can sifirin ustunde ve kapi
+   *   kapali" bugun yeniden hesaplanip o gunku cevapla karsilastiriliyor.
+   *   Can, kapi, sahip ve tanim boylece okuma aninda.
+   *
+   * Arama belirlenimli: her komsu karari yalnizca bunlara bagli (yapisiz kare
+   * ve yapisiz kenar ayni indekste yapisiz kaliyor, yasakli karede yapiya hic
+   * bakilmiyor). Hepsi ayniysa yeniden kosmak ayni karar dizisini, ayni
+   * sonucu verirdi. Tutmayan herhangi biri: arama yeniden kosuyor.
+   * Yerlesim degisince (`markNavigationDirty`) tablo bosaltiliyor; bu yalnizca
+   * bellek icin, sayac zaten tutmazdi.
+   */
+  private readonly workerStepCache = new Map<string, Map<string | undefined, Array<WorkerStepCacheEntry | undefined>>>();
+
+  private isWorkerStepCacheValid(
+    entry: WorkerStepCacheEntry,
+    worker: DroneModel,
+    start: { col: number; row: number },
+    goal: { col: number; row: number },
+    goalOpen: boolean,
+    ownerBans: Set<string> | undefined
+  ) {
+    const map = this.activeMap;
+    if (entry.ownerId !== worker.ownerId || entry.targetTowerId !== worker.targetTowerId
+      || entry.logisticsPhase !== worker.logisticsPhase || entry.mode !== worker.mode
+      || entry.startCol !== start.col || entry.startRow !== start.row
+      || entry.goalCol !== goal.col || entry.goalRow !== goal.row || entry.goalOpen !== goalOpen
+      || entry.map !== map || entry.cols !== map.cols || entry.rows !== map.rows
+      || this.towerCellIndexDirty || entry.cellBuild !== this.towerCellIndexBuild
+      || this.edgeStructureIndexDirty || entry.edgeBuild !== this.edgeStructureIndexBuild
+      || entry.bans !== ownerBans || entry.banVersion !== this.workerBanVersion || entry.banSize !== (ownerBans?.size ?? 0)) {
+      return false;
+    }
+    const towers = entry.towers;
+    for (let index = 0; index < towers.length; index += 1) {
+      const tower = towers[index];
+      const blocked = entry.edge[index]
+        ? !(tower.hp <= 0) && tower.gate !== true
+        : !(tower.hp <= 0) && !this.canWorkerEnterStructure(worker, tower);
+      if (blocked !== entry.blocked[index]) return false;
+    }
+    return true;
+  }
+
+  /** Isci aramasinin tamponlari; arama ic ice cagrilmadigi icin tek takim yetiyor. */
+  private workerSearchScratch?: {
+    size: number;
+    stamp: number;
+    seen: Uint32Array;
+    firstStep: Int32Array;
+    queue: Int32Array;
+    banned: Uint8Array;
+    /** Bakilan yapi -> bakilan turler (1 hucre, 2 kenar); ayni yapi bir kez kaydediliyor. */
+    consulted: Map<TowerModel, number>;
+    consultedTowers: TowerModel[];
+    consultedEdge: boolean[];
+    consultedBlocked: boolean[];
+  };
+
+  /**
+   * Arama basina yeni damga: `seen[i] === stamp` o aramada gorulmus demek,
+   * diziyi sifirlamak gerekmiyor. `firstStep` yalnizca gorulmus karelerde
+   * okunuyor ve gorulurken yaziliyor; `queue` da yalnizca yazilan kisimda.
+   */
+  private getWorkerSearchScratch(size: number) {
+    let scratch = this.workerSearchScratch;
+    if (!scratch || scratch.size !== size) {
+      scratch = {
+        size,
+        stamp: 0,
+        seen: new Uint32Array(size),
+        firstStep: new Int32Array(size),
+        queue: new Int32Array(size),
+        banned: new Uint8Array(size),
+        consulted: new Map(),
+        consultedTowers: [],
+        consultedEdge: [],
+        consultedBlocked: []
+      };
+      this.workerSearchScratch = scratch;
+    }
+    if (scratch.stamp >= 0xffffffff) {
+      scratch.seen.fill(0);
+      scratch.stamp = 0;
+    }
+    scratch.stamp += 1;
+    return scratch;
+  }
+
+  /**
+   * Oyuncunun yasak kare kumesi harita dizisinde (1 = yasak). Anahtar
+   * `isWorkerCellBanned`in sordugu `${col}:${row}` bicimine birebir geri
+   * donuyorsa isaretleniyor; donmeyen anahtar (harita disi, tamsayi olmayan,
+   * baska yazim) o soruda hicbir zaman eslesmezdi, burada da isaretlenmiyor.
+   */
+  private fillWorkerBanGrid(target: Uint8Array, banned: Set<string>, map: EditableMapData) {
+    target.fill(0);
+    for (const key of banned) {
+      const separator = key.indexOf(":");
+      if (separator < 0) continue;
+      const col = Number(key.slice(0, separator));
+      const row = Number(key.slice(separator + 1));
+      if (!Number.isInteger(col) || !Number.isInteger(row) || !isInsideMap(map, col, row) || `${col}:${row}` !== key) continue;
+      target[row * map.cols + col] = 1;
+    }
+    return target;
+  }
+
+  /** `towerCellGrid` hucreleri; kirliyse indeksle birlikte yeniden kuruluyor. */
+  private getTowerCellGridCells() {
+    this.getTowerCellIndex();
+    return this.towerCellGrid!.cells;
+  }
+
+  /** Dizi halleri haritaya uymadiginda: ayni arama, kurallar `canWorkerEnter`den. */
+  private searchWorkerStepByIndex(
+    worker: DroneModel,
+    start: { col: number; row: number },
+    goal: { col: number; row: number },
+    goalOpen: boolean
+  ) {
+    const map = this.activeMap;
     // Ayni genislik oncelikli arama, ayni komsu sirasi ve ayni giris kurali;
     // yalnizca hucreler metin anahtar yerine dizi indeksinde tutuluyor. Gec
     // oyunda isciler ve kule ozetleri (teslimat yolu acik mi) bunu tick basina
@@ -12220,7 +12690,7 @@ export class MatchRoom extends Room<MatchState> {
         if (delivered > 0) this.applyEnergyWorkerArrival(worker, target);
         if (delivered > 0) this.awardDeliveryGold(target, delivered, "energy");
         worker.logisticsPhase = (worker.cargo ?? 0) > 0 ? "deliver" : "pickup";
-        this.deliveryWaitingSince.delete(`energy:${target.id}`);
+        this.deliveryWaitingSince.energy.delete(target.id);
         worker.targetTowerId = "";
       }
       return;
@@ -12262,7 +12732,7 @@ export class MatchRoom extends Room<MatchState> {
       if (delivered > 0) this.applyAmmoTransportArrival(worker, target, hadNoAmmo);
       if (delivered > 0) this.awardDeliveryGold(target, delivered, "ammo");
       worker.logisticsPhase = (worker.cargo ?? 0) > 0 ? "deliver" : "pickup";
-      this.deliveryWaitingSince.delete(`ammo:${target.id}`);
+      this.deliveryWaitingSince.ammo.delete(target.id);
       worker.targetTowerId = "";
     }
   }
@@ -13756,24 +14226,32 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private selectDeliveryTarget(worker: DroneModel, resource: "ammo" | "energy") {
-    for (const key of this.deliveryWaitingSince.keys()) {
-      if (!key.startsWith(`${resource}:`)) continue;
-      const tower = this.towers.get(key.slice(resource.length + 1));
-      if (!tower || tower[resource] >= (resource === "ammo" ? tower.maxAmmo : tower.maxEnergy)) this.deliveryWaitingSince.delete(key);
+    const waiting = this.deliveryWaitingSince[resource];
+    for (const towerId of waiting.keys()) {
+      const tower = this.towers.get(towerId);
+      if (!tower || tower[resource] >= (resource === "ammo" ? tower.maxAmmo : tower.maxEnergy)) waiting.delete(towerId);
     }
-    const candidates = [...this.towers.values()].filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0
-      && (resource === "energy" ? tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy
-        : this.acceptsTowerOperation(tower) && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo
-          && (!worker.assignment?.product || worker.assignment.product === tower.ammoType)
-          && (!(worker.cargo ?? 0) || !worker.cargoAmmoType || worker.cargoAmmoType === tower.ammoType)));
+    // Ayni suzgec, ayni sira; ara dizi kurulmadan.
+    const candidates: TowerModel[] = [];
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId === worker.ownerId && tower.hp > 0
+        && (resource === "energy" ? tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy
+          : this.acceptsTowerOperation(tower) && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo
+            && (!worker.assignment?.product || worker.assignment.product === tower.ammoType)
+            && (!(worker.cargo ?? 0) || !worker.cargoAmmoType || worker.cargoAmmoType === tower.ammoType))) candidates.push(tower);
+    }
+    // Yoldaki yuk aday basina `getReservedCargo` ile butun iscileri tariyordu;
+    // burada tek gecis, ayni suzgec ve kule basina ayni toplama sirasi (0'dan
+    // baslayip isci sirasiyla), yani ayni sayi. Adaylarin siralanmasi iscileri
+    // degistirmiyor.
+    const reservedByTower = candidates.length > 0 ? this.collectReservedCargo(worker) : undefined;
     const ranked = candidates.map((tower) => {
       const max = resource === "ammo" ? tower.maxAmmo : tower.maxEnergy;
       const current = tower[resource];
-      const reserved = this.getReservedCargo(worker, tower);
-      const key = `${resource}:${tower.id}`;
-      if (!this.deliveryWaitingSince.has(key)) this.deliveryWaitingSince.set(key, this.logisticsClock);
+      const reserved = reservedByTower!.get(tower.id) ?? 0;
+      if (!waiting.has(tower.id)) waiting.set(tower.id, this.logisticsClock);
       return { tower, remaining: max - current - reserved, score: deliveryScore(tower.logisticsPriority ?? "normal",
-        (current + reserved) / Math.max(1, max), this.logisticsClock - this.deliveryWaitingSince.get(key)!,
+        (current + reserved) / Math.max(1, max), this.logisticsClock - waiting.get(tower.id)!,
         Math.hypot(worker.x - tower.x, worker.y - tower.y)) };
     }).filter((entry) => entry.remaining > 0.01).sort((a, b) => b.score - a.score || a.tower.id.localeCompare(b.tower.id));
     for (const { tower } of ranked) {
@@ -13788,6 +14266,24 @@ export class MatchRoom extends Room<MatchState> {
       && other.mode === worker.mode && other.assignment?.product === worker.assignment?.product
       && other.logisticsPhase === "deliver" && other.targetTowerId === tower.id)
       .reduce((sum, other) => sum + (other.cargo ?? 0), 0);
+  }
+
+  /**
+   * `getReservedCargo`in butun kuleler icin tek gecislik hali: hedef kule
+   * kimligi -> yoldaki yuk. Suzgec ayni; her kulenin toplami isci sirasiyla
+   * 0'dan basliyor, yani `getReservedCargo(worker, tower)` ile bit bit ayni
+   * (kaydi olmayan kule 0).
+   */
+  private collectReservedCargo(worker: DroneModel) {
+    const totals = new Map<string | undefined, number>();
+    for (const other of this.drones.values()) {
+      if (other.id !== worker.id && other.ownerId === worker.ownerId
+        && other.mode === worker.mode && other.assignment?.product === worker.assignment?.product
+        && other.logisticsPhase === "deliver") {
+        totals.set(other.targetTowerId, (totals.get(other.targetTowerId) ?? 0) + (other.cargo ?? 0));
+      }
+    }
+    return totals;
   }
 
   private sendTowerPreview(client: Client, message: { requestId?: string; towerId?: string; cardId?: string; itemId?: string } | undefined) {
@@ -14242,6 +14738,7 @@ export class MatchRoom extends Room<MatchState> {
     if (banned.has(key)) banned.delete(key);
     else banned.add(key);
     this.workerBannedCells.set(client.sessionId, banned);
+    this.workerBanVersion += 1;
     // Saklanan adim bu karari bilmiyor: bir sonraki tick yeniden aransin.
     for (const drone of this.drones.values()) {
       if (drone.ownerId === client.sessionId) drone.routeStep = undefined;
@@ -14250,7 +14747,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private isWorkerCellBanned(worker: DroneModel | undefined, col: number, row: number) {
     if (!worker?.ownerId) return false;
-    return this.workerBannedCells.get(worker.ownerId)?.has(`${col}:${row}`) === true;
+    // Yasagi olmayan oyuncuda (neredeyse her mac) anahtar dizgisi kurulmuyor.
+    const banned = this.workerBannedCells.get(worker.ownerId);
+    if (banned === undefined || banned.size === 0) return false;
+    return banned.has(`${col}:${row}`);
   }
 
   private toggleWallGate(client: Client, message: ToggleWallGateMessage) {
