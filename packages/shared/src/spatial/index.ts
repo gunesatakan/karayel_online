@@ -18,6 +18,9 @@ export class SpatialGrid<T extends SpatialPoint> {
   }
 
   queryCircle(x: number, y: number, radius: number): T[] {
+    // Bos izgara (sahada dusman yok, hazirlik fazi): hucre taramasi hicbir
+    // sey bulamaz; her hucre icin anahtar kurmaya gerek yok.
+    if (this.cells.size === 0) return [];
     const safeRadius = Math.max(0, radius);
     const minCol = Math.floor((x - safeRadius) / this.cellSize);
     const maxCol = Math.floor((x + safeRadius) / this.cellSize);

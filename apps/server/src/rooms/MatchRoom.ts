@@ -862,6 +862,10 @@ function getResourceNodeGroups(mapScale: number): ResourceNodeGroups {
 type FrozenRunModifiers = readonly Modifier[];
 /** Sahipsiz kulenin oyuncu modifierlari: her cagrida yeni bos dizi kurulmasin. */
 const EMPTY_RUN_MODIFIERS: FrozenRunModifiers = Object.freeze([]);
+/** Arsivsiz sahada kulenin arsiv etkileri (`getZeynepPalaceEffectsFor`): hepsi sifir, tek paylasilan nesne. */
+const NO_ZEYNEP_PALACE_EFFECTS: Readonly<ReturnType<typeof getZeynepPalaceEffects>> = Object.freeze(getZeynepPalaceEffects(0));
+/** Kulelere isleyen aurasi olmayan sahada kulenin aura carpanlari (`getTowerAuraModifiers`): bos. */
+const NO_TOWER_AURA_MODIFIERS: Readonly<ReturnType<typeof evaluateTowerAuras>> = Object.freeze({});
 
 /** Iki modifier listesi ayni nesneleri ayni sirada mi tutuyor (kopyasiz, tahsissiz). */
 function sameModifierElements(cached: readonly Modifier[], current: readonly Modifier[]) {
@@ -871,6 +875,46 @@ function sameModifierElements(cached: readonly Modifier[], current: readonly Mod
   }
   return true;
 }
+
+/** `isTowerCoolingNoop`in pay siniri: bunun altindaki sonlu paylarin toplami ve carpimi tasamaz. */
+const MODIFIER_ADD_BOUND = 1e9;
+
+/** Listedeki her pay sonlu ve `MODIFIER_ADD_BOUND` icinde mi (katalog paylari hep oyle). */
+function areModifierAddsBounded(modifiers: readonly Modifier[]) {
+  for (let index = 0; index < modifiers.length; index += 1) {
+    const modifier = modifiers[index];
+    if (!modifier || !(Math.abs(modifier.add) <= MODIFIER_ADD_BOUND)) return false;
+  }
+  return true;
+}
+
+/**
+ * Yerlesim imzasi ve ondan turetilen sonuclar (`MatchRoom.layoutMemo`).
+ *
+ * Imza, uc sorgunun (`isStructureIsolated`, `collectZeynepSynthesisGroup`,
+ * `resolveZeynepFormations` ve dizilim metni) okudugu her seyin kopyasi:
+ * kulelerin `this.towers` giris sirasiyla kendileri, id, x, y, tanim (nesne
+ * kimligi; tanimlar katalog nesneleri, hicbir yer yazmiyor), karakter,
+ * seviye ve haritanin `worldToGrid`/`getMapGridSize`in okudugu olcusu
+ * (scale, cols, rows). Imza tutuyorsa her sorgu ayni girdiyle calisir, yani
+ * hafizadaki sonuc bastan hesaplanacak olanla birebir ayni (sira dahil).
+ */
+type LayoutMemo = {
+  towers: TowerModel[];
+  ids: string[];
+  xs: number[];
+  ys: number[];
+  definitions: TowerDefinition[];
+  characterIds: string[];
+  levels: number[];
+  mapScale: unknown;
+  mapCols: number;
+  mapRows: number;
+  isolated: Map<TowerModel, boolean>;
+  synthesisGroups: Map<TowerModel, TowerModel[]>;
+  /** `refreshZeynepFormations`in yazdiklari; grup sirasi ve uye sirasi korunuyor. */
+  formations?: Array<{ members: TowerModel[]; size: number; level: number; reason: string }>;
+};
 
 /**
  * Tel deltasinin alan karsilastirmasi: `JSON.stringify(a) === JSON.stringify(b)`
@@ -2952,7 +2996,23 @@ export class MatchRoom extends Room<MatchState> {
     auraModifiers?: Map<TowerModel, ReturnType<typeof evaluateTowerAuras>>;
     /** Kapsayan Saray Arsivi'nin etkileri (`getZeynepPalaceEffectsFor`). */
     palaceEffects?: Map<TowerModel, ReturnType<typeof getZeynepPalaceEffects>>;
+    /** Bu onbellek icin ilk soruda dogrulanmis yerlesim hafizasi (`getTickLayoutMemo`). */
+    layoutMemo?: LayoutMemo;
+    /** Kulenin cevrimsiz modifier listesi (`getTowerStaticRunModifiers`). */
+    staticModifiers?: Map<TowerModel, FrozenRunModifiers>;
   };
+  /**
+   * Yerlesimden turetilen sorgularin tikler arasi hafizasi: yalnizlik, sentez
+   * grubu ve dizilim gruplari. Tik ici onbellek bunlari her tik bastan
+   * kuruyordu; yerlesim ise yalnizca kur/sat/yikil ile, yani nadiren
+   * degisiyor. Hafiza bir imzayla (`LayoutMemo`) korunuyor: imza sorgularin
+   * okudugu her seyin kopyasi ve birebir karsilastiriliyor (dizilim her
+   * cagrida, tik ici sorgular tik ici onbellek basina bir kez), yani
+   * hafizadan donen sonuc bastan hesaplanacak olanla ayni. Tikler arasinda
+   * `markNavigationDirty`e guvenmiyor; testlerin elle kurdugu yerlesim de
+   * imzadan geciyor.
+   */
+  private layoutMemo?: LayoutMemo;
   /**
    * Suren Debug Lazer supurmeleri: kule -> sahibi ve supurmenin oldurdugu
    * dusman. Supurme bitince "Tarama: N öldü" damgasi buradan; kayit yalnizca
@@ -6902,10 +6962,43 @@ export class MatchRoom extends Room<MatchState> {
     return this.getServerSharedStat(tower, this.getTowerOwnCoolingPerSecond(tower, options), "cooling", options.sustained);
   }
 
+  /**
+   * Tik basi soguma (`updateTowers`) kulenin sicakligini degistirmeyecek mi.
+   *
+   * Sicaklik +0 iken `max(0, 0 - soguma * dt)`, soguma sonlu ve negatif
+   * degilse her zaman +0. Soguma (`getTowerOwnCoolingPerSecond`) bir carpim:
+   * taban x `max(0, 1 + cooling)` x `1 + isci etkisi` x sabit ya da yalnizca
+   * `> 0` ise giren `1 + pay` carpanlari, arti `max(0, coolingFlat)`. Sabitlerin
+   * hepsi pozitif. Yani sonuc ancak bir modifier payi ya da isci etkisi sonlu
+   * degilse NaN ya da negatif olabilir; ikisi burada dogrulaniyor (paylar
+   * 1e9 ile sinirli, toplam tasamaz; isci etkisi 0..1e9).
+   *
+   * Hesabin baska izi yok, yalnizca doldurdugu tik ici onbellekler. Arsiv
+   * etkisi ilk okundugu anin halini tasiyor: burada, eskiden okundugu anda
+   * okunuyor. Kart ve esya cozumu ile modifier listesi zamandan bagimsiz.
+   * Sogutucu Menfez (menzil sorgusu), Sunucu ortagi, Rezonans kaynagi ve
+   * cevrim baska okumalari (aura kaynaklari, ortagin onbellekleri, kosullu
+   * paylar) tetikliyor: onlar varken hesap eskisi gibi yapiliyor.
+   */
+  private isTowerCoolingNoop(tower: TowerModel, deltaTime: number) {
+    if (!Object.is(tower.temperature, 0) || !(deltaTime >= 0) || !Number.isFinite(deltaTime)) return false;
+    if (this.neighborCoolingSources.length > 0 || this.serverLinkIndex.has(tower.id)) return false;
+    if (this.getTowerGrantState(tower).conversions.length > 0 || this.towerHasUnlock(tower, "heat:chillVent")) return false;
+    if (!areModifierAddsBounded(this.getTowerStaticRunModifiers(tower))) return false;
+    const boost = this.getWorkerBoost(tower, "cooling")?.value ?? 0;
+    if (!(boost >= 0 && boost <= MODIFIER_ADD_BOUND)) return false;
+    this.getZeynepPalaceEffectsFor(tower);
+    return true;
+  }
+
   /** Kulenin kendi sogumasi; Sunucu paylasimi `getTowerCoolingPerSecond`da. */
   private getTowerOwnCoolingPerSecond(tower: TowerModel, options: { temperature?: number; sustained?: boolean } = {}) {
     const temperature = options.temperature ?? tower.temperature;
-    let cooling = TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling")
+    // Liste bir kez okunuyor: asagidaki ikinci tur ayni listeyi yeniden
+    // okuyordu ve aradaki adimlar yalnizca okuma (kulenin durumunu yazan yok),
+    // yani iki okuma ayni listeyi veriyordu.
+    const modifiers = this.getTowerRunModifiers(tower);
+    let cooling = TOWER_COOLING_PER_SECOND * getModifierMultiplier(modifiers, "cooling")
       * (1 + (this.getWorkerBoost(tower, "cooling")?.value ?? 0));
 
     if (this.isTowerUnderRepair(tower) && this.towerHasUnlock(tower, "repair:coolingBoost")) {
@@ -6944,7 +7037,6 @@ export class MatchRoom extends Room<MatchState> {
     // orada kosulsuz. Kriyo Sok Kartusu olaya bagli, surekli hiza girmiyor.
     // Rezonans Odasi bitisikteki yapidan geliyor. Peltier Plakasi en sonda,
     // carpanlarin disinda: duz derece.
-    const modifiers = this.getTowerRunModifiers(tower);
     const brakeCooling = getModifierAdd(modifiers, "brakeCooling");
     if (brakeCooling > 0 && (options.sustained || temperature > TOWER_HEAT_BRAKE_TEMPERATURE)) cooling *= 1 + brakeCooling;
     const killCooling = getModifierAdd(modifiers, "killCooling");
@@ -7236,7 +7328,11 @@ export class MatchRoom extends Room<MatchState> {
     this.collectNeighborRangeSources();
     for (const tower of this.towers.values()) {
       if (!tower.definition.resourceProvider) {
-        tower.temperature = Math.max(0, tower.temperature - this.getTowerCoolingPerSecond(tower) * (deltaTime / 1000));
+        // Soguk kule (0 derece; kulelerin cogu, duvarlarin hepsi) sogumayla
+        // yine 0'da kaliyor: hesap yalnizca sonuc 0 olamayacaksa yapiliyor.
+        if (!this.isTowerCoolingNoop(tower, deltaTime)) {
+          tower.temperature = Math.max(0, tower.temperature - this.getTowerCoolingPerSecond(tower) * (deltaTime / 1000));
+        }
         this.updateTowerHeatItems(tower, now);
         if (tower.luckyWindowUntil > 0 && tower.luckyWindowUntil <= now) {
           tower.luckyWindowUntil = 0;
@@ -8038,8 +8134,14 @@ export class MatchRoom extends Room<MatchState> {
     const cache = this.tickLayoutCache?.synthesisGroups;
     const cached = cache?.get(tower);
     if (cached) return cached;
-    // Kural paylasilan pakette: istemci onizlemesi ayni zinciri kuruyor.
-    const group = collectZeynepSynthesisGroup(tower, this.towers.values(), getMapGridSize(this.activeMap));
+    // Tikler arasi yerlesim hafizasi: imza tutuyorsa grup ayni (sira dahil).
+    const memo = this.getTickLayoutMemo(tower);
+    let group = memo?.synthesisGroups.get(tower);
+    if (!group) {
+      // Kural paylasilan pakette: istemci onizlemesi ayni zinciri kuruyor.
+      group = collectZeynepSynthesisGroup(tower, this.towers.values(), getMapGridSize(this.activeMap));
+      memo?.synthesisGroups.set(tower, group);
+    }
     cache?.set(tower, group);
     return group;
   }
@@ -9145,10 +9247,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /** Kapsayan arsivin etkileri (`getZeynepPalaceEffects`); kapsama yoksa hepsi sifir. */
-  private getZeynepPalaceEffectsFor(tower: TowerModel) {
+  private getZeynepPalaceEffectsFor(tower: TowerModel): Readonly<ReturnType<typeof getZeynepPalaceEffects>> {
     const cache = this.tickLayoutCache;
     const cached = cache?.palaceEffects?.get(tower);
     if (cached) return cached;
+    // Sahada arsiv yoksa kapsama hep 0: sonuc okuma anindan bagimsiz, kule
+    // basina tik basina nesne kurup onbellege yazmaya gerek yok (maclarin
+    // cogu). Arsiv varken sonuc eskisi gibi ilk okumada sabitleniyor: arsivin
+    // devre hali tik icinde degisebiliyor. Okuyanlar yalnizca alan okuyor.
+    if (this.getZeynepPalaces().length === 0) return NO_ZEYNEP_PALACE_EFFECTS;
     const effects = getZeynepPalaceEffects(this.getZeynepPalaceCoverLevel(tower));
     if (cache) (cache.palaceEffects ??= new Map()).set(tower, effects);
     return effects;
@@ -17423,16 +17530,99 @@ export class MatchRoom extends Room<MatchState> {
    * zeynep-7 orada eleniyor, burada ayrica ad yazmaya gerek yok.
    */
   private refreshZeynepFormations() {
-    const groups = resolveZeynepFormations(this.towers.values(), getMapGridSize(this.activeMap));
-    for (const group of groups) {
+    // Gruplar ve metinleri yerlesim hafizasindan: imza her cagrida birebir
+    // karsilastiriliyor (tik basina iki cagri), seviye ve tanim da imzada.
+    // Metin grubun kendisine bagli, uyeye degil; grup basina bir kez. Yazma
+    // her cagrida eskisi gibi, ayni sirayla.
+    const memo = this.getLayoutMemo();
+    const tickCache = this.tickLayoutCache;
+    if (tickCache) tickCache.layoutMemo ??= memo;
+    const formations = memo.formations ??= resolveZeynepFormations(this.towers.values(), getMapGridSize(this.activeMap)).map((group) => ({
+      members: group.members,
+      size: group.size,
+      level: group.level,
+      reason: group.valid
+        ? `Dizilim ${group.size}: en düşük seviye ${group.level} (${group.members.filter((entry) => entry.level === group.level).map((entry) => entry.definition.name).join(", ")})`
+        : `Dizilim yok: ${group.members.length} bağlı kule; geçerli ikili veya üçlü yerleşim gerekiyor`
+    }));
+    for (const group of formations) {
       for (const member of group.members) {
         member.zeynepFormationSize = group.size;
         member.zeynepFormationLevel = group.level;
-        member.formationReason = group.valid
-          ? `Dizilim ${group.size}: en düşük seviye ${group.level} (${group.members.filter((entry) => entry.level === group.level).map((entry) => entry.definition.name).join(", ")})`
-          : `Dizilim yok: ${group.members.length} bağlı kule; geçerli ikili veya üçlü yerleşim gerekiyor`;
+        member.formationReason = group.reason;
       }
     }
+  }
+
+  /**
+   * Gecerli yerlesim hafizasi: imza tutmuyorsa yenisi kuruluyor (sonuclar
+   * bos). Her cagri imzayi bastan karsilastiriyor.
+   */
+  private getLayoutMemo(): LayoutMemo {
+    const memo = this.layoutMemo;
+    if (memo && this.layoutMemoMatches(memo)) return memo;
+    const map = this.activeMap;
+    const fresh: LayoutMemo = {
+      towers: [],
+      ids: [],
+      xs: [],
+      ys: [],
+      definitions: [],
+      characterIds: [],
+      levels: [],
+      mapScale: map.scale,
+      mapCols: map.cols,
+      mapRows: map.rows,
+      isolated: new Map(),
+      synthesisGroups: new Map()
+    };
+    for (const tower of this.towers.values()) {
+      fresh.towers.push(tower);
+      fresh.ids.push(tower.id);
+      fresh.xs.push(tower.x);
+      fresh.ys.push(tower.y);
+      fresh.definitions.push(tower.definition);
+      fresh.characterIds.push(tower.characterId);
+      fresh.levels.push(tower.level);
+    }
+    this.layoutMemo = fresh;
+    return fresh;
+  }
+
+  private layoutMemoMatches(memo: LayoutMemo) {
+    const map = this.activeMap;
+    if (memo.mapScale !== map.scale || memo.mapCols !== map.cols || memo.mapRows !== map.rows) return false;
+    if (memo.towers.length !== this.towers.size) return false;
+    let index = 0;
+    for (const tower of this.towers.values()) {
+      if (memo.towers[index] !== tower
+        || memo.ids[index] !== tower.id
+        || memo.xs[index] !== tower.x
+        || memo.ys[index] !== tower.y
+        || memo.definitions[index] !== tower.definition
+        || memo.characterIds[index] !== tower.characterId
+        || memo.levels[index] !== tower.level) {
+        return false;
+      }
+      index += 1;
+    }
+    return true;
+  }
+
+  /**
+   * Tik ici onbellegin kacirdigi soru icin hafiza. Imza bu onbellek icin bir
+   * kez, ilk soruda karsilastiriliyor: tik ici onbellek zaten yerlesimin
+   * kendi omru boyunca (tik basindan ya da `markNavigationDirty`den bir
+   * sonrakine) degismedigine dayaniyor; kule yalnizca `markNavigationDirty`
+   * ile eklenip kaldiriliyor, konum, kimlik, tanim ve karakter hic
+   * yazilmiyor, seviye yalnizca mesajla (tik disinda) degisiyor. Tik disinda
+   * ve sahada olmayan kule modelinde (onizleme kopyasi) hafiza yok, eskisi
+   * gibi hesaplaniyor: o modelin kendi konumu imzada degil.
+   */
+  private getTickLayoutMemo(tower: TowerModel) {
+    const cache = this.tickLayoutCache;
+    if (!cache || this.towers.get(tower.id) !== tower) return undefined;
+    return cache.layoutMemo ??= this.getLayoutMemo();
   }
 
   private canPlaceTower(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal", ignoreTowerId = "") {
@@ -17674,11 +17864,20 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    const range = isGuidedHit ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
+    // Sahada dusman yokken menzil hicbir yere varmiyor: aday listesi bos
+    // (sorgu `this.enemies`e bakiyor) ve secim menzili yalnizca aday basina
+    // okuyor. Menzil hesabi yalnizca okuyor ve tik ici onbellek dolduruyor;
+    // atlandiginda o onbelleklerin hepsi ya zaten dolu ya da zamana bagli
+    // degil (`canSkipIdleTowerRange`). Uzun hazirlik fazlarinda kule basina
+    // tikte bir menzil hesabi demekti.
+    const idleBoard = !isGuidedHit && this.enemies.size === 0 && this.canSkipIdleTowerRange(tower);
+    const range = isGuidedHit ? Number.POSITIVE_INFINITY : idleBoard ? 0 : this.getTowerRange(tower);
     this.perfCounters.targetSearches += 1;
-    const candidates = Number.isFinite(range)
-      ? this.getEnemiesNear(tower.x, tower.y, range)
-      : Array.from(this.enemies.values());
+    const candidates = idleBoard
+      ? []
+      : Number.isFinite(range)
+        ? this.getEnemiesNear(tower.x, tower.y, range)
+        : Array.from(this.enemies.values());
     this.perfCounters.targetChecks += candidates.length;
     const preferredTargetIds = tower.definition.id === "archer-1" && tower.melisEvolutionLevel >= 1
       ? this.getMelisUnderworldLinkedEnemyIds(tower.ownerId)
@@ -17702,6 +17901,41 @@ export class MatchRoom extends Room<MatchState> {
       tower.aimTargetHasFired = false;
     }
     return selected;
+  }
+
+  /**
+   * Bos sahada `findTowerTarget` menzili atlayabilir mi.
+   *
+   * Menzil hesabi (`getTowerRange`) kuleyi yazmiyor ve zar cekmiyor; tek izi
+   * doldurdugu tik ici onbellekler. Bunlarin bir kismi ilk okundugu anin
+   * durumunu tasiyor ve tikin geri kalaninda (anlik goruntu dahil) o hal
+   * okunuyor; hesabi atlamak ilk okumayi sonraya kaydirip baska bir hal
+   * yazdirabilirdi. Atlama yalnizca boyle bir ilk okumanin olmayacagi
+   * durumda:
+   *
+   * - aura kaynaklari (enerji, tazeleme, devre hali) bu tik zaten okundu;
+   *   kulenin aura carpani o kaynaklardan hesaplaniyor, ne zaman okunsa ayni;
+   * - arsiv etkisi bu kule icin zaten okundu (soguma adimi her kulede okur)
+   *   ya da sahada arsiv yok (etki o zaman zamandan bagimsiz);
+   * - Siper Gozcusu'nun duvar sayimi (duvarlarin cani) ya hic okunmayacak ya
+   *   da bu tik zaten okundu;
+   * - Sunucu bagi yok (ortagin menzili de hesaplanirdi) ve cevrim yok
+   *   (cevrimli liste kosullu paylari kendisi okuyor).
+   *
+   * Geri kalan girdiler (yalnizlik, sentez grubu, kart ve esya cozumu,
+   * modifier listesi) yerlesime ya da sahiplige bagli, tik icinde
+   * okunma anindan bagimsiz. Saray Arsivi'nin menzili hic onbellege dokunmuyor.
+   */
+  private canSkipIdleTowerRange(tower: TowerModel) {
+    const cache = this.tickLayoutCache;
+    if (!cache?.auraSources) return false;
+    // Arsiv yoksa etkisi zamandan bagimsiz (`getZeynepPalaceEffectsFor`).
+    if (!cache.palaceEffects?.has(tower) && this.getZeynepPalaces().length > 0) return false;
+    if (this.serverLinkIndex.has(tower.id)) return false;
+    if (this.getTowerGrantState(tower).conversions.length > 0) return false;
+    // Cevrim yokken menzilin okudugu liste bu; duvar payi orada `> 0` ise sayiliyor.
+    if (getModifierAdd(this.getTowerStaticRunModifiers(tower), "wallRange") > 0 && !cache.walls?.has(tower)) return false;
+    return true;
   }
 
   private selectEnemyTarget(
@@ -20217,7 +20451,12 @@ export class MatchRoom extends Room<MatchState> {
     const cache = this.tickLayoutCache;
     const cached = cache?.auraModifiers?.get(target);
     if (cached) return cached;
-    const result = evaluateTowerAuras(this.getTowerAuraSources(), { x: target.x, y: target.y, kind: "tower", ownerId: target.ownerId });
+    const sources = this.getTowerAuraSources();
+    // Kulelere isleyen aura yoksa (maclarin cogu) her kulenin sonucu bos:
+    // kaynak listesi bu tik icin sabitlendi, kule basina nesne kurup yazmaya
+    // gerek yok. Okuyanlar yalnizca `applyTowerAuraModifier`le okuyor.
+    if (sources.length === 0) return NO_TOWER_AURA_MODIFIERS;
+    const result = evaluateTowerAuras(sources, { x: target.x, y: target.y, kind: "tower", ownerId: target.ownerId });
     if (cache) (cache.auraModifiers ??= new Map()).set(target, result);
     return result;
   }
@@ -20820,6 +21059,20 @@ export class MatchRoom extends Room<MatchState> {
    * geldigi icin orada tam listeyi okumak kendi kendini cagirmak olurdu.
    */
   private getTowerStaticRunModifiers(tower: TowerModel): FrozenRunModifiers {
+    // Tik icinde girdilerin hicbiri degismiyor: listeleri yalnizca kart secimi,
+    // esya alimi/takilmasi ve yaratici kip yaziyor, sahipligi ve oyuncu
+    // listesini katilma/ayrilma -- hepsi mesajla, tik disinda; tanim hic
+    // yazilmiyor. Ilk dogrulamadan sonra tik boyunca ayni liste (dogrulama da
+    // ayni nesneyi dondururdu). Kule basina tikte onlarca cagri.
+    const tickCache = this.tickLayoutCache;
+    const memo = tickCache?.staticModifiers?.get(tower);
+    if (memo) return memo;
+    const resolved = this.resolveTowerStaticRunModifiers(tower);
+    if (tickCache) (tickCache.staticModifiers ??= new Map()).set(tower, resolved);
+    return resolved;
+  }
+
+  private resolveTowerStaticRunModifiers(tower: TowerModel): FrozenRunModifiers {
     const playerModifiers = this.state.players.get(tower.ownerId)?.runModifiers ?? EMPTY_RUN_MODIFIERS;
     // Gec oyunda en sicak nokta buydu: kule basina tick'te onlarca cagri, her
     // biri liste kurup her modifier icin katalogda dogrusal arama yapiyordu.
@@ -21532,8 +21785,14 @@ export class MatchRoom extends Room<MatchState> {
     const cache = this.tickLayoutCache?.isolated;
     const cached = cache?.get(tower);
     if (cached !== undefined) return cached;
-    // Kural paylasilan pakette: istemci yerlestirme onizlemesi ayni soruyu soruyor.
-    const isolated = isStructureIsolated(tower, this.towers.values(), this.activeMap);
+    // Tikler arasi yerlesim hafizasi: imza tutuyorsa cevap ayni.
+    const memo = this.getTickLayoutMemo(tower);
+    let isolated = memo?.isolated.get(tower);
+    if (isolated === undefined) {
+      // Kural paylasilan pakette: istemci yerlestirme onizlemesi ayni soruyu soruyor.
+      isolated = isStructureIsolated(tower, this.towers.values(), this.activeMap);
+      memo?.isolated.set(tower, isolated);
+    }
     cache?.set(tower, isolated);
     return isolated;
   }

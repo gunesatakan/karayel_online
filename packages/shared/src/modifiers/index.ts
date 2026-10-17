@@ -345,8 +345,56 @@ export type ModifierBreakdown = { base: number; mods: Modifier[] };
 export const MAX_TARGETED_CARDS_PER_TOWER = 3;
 export const DEFAULT_MODIFIER_CAPS: ModifierCaps = { markAmplification: 1 };
 
+/**
+ * Dondurulmus modifier dizisinin stat toplamlari, dizi basina bir kez.
+ *
+ * Sunucu kulenin listesini dondurup onbellekte tutuyor
+ * (`getTowerStaticRunModifiers`) ve ayni diziyi tik basina kule basina
+ * onlarca kez okuyor; her okuma butun diziyi tariyordu. Dondurulmus dizinin
+ * elemanlari yerinde degismiyor (hicbir yer `add`/`stat` yazmiyor; yeni
+ * modifier hep yeni nesne), yani toplam dizinin omru boyunca ayni.
+ * Toplama sirasi taramayla ayni (dizi sirasi, 0'dan): sonuc bit bit ayni.
+ * Kisa dizide tarama zaten ucuz; esik yalnizca hiz icin.
+ */
+const FROZEN_MODIFIER_SUM_MIN_LENGTH = 6;
+const frozenModifierSums = new WeakMap<readonly Modifier[], Map<ModifierStat, number>>();
+let lastFrozenModifiers: readonly Modifier[] | undefined;
+let lastFrozenModifierSums: Map<ModifierStat, number> | undefined;
+
+function getFrozenModifierSums(modifiers: readonly Modifier[]) {
+  if (modifiers === lastFrozenModifiers) return lastFrozenModifierSums!;
+  let sums = frozenModifierSums.get(modifiers);
+  if (sums === undefined) {
+    const built = new Map<ModifierStat, number>();
+    // `forEach` bosluklari `reduce` gibi atliyor.
+    modifiers.forEach((modifier) => {
+      const previous = built.get(modifier.stat);
+      built.set(modifier.stat, (previous === undefined ? 0 : previous) + modifier.add);
+    });
+    frozenModifierSums.set(modifiers, built);
+    sums = built;
+  }
+  lastFrozenModifiers = modifiers;
+  lastFrozenModifierSums = sums;
+  return sums;
+}
+
 export function getModifierAdd(modifiers: readonly Modifier[], stat: ModifierStat, caps: ModifierCaps = DEFAULT_MODIFIER_CAPS) {
-  const total = modifiers.reduce((sum, modifier) => modifier.stat === stat ? sum + modifier.add : sum, 0);
+  let total: number;
+  if (modifiers.length >= FROZEN_MODIFIER_SUM_MIN_LENGTH && Object.isFrozen(modifiers)) {
+    const sum = getFrozenModifierSums(modifiers).get(stat);
+    total = sum === undefined ? 0 : sum;
+  } else {
+    // Eskiden `reduce`; ayni tarama, her cagrida kapanis kurmadan. Bosluk
+    // (olmayan indeks) `reduce` gibi atlaniyor, `undefined` eleman ise
+    // `reduce`daki gibi hata veriyor.
+    total = 0;
+    for (let index = 0, length = modifiers.length; index < length; index += 1) {
+      const modifier = modifiers[index];
+      if (modifier === undefined && !(index in modifiers)) continue;
+      if (modifier.stat === stat) total = total + modifier.add;
+    }
+  }
   const cap = caps[stat];
   return cap === undefined ? total : Math.min(cap, total);
 }
