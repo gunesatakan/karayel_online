@@ -3679,11 +3679,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case "sellTower":
         this.hideZeynepTierChoicesIfOpen();
-        if (this.selectedPlacedTowerId) {
-          this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
-          this.selectedPlacedTowerId = undefined;
-          this.updateSelectionUi();
-        }
+        this.requestSellSelectedTower();
         break;
       case "setUnderworldMode":
         this.hideZeynepTierChoicesIfOpen();
@@ -6230,6 +6226,40 @@ export class GameScene extends Phaser.Scene {
    * uzerindeki dugme, cekmecedeki dugme ve istatistik satiri. Ucu ayri
    * hesaplasaydi biri gunun birinde otekinden farkli bir sayi gosterirdi.
    */
+  /**
+   * Secili yapiyi sat: satis onay istiyor, geri alma istemiyor.
+   *
+   * Parmak kule panelindeki ya da haritadaki satis tusuna kazara degip kuleyi
+   * ya da duvari satiyordu; satis iadesi bedelin bir kismi, yani hata pahali.
+   * Geri alma (kurulumda yeni kurulanin tam iadesi) bir hata duzeltmesi:
+   * onu ikinci bir dokunusla yavaslatmak gereksiz, dogrudan gidiyor. Onay
+   * acikken yapi baska bir sebeple gitmisse sunucu satisi zaten reddediyor.
+   */
+  private requestSellSelectedTower() {
+    const towerId = this.selectedPlacedTowerId;
+    if (!towerId) return;
+    const tower = this.towerSnapshots.get(towerId);
+    const refund = tower ? this.getTowerRefundState(tower) : undefined;
+    const sell = () => {
+      this.room?.send("sellTower", { towerId });
+      if (this.selectedPlacedTowerId === towerId) {
+        this.selectedPlacedTowerId = undefined;
+        this.updateSelectionUi();
+      }
+    };
+    if (!tower || !refund || refund.undoable) {
+      sell();
+      return;
+    }
+    const name = getTowerDisplayName(tower.definitionId, tower.name);
+    openConfirmDialog(
+      t("scene.sell.confirmTitle", { name }),
+      [t("scene.sell.confirmBody", { name, amount: refund.amount })],
+      { confirm: t("scene.sell.confirm", { amount: refund.amount }), cancel: t("scene.sell.cancel") },
+      sell
+    );
+  }
+
   private getTowerRefundState(tower: TowerSnapshot) {
     const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
     if (!definition) return { amount: 0, undoable: false };
@@ -6357,9 +6387,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     if (this.hitSellButton(pointer)) {
-      this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
-      this.selectedPlacedTowerId = undefined;
-      this.updateSelectionUi();
+      this.requestSellSelectedTower();
       return;
     }
     if (this.pendingUltimateColumn && this.isBattlePointer(pointer)) {
