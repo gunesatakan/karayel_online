@@ -124,7 +124,7 @@ test("cekmece dugmesi, cephanelik secicisi ve kunye etiketi okuyor; isaretin her
   assert.ok(pickerStart > 0, "uretim secicisi yok");
   const armory = ui.slice(pickerStart, ui.indexOf("return block;", pickerStart));
   assert.match(armory, /button\.prepend\(makeAmmoMarker\(ammoType\)\)/, "cephanelik secenegi isaretsiz: kuleyle eslesmiyor");
-  assert.match(armory, /button\.title = ammoTypeLabels\[ammoType\]/);
+  assert.match(armory, /makeActionButton\(ammoTypeLabels\[ammoType\],/, "secenek adi katalogdan degil");
   const menu = read("apps/web/src/menu-ui.ts");
   const detailStart = menu.indexOf("function towerToDetail(");
   const detail = menu.slice(detailStart, menu.indexOf("t(\"menu.tower.economy\")", detailStart));

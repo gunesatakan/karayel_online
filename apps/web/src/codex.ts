@@ -71,6 +71,15 @@ export const attackShapeLabels: Record<TowerAttackShape, string> = {
   orbit: "Yörünge"
 };
 
+/**
+ * Muhimmat turlerinin adi icin TEK kaynak. Cephaneligin uretim secicisi,
+ * tasiyicinin urun dugmeleri, isci listesi, kule cekmecesi/paneli, dosya,
+ * ust cubugun muhimmat cipi ve ogretici bu sozlugu okuyor; baska yerde ad
+ * yazilmiyor (bir donem secici "Projektil", dugme "Kurşun" diyordu).
+ * Ingilizcesi `enAmmoTypeLabels`; dil degisince yerinde yaziliyor.
+ */
+export const AMMO_TYPE_ORDER: readonly AmmoType[] = ["bullet", "auraCrystal", "powerCrystal"];
+
 export const ammoTypeLabels: Record<AmmoType, string> = {
   bullet: "Kurşun",
   auraCrystal: "Aura kristali",

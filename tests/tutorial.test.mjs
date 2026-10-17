@@ -363,9 +363,9 @@ test("bosta tasiyici yoksa adim once isci aldiriyor; cephane tasiyicisinda dogru
   assert.equal(tutorialNeedsCarrierHire("ammoCarrier", free), false);
   assert.equal(getTutorialTargets("ammoCarrier", free)[0], '[data-worker-product="auraCrystal"]:not(.is-active)');
   assert.equal(getTutorialTargets("materials", free)[0], '[data-worker-product="materials"]:not(.is-active)');
-  // Tasiyicinin urun dugmesindeki ad (Aura kristali); toplayici adimi cephaneligin secicisindeki adi (Psişik / Aura) kullaniyor.
+  // Tek ad (ammoTypeLabels): tasiyicinin urun dugmesi, cephaneligin secicisi ve toplayici adimi "Aura kristali" diyor.
   assert.match(getTutorialCopy("ammoCarrier", true, { facts: free }).body, /Aura kristali/);
-  assert.match(getTutorialCopy("gatherer", true, { facts: free }).body, /Psişik \/ Aura için/);
+  assert.match(getTutorialCopy("gatherer", true, { facts: free }).body, /Aura kristali için/);
   assert.match(getTutorialCopy("gatherer", true, { facts: free }).body, /Mistik öz/);
   // Urun dugmesinin sahibi arayuzde; teslimat bilgisi sahneden.
   assert.match(readSource("apps/web/src/game-control-ui.ts"), /button\.dataset\.workerProduct = product;/);

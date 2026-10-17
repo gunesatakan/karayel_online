@@ -4882,6 +4882,15 @@ button.wave-report:active { transform: scale(0.99); }
 }
 
 .game-hud__vital--gold { color: #fbbf24; }
+/*
+ * Deneyim altinin hemen yaninda: ikisi birlikte "yukseltebilir miyim"i
+ * cevapliyor. Soguk mor ton altinin sicak sarisindan ayrisiyor; yukseltme
+ * hazirken ★ Detay cipindeki gibi yesile donuyor. Sayi altinla ayni boyda
+ * degil, bir kademe kucuk: birincil satirin ana sayisi altin ve can kaliyor.
+ */
+.game-hud__vital--xp { color: #c4b5fd; }
+.game-hud__vital--xp b { font-size: clamp(13px, 3.6vw, 16px); }
+.game-hud__vital--xp.is-ready i { color: #4ade80; opacity: 1; }
 .game-hud__vital--health { color: #fda4af; }
 .game-hud__vital--wave { color: #7dd3fc; }
 
@@ -5634,6 +5643,7 @@ button.wave-report:active { transform: scale(0.99); }
 @container (max-width: 360px) {
   .game-hud__vitals { gap: 7px; }
   .game-hud__vital b { font-size: 15px; }
+  .game-hud__vital--xp b { font-size: 13px; }
   .game-hud__vital i { font-size: 10px; }
   .game-hud__actions { gap: 4px; }
   .game-hud__actions button { min-width: 28px; min-height: 29px; padding: 0 6px; font-size: 10px; }
@@ -5660,6 +5670,7 @@ button.wave-report:active { transform: scale(0.99); }
 
 @container (max-width: 310px) {
   .game-hud__vital b { font-size: 13px; }
+  .game-hud__vital--xp b { font-size: 12px; }
   .game-hud__vitals { gap: 5px; }
 }
 
@@ -5851,6 +5862,25 @@ button.wave-report:active { transform: scale(0.99); }
   .game-hud__row { gap: 6px; }
   .game-hud__vitals { gap: 6px; }
   .game-hud__actions { gap: 4px; }
+}
+
+/*
+ * Deneyim altinin yanina gelince "Devam" dugmeli satir (kurulum, ogretici)
+ * 375 px'te ~27 px tasiyordu ("Eğitim"/"Training" kirpiliyordu). Yalnizca
+ * Devam gorunurken: Detay dugmesi yazisiz (⌄ ve ★ kaliyor, adi aria-label'da),
+ * dalga bayragi cekiliyor, sayi aralari 1 px daraliyor. Dalga boyunca satir
+ * oldugu gibi.
+ */
+@container (max-width: 420px) {
+  .game-hud.has-continue [data-hud-details-label] { display: none; }
+  .game-hud.has-continue .game-hud__vital--wave > i { display: none; }
+  .game-hud.has-continue .game-hud__vitals { gap: 5px; }
+  /*
+   * Kurulumda havadan dalga + Devam (ongoru kutusu kapali, kart secimi):
+   * "KARIŞIK HAVA" etiketi deneyimle birlikte 30 px tasiyor. Hava haberi
+   * daha acil; o an deneyim yalnizca Detay panelinde.
+   */
+  .game-hud.is-wave-crowded .game-hud__vital--xp { display: none; }
 }
 
 /*

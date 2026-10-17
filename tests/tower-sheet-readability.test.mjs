@@ -50,12 +50,13 @@ test("guc kristalinden uretilen mühimmat 'Güç çekirdeği'; hammadde 'Güç k
   assert.equal(withLocale("en", () => ammoTypeLabels.powerCrystal), "Power core");
   assert.equal(RESOURCE_NAMES.plasma, "Güç kristali", "hammaddenin adi degismemeli");
   assert.equal(RESOURCE_NAMES_EN.plasma, "Power crystal");
-  assert.equal(tr["controls.tower.production.powerCrystal"], "Güç çekirdeği");
-  assert.equal(en["controls.tower.production.powerCrystal"], "Power core");
-  assert.match(tr["tutorial.production.body"], /güç çekirdeği/);
-  assert.match(en["tutorial.production.body"], /power core/);
+  // Uretim secicisi ve ogretici adi `ammoTypeLabels`tan okuyor (ayri anahtar yok;
+  // bkz. ammo-names-hud-xp testi).
+  assert.equal(tr["controls.tower.production.powerCrystal"], undefined);
+  assert.match(tr["tutorial.production.body"], /{core}/);
+  assert.match(en["tutorial.production.body"], /{core}/);
   for (const dictionary of [tr, en]) {
-    for (const key of ["tutorial.production.body", "controls.tower.production.bullet", "controls.tower.production.auraCrystal", "controls.tower.production.powerCrystal"]) {
+    for (const key of ["tutorial.production.body", "controls.tower.production"]) {
       assert.doesNotMatch(dictionary[key], /plazma|plasma/i, key);
     }
   }
@@ -250,7 +251,7 @@ test("sahne kule panelinin olculen dikdortgenini okuyor; arayuz olcup bildiriyor
 
 test("yeni metinler iki dilde ve Ingilizcede Turkce harf yok", () => {
   const keys = Object.keys(tr).filter((key) => key.startsWith("sheet.stock.") || key.startsWith("controls.tower.production"));
-  assert.ok(keys.length >= 15, `anahtar az: ${keys.length}`);
+  assert.ok(keys.length >= 12, `anahtar az: ${keys.length}`);
   for (const key of keys) {
     assert.ok(en[key]?.trim(), `${key} Ingilizcesi yok`);
     assert.doesNotMatch(en[key], /[ğüşıöçĞÜŞİÖÇ]/, key);

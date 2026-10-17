@@ -130,12 +130,9 @@ export const trControls = {
   "controls.tower.priorityNormal": "Normal",
   "controls.tower.priorityLow": "Düşük",
   "controls.tower.priority": "Sevkiyat önceliği",
-  // Cephaneligin uretim secicisi (panelin en ustu). Guc kristali hammaddenin
-  // adi; ondan uretilen mühimmat "Güç çekirdeği".
+  // Cephaneligin uretim secicisi (panelin en ustu). Secenek adlari burada
+  // degil: her yer muhimmat adini tek kaynaktan (`ammoTypeLabels`) okuyor.
   "controls.tower.production": "Üretilecek mühimmat",
-  "controls.tower.production.bullet": "Projektil",
-  "controls.tower.production.auraCrystal": "Psişik / Aura",
-  "controls.tower.production.powerCrystal": "Güç çekirdeği",
   "controls.tower.standby": "Beklemede",
   "controls.tower.warming": "Isınıyor",
   "controls.tower.running": "Çalışıyor",
@@ -192,7 +189,6 @@ export const trControls = {
   "hud.latency": "Gecikme",
   "hud.enemiesLeft": "Kalan düşman",
   "hud.energy": "Enerji",
-  "hud.ammo": "Mermi · Aura · Güç",
   "hud.forecast.line": "Sonraki dalga: {count} düşman",
   "hud.forecast.airWarning": "Kulelerin havadaki düşmanı vuramıyor!",
   "hud.forecast.hpStep": "Can ×{v}",
@@ -382,9 +378,6 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "controls.tower.priorityLow": "Low",
   "controls.tower.priority": "Supply priority",
   "controls.tower.production": "Ammunition production",
-  "controls.tower.production.bullet": "Projectile",
-  "controls.tower.production.auraCrystal": "Psychic / Aura",
-  "controls.tower.production.powerCrystal": "Power core",
   "controls.tower.standby": "Standby",
   "controls.tower.warming": "Warming up",
   "controls.tower.running": "Running",
@@ -441,7 +434,6 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "hud.latency": "Latency",
   "hud.enemiesLeft": "Enemies left",
   "hud.energy": "Energy",
-  "hud.ammo": "Bullets · Aura · Power",
   "hud.forecast.line": "Next wave: {count} enemies",
   "hud.forecast.airWarning": "Your towers can't hit air targets!",
   "hud.forecast.hpStep": "HP ×{v}",

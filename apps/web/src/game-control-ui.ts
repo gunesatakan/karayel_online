@@ -3,7 +3,7 @@ import type { WavePatternId } from "@karayel/shared";
 import type Phaser from "phaser";
 import { getTowerMaxLevel, towerCatalog, type TowerDefinition } from "@karayel/shared";
 import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, getShopItem, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
-import { ammoTypeLabels, cardRarityLabels, towerAxisLabels } from "./codex";
+import { AMMO_TYPE_ORDER, ammoTypeLabels, cardRarityLabels, towerAxisLabels } from "./codex";
 import { describeTowerAmmo, makeAmmoMarker } from "./tower-ammo";
 import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper, type MessageKey } from "./i18n";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
@@ -1691,14 +1691,15 @@ export function setupGameControlUi(game: Phaser.Game) {
     label.className = "ts-production__label";
     label.id = `ts-production-${state.selectedTowerId ?? ""}`.replace(/[^a-zA-Z0-9_-]/g, "_");
     label.textContent = t("controls.tower.production");
-    const group = makeRow((["bullet", "auraCrystal", "powerCrystal"] as const).map(ammoType => {
-      const button = makeActionButton(t(`controls.tower.production.${ammoType}`),
+    const group = makeRow(AMMO_TYPE_ORDER.map(ammoType => {
+      // Ad tek kaynaktan: tasiyicinin urun dugmesi, kule cekmecesi, panel ve
+      // ogretici ayni `ammoTypeLabels` adini yaziyor.
+      const button = makeActionButton(ammoTypeLabels[ammoType],
         `game-controls__underworld-mode-button ts-toggle${production.value === ammoType ? " is-active" : ""}`,
         production.canEdit, () => dispatch({ action: "setFactoryProduction", ammoType }));
       // Kule cekmecesi ve paneli turu katalog adiyla ve bu isaretle yaziyor;
       // oyuncu kuleyle cephaneligi isaretten eslestiriyor.
       button.prepend(makeAmmoMarker(ammoType));
-      button.title = ammoTypeLabels[ammoType];
       button.setAttribute("aria-pressed", String(production.value === ammoType));
       return button;
     }), "game-controls__underworld-mode ts-segmented ts-production__options");
@@ -2330,6 +2331,20 @@ export type HudStats = {
   extras: Array<{ label: string; icon: string; value: string }>;
 };
 
+/**
+ * Ust satirin sayi bicimi (altin ve deneyim).
+ *
+ * Tam sayi olarak okunur, cunku oyuncu "su kuleyi alabilir miyim" sorusunu
+ * tam sayiyla cevaplar. Ancak on binden sonra basamak sayisi bari tasiracagi
+ * icin orada kisaltmaya geciyoruz ("12.4B" / "12.4K").
+ */
+export function formatHudCompactNumber(value: number): string {
+  const amount = Math.floor(Math.max(0, value));
+  if (amount < 10_000) return String(amount);
+  if (amount < 1_000_000) return t("hud.number.thousand", { v: (amount / 1000).toFixed(amount < 100_000 ? 1 : 0) });
+  return t("hud.number.million", { v: (amount / 1_000_000).toFixed(1) });
+}
+
 export const EMPTY_HUD_STATS: HudStats = {
   gold: 0,
   experience: 0,
@@ -2459,17 +2474,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     reportChrome(game, rect.height);
   };
 
-  /**
-   * Altin tam sayi olarak okunur, cunku oyuncu "su kuleyi alabilir miyim"
-   * sorusunu tam sayiyla cevaplar. Ancak on binden sonra basamak sayisi bari
-   * tasiracagi icin orada kisaltmaya geciyoruz.
-   */
-  const compactNumber = (value: number) => {
-    const amount = Math.floor(Math.max(0, value));
-    if (amount < 10_000) return String(amount);
-    if (amount < 1_000_000) return t("hud.number.thousand", { v: (amount / 1000).toFixed(amount < 100_000 ? 1 : 0) });
-    return t("hud.number.million", { v: (amount / 1_000_000).toFixed(1) });
-  };
+  const compactNumber = formatHudCompactNumber;
 
   const formatXp = (value: number) => {
     const rounded = Math.round(Math.max(0, value) * 10) / 10;
@@ -2485,6 +2490,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     <div class="game-hud__row">
       <div class="game-hud__vitals">
         <span class="game-hud__vital game-hud__vital--gold" data-hud-gold-vital><i aria-hidden="true">◆</i><b data-hud-gold>0</b></span>
+        <span class="game-hud__vital game-hud__vital--xp" data-hud-xp-vital role="group"><i aria-hidden="true">★</i><b data-hud-xp-top>0</b></span>
         <span class="game-hud__vital game-hud__vital--health"><i aria-hidden="true">♥</i><b data-hud-health>0</b></span>
         <span class="game-hud__vital game-hud__vital--wave" data-hud-wave-vital><i aria-hidden="true">⚑</i><span class="game-hud__wave-word" aria-hidden="true"></span><b data-hud-wave>1</b><small class="game-hud__wave-total">/${FINAL_WAVE}</small><em class="game-hud__air" data-hud-air hidden></em></span>
       </div>
@@ -2547,6 +2553,9 @@ export function setupGameHudUi(game: Phaser.Game) {
   const stripDynamicNode = root.querySelector<HTMLElement>("[data-hud-strip-dynamic]")!;
   const xpChipNode = root.querySelector<HTMLElement>("[data-hud-xp]")!;
   const xpValueNode = root.querySelector<HTMLElement>("[data-hud-xp-value]")!;
+  // Ust satirda altinin yanindaki deneyim; Detay panelindeki ★ cipi de yerinde.
+  const xpVitalNode = root.querySelector<HTMLElement>("[data-hud-xp-vital]")!;
+  const xpTopNode = root.querySelector<HTMLElement>("[data-hud-xp-top]")!;
   const pingChipNode = root.querySelector<HTMLElement>("[data-hud-ping]")!;
   const pingValueNode = root.querySelector<HTMLElement>("[data-hud-ping-value]")!;
   const pingUnitNode = root.querySelector<HTMLElement>("[data-hud-ping-unit]")!;
@@ -2589,7 +2598,10 @@ export function setupGameHudUi(game: Phaser.Game) {
     }
   });
   const applyStaticLabels = () => {
-    setText(root.querySelector<HTMLElement>("[data-hud-details-label]")!, getLocale() === "tr" ? "Detay" : "Details");
+    const detailsLabel = getLocale() === "tr" ? "Detay" : "Details";
+    setText(root.querySelector<HTMLElement>("[data-hud-details-label]")!, detailsLabel);
+    // Yazi dar cubukta gizlenebiliyor; dugmenin adi yine okunsun.
+    detailsNode.querySelector("summary")!.setAttribute("aria-label", detailsLabel);
     setText(actionsNode.querySelector<HTMLElement>('[data-hud="perf"]')!, t("hud.perfButton"));
     setText(actionsNode.querySelector<HTMLElement>('[data-hud="stats"]')!, t("hud.statsButton"));
     setText(root.querySelector<HTMLElement>("[data-hud-xp-label]")!, t("hud.experience"));
@@ -2655,6 +2667,9 @@ export function setupGameHudUi(game: Phaser.Game) {
     // kalmiyor; o zaman "/20" cekiliyor (CSS), hava haberi kirpilmasin.
     const crowded = Boolean(air) && !forecastVisible && next.continueVisible;
     if (waveVitalNode.classList.contains("is-crowded") !== crowded) waveVitalNode.classList.toggle("is-crowded", crowded);
+    // Ayni sikisiklikta dar cubukta ust satirdaki deneyim de yer aciyor (CSS);
+    // deger Detay panelindeki ★ cipinde kaliyor, hava haberi kirpilmiyor.
+    if (root.classList.contains("is-wave-crowded") !== crowded) root.classList.toggle("is-wave-crowded", crowded);
 
     setHidden(forecastNode, !forecastVisible);
     if (!forecastVisible) return;
@@ -2746,6 +2761,8 @@ export function setupGameHudUi(game: Phaser.Game) {
     setHidden(pingJitterNode, !match?.[2]);
   };
   const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"], pingDetail: string, upgradeReady: boolean) => {
+    // Muhimmat cipinin etiketi katalog adlarindan: "Kurşun · Aura kristali · Güç çekirdeği".
+    const ammoLabel = AMMO_TYPE_ORDER.map((type) => ammoTypeLabels[type]).join(" · ");
     const chip = (icon: string, value: string, title: string, extraClass = "") =>
       `<span class="game-hud__chip ${extraClass}" title="${escapeHudText(title)}">`
         + `<i aria-hidden="true">${escapeHudText(icon)}</i><span class="game-hud__detail-label">${escapeHudText(title)}</span><b>${chipValue(value)}</b></span>`;
@@ -2754,8 +2771,8 @@ export function setupGameHudUi(game: Phaser.Game) {
       chip("☠", String(stats.enemiesLeft), t("hud.enemiesLeft")),
       ...stats.extras.map((extra) => chip(extra.icon, extra.value, extra.label)),
       chip("⚡", `${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}`, t("hud.energy")),
-      `<span class="game-hud__chip game-hud__chip--ammo" title="${escapeHudText(t("hud.ammo"))}">`
-        + `<span class="game-hud__detail-label">${escapeHudText(t("hud.ammo"))}</span><em class="is-bullet" aria-hidden="true">▪</em><b>${Math.floor(stats.ammo.bullet)}</b>`
+      `<span class="game-hud__chip game-hud__chip--ammo" title="${escapeHudText(ammoLabel)}">`
+        + `<span class="game-hud__detail-label">${escapeHudText(ammoLabel)}</span><em class="is-bullet" aria-hidden="true">▪</em><b>${Math.floor(stats.ammo.bullet)}</b>`
         + `<em class="is-aura" aria-hidden="true">◈</em><b>${Math.floor(stats.ammo.auraCrystal)}</b>`
         + `<em class="is-power" aria-hidden="true">✦</em><b>${Math.floor(stats.ammo.powerCrystal)}</b>`
         + `</span>`
@@ -2770,6 +2787,11 @@ export function setupGameHudUi(game: Phaser.Game) {
     setText(xpValueNode, formatXp(stats.experience));
     if (xpChipNode.classList.contains("is-ready") !== upgradeReady) xpChipNode.classList.toggle("is-ready", upgradeReady);
     setTitle(xpChipNode, upgradeReady ? t("hud.experienceReady") : t("hud.experience"));
+    setText(xpTopNode, compactNumber(stats.experience));
+    if (xpVitalNode.classList.contains("is-ready") !== upgradeReady) xpVitalNode.classList.toggle("is-ready", upgradeReady);
+    const xpTitle = upgradeReady ? t("hud.experienceReady") : t("hud.experience");
+    setTitle(xpVitalNode, xpTitle);
+    if (xpVitalNode.getAttribute("aria-label") !== xpTitle) xpVitalNode.setAttribute("aria-label", xpTitle);
 
     renderPing(ping);
     setClass(pingChipNode, `game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}`);
@@ -3316,6 +3338,8 @@ export function setupGameHudUi(game: Phaser.Game) {
     setText(statusNode, status);
 
     continueButton.hidden = !state.continueVisible;
+    // Dar cubukta "Devam" varken satir sikisiyor (CSS: Detay yazisi ve dalga bayragi cekiliyor).
+    if (root.classList.contains("has-continue") !== state.continueVisible) root.classList.toggle("has-continue", state.continueVisible);
     continueButton.disabled = state.continueWaiting;
     setText(continueButton, state.continueWaiting ? t("hud.waiting") : t("hud.continue"));
 

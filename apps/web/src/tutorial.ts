@@ -14,6 +14,7 @@ import {
 } from "@karayel/shared";
 import { getLocale, onLocaleChange, t } from "./i18n";
 import { formatTransportProduct } from "./worker-roster";
+import { ammoTypeLabels } from "./codex";
 
 /**
  * Ogretici asamasi (Eğitim): butun mekanikleri sirayla gosteren adim motoru.
@@ -243,12 +244,12 @@ function isArmoryCarrier(worker: TutorialWorkerFact, product: TransportProduct) 
     && worker.sourceDefinitionId !== undefined && classifyTutorialBuild(worker.sourceDefinitionId) === "armory";
 }
 
-/** Cephaneligin uretimi; cephanelik yoksa (adim gecildi) varsayilan projektil. */
+/** Cephaneligin uretimi; cephanelik yoksa (adim gecildi) varsayilan kursun. */
 export function getTutorialProduction(facts: TutorialFacts | undefined): AmmoType {
   return facts?.production ?? "bullet";
 }
 
-/** Uretimin tarifindeki hammadde (projektil -> barut...). */
+/** Uretimin tarifindeki hammadde (kursun -> barut...). */
 export function getTutorialMaterial(facts: TutorialFacts | undefined): ResourceKind {
   return AMMO_RECIPES[getTutorialProduction(facts)];
 }
@@ -340,8 +341,8 @@ export const TUTORIAL_TARGETS: Readonly<Record<TutorialStepId, readonly string[]
   delivery: ['.ts-bar[data-key="ammo"]', ".ts-stock", ".tower-sheet"],
   repairDepot: [".game-controls__tower-grid", '[data-launch="towers"]'],
   repairer: [".game-controls__worker-hire", '[data-worker-tab="hire"]', '[data-launch="worker"]'],
-  // Tecrube Detay panelinde; panel kapaliysa ust seritteki altin.
-  xpGold: [".game-hud__chip--xp", ".game-hud__vital--gold"],
+  // Deneyim ust satirda altinin hemen yaninda; Detay panelindeki cip ve altin yedek.
+  xpGold: [".game-hud__vital--xp", ".game-hud__chip--xp", ".game-hud__vital--gold"],
   upgrade: [".game-controls__action--upgrade", ".tower-sheet"],
   workerTree: [".worker-development__viewport", '[data-worker-tab="tree"]', '[data-launch="worker"]'],
   card: [],
@@ -373,6 +374,11 @@ export function pickTutorialTarget<T>(selectors: readonly string[], find: (selec
 
 export type TutorialCopy = { title: string; body: string; ack?: string; reopen?: string };
 
+/** Muhimmat adi cumle icinde: "Kurşun" -> "kurşun" (Turkce kucuk harf kurali ile). */
+function lowerAmmoName(type: AmmoType) {
+  return ammoTypeLabels[type].toLocaleLowerCase(getLocale() === "tr" ? "tr-TR" : "en-US");
+}
+
 /** Hammaddenin adi, secili dilde (kule panelinin stok blogu da boyle yaziyor). */
 function materialName(kind: ResourceKind) {
   return (getLocale() === "tr" ? RESOURCE_NAMES : RESOURCE_NAMES_EN)[kind];
@@ -386,8 +392,18 @@ function materialName(kind: ResourceKind) {
  */
 export function getTutorialCopy(id: TutorialStepId, windowOpen = true, context: { page?: number; facts?: TutorialFacts } = {}): TutorialCopy {
   const facts = context.facts;
-  // {ammo}: cephaneligin uretim secicisindeki ad; {product}: tasiyicinin urun dugmesindeki ad (ayni muhimmat).
-  const params = { ammo: t(`controls.tower.production.${getTutorialProduction(facts)}`), product: formatTransportProduct(getTutorialProduction(facts)), material: materialName(getTutorialMaterial(facts)) };
+  // Muhimmat adlari tek kaynaktan (`ammoTypeLabels`): uretim secicisi, tasiyicinin
+  // urun dugmesi ve kule paneli ayni adi yaziyor. {ammo}/{product}: uretilen tur;
+  // {bullet}/{aura}/{core}: uc turun cumle icindeki (kucuk harf) adi.
+  const production = getTutorialProduction(facts);
+  const params = {
+    ammo: ammoTypeLabels[production],
+    product: formatTransportProduct(production),
+    material: materialName(getTutorialMaterial(facts)),
+    bullet: lowerAmmoName("bullet"),
+    aura: lowerAmmoName("auraCrystal"),
+    core: lowerAmmoName("powerCrystal")
+  };
   const page = Math.max(0, Math.min(getTutorialPageCount(id) - 1, context.page ?? 0));
   const copy: TutorialCopy = { title: t(`tutorial.${id}.title`), body: t(`tutorial.${id}.body`, params) };
   if (page === 1) copy.body = t(id === "delivery" ? "tutorial.delivery.body2" : "tutorial.chain.body2", params);
