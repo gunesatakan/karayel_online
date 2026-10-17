@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { MatchRoom } from "../apps/server/dist/rooms/MatchRoom.js";
 import {
   MAP_RESOURCE_NODES,
+  getMapResourceNodes,
   RESOURCE_NODE_INITIAL_AMOUNT,
   createDefaultEditableMap,
   createOpenArenaMap,
@@ -34,6 +35,11 @@ MatchRoom.maxConcurrentRooms = 1000;
 
 const client = { sessionId: "p1", send() {} };
 const IDS = MAP_RESOURCE_NODES.map((node) => node.id);
+/** Odanin yayinladigi sira: once kristaller, sonra hammadde yataklari (olcek kadar takim). */
+const scaledEconomyOrder = (scale) => {
+  const nodes = getMapResourceNodes(scale);
+  return [...nodes.filter((node) => node.kind === "energy"), ...nodes.filter((node) => node.kind !== "energy")];
+};
 const ARENA_SIZES = { 1: [12, 18], 2: [16, 24], 3: [20, 30], 4: [24, 36] };
 const OWNER_SECRET = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718";
 
@@ -152,11 +158,11 @@ test("arena kurulmadan (lobi, test duzenegi) eski sabit yerlesim gecerli", () =>
   assert.deepEqual(room.getAmmoNodes().map((node) => node.id), ["ammo-source-1", "ammo-source-2", "ammo-source-3"]);
 });
 
-test("dugumlerin sayisi, kimligi ve turu ayni; yalnizca yerleri degisiyor", () => {
+test("dugumler olcek kadar takim; kimlik ve tur sabit, yalnizca yerleri degisiyor", () => {
   for (const scale of [1, 2, 3, 4]) {
     const room = arena(scale, 4242 + scale);
     const nodes = room.getEconomyNodes();
-    assert.deepEqual(nodes.map((node) => [node.id, node.kind]), MAP_RESOURCE_NODES.map((node) => [node.id, node.kind]));
+    assert.deepEqual(nodes.map((node) => [node.id, node.kind]), scaledEconomyOrder(scale).map((node) => [node.id, node.kind]));
     assert.ok(nodes.every((node) => node.remaining === RESOURCE_NODE_INITIAL_AMOUNT));
     assert.equal(room.resourceLayout.source, "random");
     assert.equal(room.resourceLayout.spacing, 3);
@@ -170,10 +176,11 @@ test("dugumlerin sayisi, kimligi ve turu ayni; yalnizca yerleri degisiyor", () =
       assert.ok(cell.col >= 1 && cell.col <= cols - 2, `${scale}x ${node.id}: kenar payi`);
       assert.ok(cell.row >= 2 && cell.row <= rows - 3, `${scale}x ${node.id}: dogum/nexus bandi`);
     }
-    for (let a = 0; a < IDS.length; a += 1) {
-      for (let b = a + 1; b < IDS.length; b += 1) {
-        const distance = Math.max(Math.abs(cells[IDS[a]].col - cells[IDS[b]].col), Math.abs(cells[IDS[a]].row - cells[IDS[b]].row));
-        assert.ok(distance >= 3, `${scale}x ${IDS[a]} / ${IDS[b]}: aralik ${distance}`);
+    const ids = nodes.map((node) => node.id);
+    for (let a = 0; a < ids.length; a += 1) {
+      for (let b = a + 1; b < ids.length; b += 1) {
+        const distance = Math.max(Math.abs(cells[ids[a]].col - cells[ids[b]].col), Math.abs(cells[ids[a]].row - cells[ids[b]].row));
+        assert.ok(distance >= 3, `${scale}x ${ids[a]} / ${ids[b]}: aralik ${distance}`);
       }
     }
     const lowerFirstRow = Math.ceil(rows * 0.4);
@@ -252,8 +259,8 @@ test("konumlar her snapshotta: tam karede de delta karede de", () => {
   const expected = room.getEconomyNodes().map((node) => ({ id: node.id, x: node.x, y: node.y }));
   const snapshot = room.getSnapshot();
   assert.deepEqual(snapshotNodes(snapshot), expected);
-  assert.deepEqual(snapshot.crystalNodes.map((node) => Object.keys(node)), Array(3).fill(["id", "remaining", "x", "y"]));
-  assert.deepEqual(snapshot.ammoNodes.map((node) => node.kind), ["gunpowder", "mystic", "plasma", "iron"]);
+  assert.deepEqual(snapshot.crystalNodes.map((node) => Object.keys(node)), Array(6).fill(["id", "remaining", "x", "y"]));
+  assert.deepEqual(snapshot.ammoNodes.map((node) => node.kind), ["gunpowder", "mystic", "plasma", "iron", "gunpowder", "mystic", "plasma", "iron"]);
 
   // Delta yalnizca kule/dusman/oyuncu/isci kayitlarini kirpiyor; dugumler tam gidiyor.
   const first = room.applyWireDelta(snapshot);
@@ -322,11 +329,11 @@ test("co-op mac: herkes ayni konumlari goruyor; sonradan giren de", async () => 
 
     const frames = broadcastFrame(room);
     const expected = snapshotNodes(frames.get("a"));
-    assert.equal(expected.length, 7);
+    assert.equal(expected.length, 14);
     assert.deepEqual(snapshotNodes(frames.get("b")), expected);
 
     // Dugumler ortak: oyuncu basina ayri ya da aynali kopya yok.
-    assert.deepEqual(IDS, expected.map((node) => node.id));
+    assert.deepEqual(scaledEconomyOrder(2).map((node) => node.id), expected.map((node) => node.id));
 
     const late = joinClient(room, "c", { characterId: "archer" });
     assert.equal(room.state.players.size, 3);

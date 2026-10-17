@@ -38,6 +38,44 @@ export const MAP_RESOURCE_NODES: readonly MapResourceNodeDefinition[] = [
   { id: "iron-1", kind: "iron" }
 ];
 
+/**
+ * Haritanin olcusune gore dugumler.
+ *
+ * Dusman sayisi harita olcegiyle (1-4) dogrusal buyuyor
+ * (`getArenaWaveEnemyCount`); dugumler eskiden her olcekte ayni yediydi ve
+ * buyuk haritada ekonomi dusmanin gerisinde kaliyordu. Simdi olcek kadar
+ * takim: 1. olcekte 7, 2.'de 14, 3.'te 21, 4.'te 28 dugum, her turden ayni
+ * oranda. Ilk takim eski kimlikleri tasiyor ("crystal-1".."iron-1"); sonraki
+ * takimlar numarayi suruyor: enerji `crystal-4`.., muhimmat hammaddeleri
+ * ayni tur sirasiyla `ammo-source-4` (barut), `-5` (mistik oz), `-6` (guc
+ * kristali).., demir `iron-2`.. Kimlik sirasi turun kadro numarasi.
+ */
+export function getMapResourceNodes(mapScale: number): readonly MapResourceNodeDefinition[] {
+  const sets = Math.max(1, Math.min(4, Math.round(Number.isFinite(mapScale) ? mapScale : 1)));
+  if (sets === 1) return MAP_RESOURCE_NODES;
+  const cached = SCALED_RESOURCE_NODES.get(sets);
+  if (cached) return cached;
+  const nodes: MapResourceNodeDefinition[] = [];
+  for (let set = 0; set < sets; set += 1) {
+    const counters = { crystal: 0, ammo: 0, iron: 0 };
+    for (const node of MAP_RESOURCE_NODES) {
+      if (set === 0) {
+        nodes.push(node);
+        continue;
+      }
+      const family = node.id.startsWith("crystal-") ? "crystal" : node.id.startsWith("ammo-source-") ? "ammo" : "iron";
+      const perSet = family === "crystal" ? 3 : family === "ammo" ? 3 : 1;
+      counters[family] += 1;
+      const prefix = family === "crystal" ? "crystal" : family === "ammo" ? "ammo-source" : "iron";
+      nodes.push({ id: `${prefix}-${set * perSet + counters[family]}`, kind: node.kind });
+    }
+  }
+  SCALED_RESOURCE_NODES.set(sets, nodes);
+  return nodes;
+}
+
+const SCALED_RESOURCE_NODES = new Map<number, readonly MapResourceNodeDefinition[]>();
+
 /** Harita kenarindan en az bu kadar kare iceride (yandan giren yiyici ve isciler dolasabilsin). */
 export const RESOURCE_LAYOUT_EDGE_MARGIN = 1;
 /** Dogum karelerine Chebyshev mesafesi bundan buyuk olmali (dogum bandi ve dibi yasak). */
@@ -101,10 +139,10 @@ export type ResourceLayoutResult = {
  * test duzenegi) ve zar bir yerlesim cikaramazsa buna donuluyor. Formul
  * sunucudaki eski hesapla birebir ayni.
  */
-export function getFixedResourceLayout(cols: number, rows: number): Record<string, ResourceLayoutCell> {
+export function getFixedResourceLayout(cols: number, rows: number, nodes: readonly MapResourceNodeDefinition[] = MAP_RESOURCE_NODES): Record<string, ResourceLayoutCell> {
   const col = (ratio: number) => Math.max(1, Math.min(cols - 2, Math.round((cols - 1) * ratio)));
   const row = (ratio: number) => Math.max(2, Math.min(rows - 3, Math.round((rows - 1) * ratio)));
-  return {
+  const base: Record<string, ResourceLayoutCell> = {
     "crystal-1": { col: col(0.2), row: row(0.35) },
     "crystal-2": { col: col(0.5), row: row(0.62) },
     "crystal-3": { col: col(0.8), row: row(0.35) },
@@ -113,6 +151,35 @@ export function getFixedResourceLayout(cols: number, rows: number): Record<strin
     "ammo-source-3": { col: col(0.86), row: row(0.68) },
     "iron-1": { col: Math.max(1, Math.floor(cols * 0.32)), row: Math.max(2, Math.floor(rows * 0.48)) }
   };
+  // Buyuk haritanin ek takimlari: eski oranlarda yeri olmayan dugumler,
+  // ic karelerden kullanilmislara en uzak olana (sirayla, zarsiz).
+  const extras = nodes.filter((node) => !base[node.id]);
+  if (extras.length === 0) return base;
+  const used = Object.values(base);
+  const interior: ResourceLayoutCell[] = [];
+  for (let r = 2; r <= rows - 3; r += 1) for (let c = 1; c <= cols - 2; c += 1) interior.push({ col: c, row: r });
+  for (const node of extras) {
+    const cell = pickFarthestCell(interior, used);
+    if (!cell) break;
+    base[node.id] = cell;
+    used.push(cell);
+  }
+  return base;
+}
+
+/** Adaylardan kullanilmis karelere (Chebyshev) en uzak olani; esitlikte listede ilk. */
+function pickFarthestCell(candidates: readonly ResourceLayoutCell[], used: readonly ResourceLayoutCell[]) {
+  let best: ResourceLayoutCell | undefined;
+  let bestDistance = 0;
+  for (const cell of candidates) {
+    let distance = Number.POSITIVE_INFINITY;
+    for (const other of used) distance = Math.min(distance, chebyshev(cell, other));
+    if (distance > bestDistance) {
+      best = cell;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 /**
@@ -411,7 +478,7 @@ export function placeResourceNodes(input: ResourceLayoutInput): ResourceLayoutRe
   }
 
   const fallback = new Map<string, ResourceLayoutCell>();
-  const legacy = input.fallback ?? getFixedResourceLayout(grid.cols, grid.rows);
+  const legacy = input.fallback ?? getFixedResourceLayout(grid.cols, grid.rows, input.nodes);
   for (const node of input.nodes) {
     let cell = fixed.get(node.id) ?? legacy[node.id];
     // Sabit yerlesimin karesi yasaksa (kurulum yasak bolge, yapi) en yakin

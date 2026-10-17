@@ -4,7 +4,7 @@ import { ZEYNEP_PALACE_AURA_RADIUS, ZEYNEP_PALACE_ID, getZeynepPalaceEffects } f
 import { DAMAGE_SHARE_CAP, IDLE_REGEN_DELAY_MS, LAST_STAND_HP, getVeteranHealthMultiplier, getWoundedDamageMultiplier } from "@karayel/shared";
 import { AMBUSH_RANGE_HOLD_MS, AMBUSH_RANGE_IDLE_MS, FOCUS_RANGE_GRACE_MS, KILL_RANGE_LONG_MAX_KILLS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
-import { MAP_RESOURCE_NODES, createResourceLayoutRandom, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
+import { createResourceLayoutRandom, getMapResourceNodes, type MapResourceNodeDefinition, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
 import { createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
 import { clipCounterSurgeLane, getWavePatternDelayMs, getWavePatternEntryColumns, getWavePatternSlotType, planWavePattern, type WavePatternPlan } from "@karayel/shared";
@@ -829,10 +829,31 @@ const TOWER_INSIGHT_PHASE_STEP_MS = 67;
 /** Isci aramasinin komsu sirasi (`getGridNeighbors` ile ayni): asagi, sol, sag, yukari. */
 const WORKER_NEIGHBOR_COL_STEPS = [0, -1, 1, 0] as const;
 const WORKER_NEIGHBOR_ROW_STEPS = [1, 0, 0, -1] as const;
-/** Haritadaki dugumler, tele ciktiklari gruplarla (sira `MAP_RESOURCE_NODES` sirasi). */
-const CRYSTAL_NODE_DEFINITIONS = MAP_RESOURCE_NODES.filter((node) => node.kind === "energy");
-const MATERIAL_NODE_DEFINITIONS = MAP_RESOURCE_NODES.filter((node) => node.kind !== "energy");
-const AMMO_SOURCE_NODE_DEFINITIONS = MATERIAL_NODE_DEFINITIONS.filter((node) => node.id.startsWith("ammo-source-"));
+/**
+ * Haritadaki dugumler, tele ciktiklari gruplarla (sira `getMapResourceNodes`
+ * sirasi). Sayi harita olcegiyle buyuyor: olcek basina bir takim.
+ */
+type ResourceNodeGroups = {
+  all: readonly MapResourceNodeDefinition[];
+  crystals: readonly MapResourceNodeDefinition[];
+  materials: readonly MapResourceNodeDefinition[];
+  ammoSources: readonly MapResourceNodeDefinition[];
+};
+const RESOURCE_NODE_GROUPS = new Map<number, ResourceNodeGroups>();
+function getResourceNodeGroups(mapScale: number): ResourceNodeGroups {
+  const cached = RESOURCE_NODE_GROUPS.get(mapScale);
+  if (cached) return cached;
+  const all = getMapResourceNodes(mapScale);
+  const materials = all.filter((node) => node.kind !== "energy");
+  const groups = {
+    all,
+    crystals: all.filter((node) => node.kind === "energy"),
+    materials,
+    ammoSources: materials.filter((node) => node.id.startsWith("ammo-source-"))
+  };
+  RESOURCE_NODE_GROUPS.set(mapScale, groups);
+  return groups;
+}
 /**
  * Onbellekten donen, dondurulmus modifier listesi. Tipi de salt okunur:
  * cagiran yerinde degistirmeye kalkarsa derleyici durduruyor (dondurulmus
@@ -5998,7 +6019,7 @@ export class MatchRoom extends Room<MatchState> {
     const result = placeResourceNodes({
       cols: map.cols,
       rows: map.rows,
-      nodes: MAP_RESOURCE_NODES,
+      nodes: getResourceNodeGroups(this.mapScale).all,
       spawnCells: getMapPoints(map, "spawn"),
       nexusCells: getMapPoints(map, "nexus"),
       forbiddenCells: [...getMapPoints(map, "empty"), ...zoneCells],
@@ -6025,7 +6046,7 @@ export class MatchRoom extends Room<MatchState> {
     if (layout && layout.cols === cols && layout.rows === rows) return layout.cells;
     const cached = this.fixedResourceLayoutCache;
     if (cached && cached.cols === cols && cached.rows === rows) return cached.cells;
-    const cells = getFixedResourceLayout(cols, rows);
+    const cells = getFixedResourceLayout(cols, rows, getResourceNodeGroups(this.mapScale).all);
     this.fixedResourceLayoutCache = { cols, rows, cells };
     return cells;
   }
@@ -6040,7 +6061,7 @@ export class MatchRoom extends Room<MatchState> {
   private getDefaultGatherNodeId(kind: ResourceKind, spawnX: number, spawnY: number) {
     const nexusCells = getMapPoints(this.activeMap, "nexus");
     return getNearestResourceNodeId({
-      nodes: MAP_RESOURCE_NODES,
+      nodes: getResourceNodeGroups(this.mapScale).all,
       cells: this.getResourceNodeCells(),
       kind,
       baseCells: nexusCells.length > 0 ? nexusCells : [{ col: Math.floor(this.activeMap.cols / 2), row: this.activeMap.rows - 1 }],
@@ -11185,7 +11206,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getMaterialNodes() {
     const cells = this.getResourceNodeCells();
-    return MATERIAL_NODE_DEFINITIONS.map((node) => {
+    return getResourceNodeGroups(this.mapScale).materials.map((node) => {
       const point = this.getResourceNodePoint(node.id, cells);
       return { id: node.id, kind: node.kind, remaining: this.getNodeRemaining(node.id), x: point.x, y: point.y };
     });
@@ -11410,7 +11431,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getCrystalNodes() {
     const cells = this.getResourceNodeCells();
-    return CRYSTAL_NODE_DEFINITIONS.map((node) => {
+    return getResourceNodeGroups(this.mapScale).crystals.map((node) => {
       const point = this.getResourceNodePoint(node.id, cells);
       return { id: node.id, remaining: this.getNodeRemaining(node.id), x: point.x, y: point.y };
     });
@@ -11439,7 +11460,7 @@ export class MatchRoom extends Room<MatchState> {
   /** Uc muhimmat hammaddesi yatagi (`ammo-source-N`); demir bunlarin disinda. */
   private getAmmoNodes() {
     const cells = this.getResourceNodeCells();
-    return AMMO_SOURCE_NODE_DEFINITIONS.map((node) => {
+    return getResourceNodeGroups(this.mapScale).ammoSources.map((node) => {
       const point = this.getResourceNodePoint(node.id, cells);
       return { id: node.id, remaining: this.getNodeRemaining(node.id), x: point.x, y: point.y };
     });
