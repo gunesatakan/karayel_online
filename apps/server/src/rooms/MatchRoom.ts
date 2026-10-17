@@ -3383,7 +3383,10 @@ export class MatchRoom extends Room<MatchState> {
       for (const segment of this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation, this.getEdgeLength(tower.definition.id))) {
         this.edgeStructureIndex.set(`${segment.orientation}:${segment.col}:${segment.row}`, tower);
         if (segment.col < 0 || segment.col >= stride || segment.row < 0 || segment.row > this.activeMap.rows) continue;
-        (segment.orientation === "vertical" ? vertical : horizontal)[segment.row * stride + segment.col] = tower;
+        // Dizi yalnizca iki yonu tutuyor: baska bir yon (bugun hic yazilmiyor)
+        // anahtarli kayitta da hicbir soruya denk gelmez; ikisi yapi geregi ayni kalsin.
+        if (segment.orientation === "vertical") vertical[segment.row * stride + segment.col] = tower;
+        else if (segment.orientation === "horizontal") horizontal[segment.row * stride + segment.col] = tower;
       }
     }
     this.edgeStructureGrid = { stride, vertical, horizontal };
@@ -3695,8 +3698,10 @@ export class MatchRoom extends Room<MatchState> {
   private lastIdleSnapshotSignature = "";
   /**
    * Ayni imzanin agac hali (`compileJsonTree(JSON.parse(imza))`): tekrar
-   * kontrolu metin kurmadan bununla yapiliyor. Yalnizca imzayla birlikte
-   * yaziliyor (`rememberIdleSnapshot`); imza bosken (ilk an) yok.
+   * kontrolu metin kurmadan bununla yapiliyor. Imza her degistiginde
+   * siliniyor ve ancak bir kare imzayla ayni ciktiginda (tahta durdu) bir kez
+   * kuruluyor: icerigi surekli degisen bekleme evresinde her karede agac
+   * kurmak tek `JSON.stringify`in iki katina mal oluyordu.
    */
   private lastIdleSnapshotTree: JsonTreeNode | undefined;
   private lastIdleSnapshotSentAt = 0;
@@ -5719,15 +5724,18 @@ export class MatchRoom extends Room<MatchState> {
    */
   private isRepeatOfLastIdleSnapshot(snapshot: WireGameSnapshot, now: number) {
     const tree = this.lastIdleSnapshotTree;
-    // Agac yoksa imza bos metin; hicbir snapshotin imzasi bos olamaz.
     const match = tree === undefined
-      ? JSON_TREE_DIFFERENT
+      ? JSON_TREE_UNKNOWN
       : matchJsonTree({ ...snapshot, serverTime: 0 }, tree);
     let signature: string | undefined;
     let same: boolean;
     if (match === JSON_TREE_UNKNOWN) {
+      // Agac yok (imza yeni degisti ya da bos) ya da agac karar veremedi:
+      // eski yol, metin. Metin imzayla ayniysa tahta durmus demek; sonraki
+      // kareler metin kurmadan agacla karsilastirilsin.
       signature = idleSnapshotSignature(snapshot);
       same = signature === this.lastIdleSnapshotSignature;
+      if (same && tree === undefined) this.lastIdleSnapshotTree = compileJsonTree(JSON.parse(signature));
     } else {
       same = match === JSON_TREE_SAME;
     }
@@ -5746,10 +5754,10 @@ export class MatchRoom extends Room<MatchState> {
     return false;
   }
 
-  /** Imzayi ve agac halini birlikte yazar; ikisi hep ayni metni anlatir. */
+  /** Yeni imzayi yazar; eski imzanin agaci gecersiz (ilk ayni karede yeniden kuruluyor). */
   private rememberIdleSnapshot(signature: string) {
     this.lastIdleSnapshotSignature = signature;
-    this.lastIdleSnapshotTree = compileJsonTree(JSON.parse(signature));
+    this.lastIdleSnapshotTree = undefined;
   }
 
   /**
@@ -20175,13 +20183,14 @@ export class MatchRoom extends Room<MatchState> {
       // hesaplaniyor (once ilk parca, sonra ikincisi) ve `Object.assign`
       // yeni anahtari sona ekliyor, var olani yerinde yaziyor -- literal gibi.
       // Undefined degerli anahtarlar da kopyalaniyor, yani anahtar kumesi ayni.
-      players: Array.from(this.state.players.entries()).map(([id, player]) => Object.assign({
+      // Oyuncu kaydi (en fazla dort) duz literal kaliyor: kazanci onemsiz,
+      // ikiye bolunmus hali V8'de sozluk kipine dusuyordu.
+      players: Array.from(this.state.players.entries()).map(([id, player]) => ({
         id,
         name: player.name,
         characterId: player.characterId,
         // 0. yuva yazilmiyor; `slot: undefined` bile msgpack'te anahtar tasirdi.
-        ...(player.slot > 0 ? { slot: player.slot } : {})
-      }, {
+        ...(player.slot > 0 ? { slot: player.slot } : {}),
         gold: Math.floor(player.gold),
         goldSpent: player.goldSpent,
         experience: Math.round(player.experience * 100) / 100,
@@ -21118,8 +21127,9 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerStaticRunModifiers(tower: TowerModel): FrozenRunModifiers {
     // Tik icinde girdilerin hicbiri degismiyor: listeleri yalnizca kart secimi,
     // esya alimi/takilmasi ve yaratici kip yaziyor, sahipligi ve oyuncu
-    // listesini katilma/ayrilma -- hepsi mesajla, tik disinda; tanim hic
-    // yazilmiyor. Ilk dogrulamadan sonra tik boyunca ayni liste (dogrulama da
+    // listesini katilma/ayrilma -- bunlarin hicbiri tik icinden (beden
+    // gorevleri dahil) cagrilmiyor; tanim hic yazilmiyor. Liste yazicilari
+    // `invalidateTowerGrants` ile bu hafizayi da siliyor. Ilk dogrulamadan sonra tik boyunca ayni liste (dogrulama da
     // ayni nesneyi dondururdu). Kule basina tikte onlarca cagri.
     const tickCache = this.tickLayoutCache;
     const memo = tickCache?.staticModifiers?.get(tower);
@@ -21186,6 +21196,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private invalidateTowerGrants() {
     this.grantGeneration += 1;
+    // Tik ici modifier hafizasi da (`getTowerStaticRunModifiers`): bugun bu
+    // yazicilarin hicbiri tik icinden cagrilmiyor, ama cagrilirsa tikin geri
+    // kalani eski listeyi okumasin.
+    if (this.tickLayoutCache) this.tickLayoutCache.staticModifiers = undefined;
   }
 
   /**
