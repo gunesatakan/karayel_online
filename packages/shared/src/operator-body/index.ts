@@ -93,7 +93,7 @@ export const OPERATOR_BODY_REST_CHECK_MS = 400;
 export type OperatorBodyState = "i" | "m" | "w" | "d";
 
 /** Gorev turu (telde degil; sunucu ve testler okuyor). */
-export type OperatorBodyTaskKind = "place" | "wall" | "repair" | "skill" | "ultimate";
+export type OperatorBodyTaskKind = "place" | "wall" | "repair" | "repairAll" | "skill" | "ultimate";
 
 /**
  * `bodies`: her karede tam (en fazla dort kayit). Yeni katilan da ilk karede

@@ -47,6 +47,7 @@ export const TUTORIAL_TRACKED_MESSAGES: Readonly<Record<string, TutorialActionId
   "worker:assign": "assign",
   "factory:production": "production",
   "structure:repair": "repair",
+  "structure:repairAll": "repair",
   "worker:development": "workerTree",
   "card:choose": "card",
   "shop:buy": "shop",

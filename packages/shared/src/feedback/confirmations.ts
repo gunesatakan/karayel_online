@@ -42,6 +42,8 @@ export type InventoryEquipRejectedMessage = {
 };
 /** `structure:repaired` (MatchRoom `repairStructure`). */
 export type StructureRepairedMessage = { towerId?: string; cost?: number };
+/** `structure:repairedAll` (MatchRoom "Tumunu Onar"): tek ozet, N toast degil. */
+export type StructureRepairedAllMessage = { count?: number; cost?: number; towerIds?: string[] };
 /** `ultimate:upgraded` (MatchRoom `upgradeUltimatePower`). */
 export type UltimateUpgradedMessage = { level?: number; cost?: number };
 /** `worker:development-unlocked` (MatchRoom `unlockWorkerDevelopment`). */
@@ -191,6 +193,23 @@ export function getStructureRepairCue(message: StructureRepairedMessage, towerNa
     sfx: "repair",
     step: 0,
     pulse: { towerId: message.towerId, style: "repair" }
+  };
+}
+
+/**
+ * "Tumunu Onar" ozeti: "N yapı onarıldı · Xg". Atim her onarilan kuleye
+ * istemcide ayrica (`towerIds`); tek ses, tek toast.
+ */
+export function getStructureRepairAllCue(message: StructureRepairedAllMessage): ServerConfirmationCue | undefined {
+  const count = Math.round(Number(message?.count));
+  if (!Number.isFinite(count) || count <= 0) return undefined;
+  const cost = Math.round(Number(message.cost));
+  const costText = Number.isFinite(cost) && cost > 0 ? ` · ${cost}g` : "";
+  return {
+    text: lt(`${count} yapı onarıldı${costText}`, `${count} ${enPlural(count, "structure", "structures")} repaired${costText}`),
+    durationMs: CONFIRMATION_NOTICE_MS,
+    sfx: "repair",
+    step: 0
   };
 }
 

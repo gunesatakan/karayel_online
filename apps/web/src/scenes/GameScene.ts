@@ -173,6 +173,7 @@ import {
   canEquipShopItem,
   getShopPurchaseCue,
   getStructureRepairCue,
+  getStructureRepairAllCue,
   getUltimateUpgradeCue,
   getWorkerDevelopmentCue,
   KillComboWatch,
@@ -258,6 +259,8 @@ import {
   type ServerConfirmationCue,
   type ShopPurchasedMessage,
   type StructureRepairedMessage,
+  type StructureRepairedAllMessage,
+  type RepairAllCandidate,
   type UltimateUpgradedMessage,
   type WorkerDevelopmentUnlockedMessage,
   type CardRarity,
@@ -279,6 +282,8 @@ import {
   DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL,
   DEBUG_LASER_TWIN_OVERDRIVE_LEVEL,
   getStructureRepairCostWithModifiers,
+  planRepairAll,
+  getRepairAllButtonState,
   WALL_TOWER_ID,
   WALL_LINE_HANDLE_DRAG_PX,
   WALL_LINE_HANDLE_TOUCH_PX,
@@ -506,6 +511,7 @@ type ControlActionDetail = {
     | "sellTower"
     | "clearTowerSelection"
     | "repairStructure"
+    | "repairAll"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
     | "setFactoryProduction"
@@ -3674,6 +3680,11 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("structure:repair", { towerId: this.selectedPlacedTowerId });
         }
         return;
+      case "repairAll":
+        // Liste ve bedel sunucuda yeniden hesaplaniyor; istemci sayi yollamiyor.
+        this.feedback?.unlockAudio();
+        this.room?.send("structure:repairAll", {});
+        return;
       case "clearTowerSelection":
         this.clearPlacedTowerSelection();
         break;
@@ -4352,6 +4363,30 @@ export class GameScene extends Phaser.Scene {
     );
     const affordable = (this.localPlayerSnapshot?.gold ?? 0) >= cost;
     return { label: t("scene.repair.action", { cost }), enabled: affordable && cost > 0 };
+  }
+
+  /**
+   * "Tumunu Onar" dugmesi. Plan sunucunun kullandigi `planRepairAll` ile ve
+   * tekli onarim dugmesinin bedel girdileriyle (tanim bedeli, sunucudan gelen
+   * carpan): dugmedeki sayi dokununca odenecek olan. Sunucu yine son sozu
+   * soyluyor; bedene verilmis onarimlari o ayikliyor.
+   */
+  private getRepairAllState() {
+    const candidates: RepairAllCandidate[] = [];
+    for (const tower of this.towerSnapshots.values()) {
+      if (tower.ownerId !== this.localSessionId) continue;
+      const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
+      if (!definition) continue;
+      candidates.push({
+        id: tower.id,
+        hp: tower.hp ?? 0,
+        maxHp: tower.maxHp ?? 0,
+        buildCost: getTowerBuildCost(definition.cost),
+        costMultiplier: tower.repairCostMultiplier ?? 1
+      });
+    }
+    const button = getRepairAllButtonState(planRepairAll(candidates, this.localPlayerSnapshot?.gold ?? 0));
+    return { label: t(`controls.repairAll.${button.key}`, button.params), enabled: button.enabled };
   }
 
   /**
@@ -7599,6 +7634,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("inventory:equip-rejected", (message: InventoryEquipRejectedMessage) => this.confirmServerAction(getInventoryEquipRejectedCue(message, { creative: this.creativeMode })));
     room.onMessage("structure:repaired", (message: StructureRepairedMessage) => {
       this.confirmServerAction(getStructureRepairCue(message, this.findTowerName(message?.towerId)));
+    });
+    // "Tumunu Onar": tek toast ve tek ses; atim her onarilan kuleye.
+    room.onMessage("structure:repairedAll", (message: StructureRepairedAllMessage) => {
+      const cue = getStructureRepairAllCue(message);
+      if (!cue) return;
+      this.confirmServerAction(cue);
+      for (const towerId of (Array.isArray(message.towerIds) ? message.towerIds : []).slice(0, 12)) {
+        if (typeof towerId === "string") this.pulseConfirmedTower(towerId, "repair");
+      }
     });
     room.onMessage("ultimate:upgraded", (message: UltimateUpgradedMessage) => this.confirmServerAction(getUltimateUpgradeCue(message)));
     // Ulti karnesi yalnizca atana; takim arkadaslarina tek satirlik cip.
@@ -12873,6 +12917,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       inventory: {
         open: this.inventoryOpen,
         pendingItemId: this.pendingEquipItemId,
+        repairAll: this.getRepairAllState(),
         // Ayni esyadan birden fazla olabilir; listede tek satirda sayilir.
         items: Object.values(
           (this.localPlayerSnapshot?.inventoryItemIds ?? []).reduce<Record<string, { id: string; name: string; description: string; category: string; count: number; alreadyUnlocked: boolean }>>((grouped, itemId) => {

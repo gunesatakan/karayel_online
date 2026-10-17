@@ -1218,6 +1218,7 @@ export {
   getInventoryEquipCue,
   getInventoryEquipRejectedCue,
   getShopPurchaseCue,
+  getStructureRepairAllCue,
   getStructureRepairCue,
   getUltimateUpgradeCue,
   getWorkerDevelopmentCue
@@ -1229,6 +1230,7 @@ export type {
   InventoryEquippedMessage,
   ServerConfirmationCue,
   ShopPurchasedMessage,
+  StructureRepairedAllMessage,
   StructureRepairedMessage,
   UltimateUpgradedMessage,
   WorkerDevelopmentUnlockedMessage
@@ -2334,6 +2336,65 @@ export function getStructureRepairCostWithModifiers(
   costMultiplier = 1
 ) {
   return Math.ceil(getStructureRepairCost(buildCost, missingHealthRatio) * Math.max(0, costMultiplier));
+}
+
+/** "Tumunu Onar" adayi: oyuncunun bir yapisi (yikilmis ya da tam canli olan da gelebilir; elenir). */
+export type RepairAllCandidate = { id: string; hp: number; maxHp: number; buildCost: number; costMultiplier?: number };
+
+/**
+ * "Tumunu Onar" plani.
+ *
+ * `damaged`: onarilabilir (ayakta, hasarli, bedeli sifirdan buyuk) yapi
+ * sayisi; `totalCost` hepsinin bedeli. `ids`/`costs`: altinin yettigi alt
+ * kume, en hasarlidan (en dusuk can orani) baslayarak; yetmeyen yapi
+ * atlaniyor ve siradaki deneniyor. `cost` o alt kumenin bedeli. Sunucu
+ * tahsil ederken, arayuz dugmeye yazarken bunu cagiriyor: ayni formul.
+ */
+export function planRepairAll(candidates: readonly RepairAllCandidate[], gold: number) {
+  const damaged = candidates
+    .filter((entry) => entry.maxHp > 0 && entry.hp > 0 && entry.hp < entry.maxHp)
+    .map((entry) => ({
+      id: entry.id,
+      ratio: entry.hp / entry.maxHp,
+      cost: getStructureRepairCostWithModifiers(entry.buildCost, 1 - entry.hp / entry.maxHp, entry.costMultiplier ?? 1)
+    }))
+    .filter((entry) => entry.cost > 0)
+    .sort((a, b) => a.ratio - b.ratio || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const ids: string[] = [];
+  const costs: number[] = [];
+  let remaining = Number.isFinite(gold) ? gold : 0;
+  let cost = 0;
+  let totalCost = 0;
+  for (const entry of damaged) {
+    totalCost += entry.cost;
+    if (entry.cost > remaining) continue;
+    remaining -= entry.cost;
+    cost += entry.cost;
+    ids.push(entry.id);
+    costs.push(entry.cost);
+  }
+  return { damaged: damaged.length, totalCost, ids, costs, cost };
+}
+
+export type RepairAllPlan = ReturnType<typeof planRepairAll>;
+
+/**
+ * "Tumunu Onar" dugmesinin durumu: hangi metin (`controls.repairAll.<key>`),
+ * yer tutucular ve acik mi. Hepsi yetiyorsa toplam; yetmiyorsa "k/N" ve
+ * alt kumenin bedeli (dokununca olacak olan tam bu); hic biri yetmiyorsa ya
+ * da hasarli yapi yoksa kapali.
+ */
+export function getRepairAllButtonState(plan: RepairAllPlan): {
+  key: "none" | "noGold" | "partial" | "action" | "actionOne";
+  enabled: boolean;
+  params: Record<string, number>;
+} {
+  if (plan.damaged === 0) return { key: "none", enabled: false, params: {} };
+  if (plan.ids.length === 0) return { key: "noGold", enabled: false, params: { count: plan.damaged } };
+  if (plan.ids.length < plan.damaged) {
+    return { key: "partial", enabled: true, params: { affordable: plan.ids.length, count: plan.damaged, cost: plan.cost } };
+  }
+  return { key: plan.damaged === 1 ? "actionOne" : "action", enabled: true, params: { count: plan.damaged, cost: plan.cost } };
 }
 
 export function canRefundTowerPurchase(

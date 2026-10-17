@@ -197,6 +197,8 @@ import {
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   getEnemyStructureDamageMultiplier,
   getStructureRepairCostWithModifiers,
+  planRepairAll,
+  type RepairAllCandidate,
   STRUCTURE_BREACH_HEALTH_RATIO,
   getStructureHealthMultiplier,
   isWallDefinition,
@@ -1307,8 +1309,12 @@ type UseUltimateMessage = {
   y?: number;
 };
 
-/** Duvar cizgisinin ayrilmis tek parcasi (merkez ve ayrilan bedel). */
-type OperatorBodyWallSegment = { x: number; y: number; cost: number };
+/**
+ * Duvar cizgisinin ayrilmis tek parcasi (merkez ve ayrilan bedel). "Tumunu
+ * Onar" rotasinin duraklari da bu bicimde: `towerId` onarilacak yapi,
+ * `standoffCells` o yapinin boyuna gore durus mesafesi.
+ */
+type OperatorBodyWallSegment = { x: number; y: number; cost: number; towerId?: string; standoffCells?: number };
 
 /**
  * Bedenin kuyrugundaki is. `x`/`y` isin yeri (kare, yapi, dusman, sutun);
@@ -1334,6 +1340,8 @@ type OperatorBodyTask = {
   segments?: OperatorBodyWallSegment[];
   segmentIndex?: number;
   wallStats?: { requested: number; placed: number; skippedZone: number; skippedBlocked: number; skippedGold: number };
+  /** "Tumunu Onar": rotada simdiye kadar onarilanlar (ozet tek toast). */
+  repairStats?: { count: number; cost: number; towerIds: string[] };
   towerIdsBefore?: Set<string>;
   towerId?: string;
   skillSlot?: number;
@@ -2315,6 +2323,8 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   "shop:buy": { phase: "match", fields: { itemId: "string" } },
   "shop:reroll": { phase: "match", fields: {} },
   "structure:repair": { phase: "match", fields: { towerId: "string" } },
+  // "Tumunu Onar": govde yok; liste ve bedel sunucuda yeniden hesaplaniyor.
+  "structure:repairAll": { phase: "match", fields: {} },
   "factory:production": { phase: "match", fields: { towerId: "string", ammoType: "string" } },
   "worker:assign": { phase: "match", fields: { workerId: "string", nodeId: "string", sourceTowerId: "string", product: "string" } },
   "worker:hire": { phase: "match", fields: { role: "string", advanced: "boolean" } },
@@ -3727,6 +3737,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.commandRepair(client, message));
+    this.onMessage("structure:repairAll", (client) => this.commandRepairAll(client));
     this.onMessage("factory:production", (client, message) => this.setFactoryProduction(client, message));
     this.onMessage("worker:assign", (client, message) => this.assignWorker(client, message));
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
@@ -14183,14 +14194,18 @@ export class MatchRoom extends Room<MatchState> {
     tower.gate = !tower.gate;
   }
 
-  private repairStructure(client: Client, message: RepairStructureMessage) {
+  /**
+   * Tek yapinin onarimi; odenen bedeli donduruyor (0: reddedildi). `quiet`:
+   * "Tumunu Onar" tek ozet yolluyor, yapi basina onay yok.
+   */
+  private repairStructure(client: Client, message: RepairStructureMessage, options: { quiet?: boolean } = {}) {
     const player = this.state.players.get(client.sessionId);
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
-    if (!player || !tower || tower.ownerId !== client.sessionId) return;
-    if (tower.hp <= 0 || tower.hp >= tower.maxHp) return;
+    if (!player || !tower || tower.ownerId !== client.sessionId) return 0;
+    if (tower.hp <= 0 || tower.hp >= tower.maxHp) return 0;
 
     const cost = this.getStructureRepairCost(tower);
-    if (cost <= 0 || player.gold < cost) return;
+    if (cost <= 0 || player.gold < cost) return 0;
 
     player.gold -= cost;
     player.goldSpent += cost;
@@ -14198,7 +14213,51 @@ export class MatchRoom extends Room<MatchState> {
     // reddediliyor), yani hicbir hucrenin gecilebilirligi degismiyor.
     tower.hp = tower.maxHp;
     tower.breachAnnounced = false;
-    client.send("structure:repaired", { towerId: tower.id, cost });
+    if (!options.quiet) client.send("structure:repaired", { towerId: tower.id, cost });
+    return cost;
+  }
+
+  /**
+   * "Tumunu Onar" plani: oyuncunun hasarli yapilari, istemcinin dugmeye
+   * yazdigi ortak `planRepairAll` ile (en hasarlidan, altin yettigince).
+   * `exclude`: bedene zaten verilmis onarimlar (cift tahsil yok).
+   */
+  private getRepairAllPlan(sessionId: string, gold: number, exclude?: ReadonlySet<string>) {
+    const candidates: RepairAllCandidate[] = [];
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== sessionId || exclude?.has(tower.id)) continue;
+      if (tower.hp <= 0 || tower.hp >= tower.maxHp) continue;
+      candidates.push({
+        id: tower.id,
+        hp: tower.hp,
+        maxHp: tower.maxHp,
+        buildCost: getTowerBuildCost(tower.definition.cost),
+        costMultiplier: this.getTowerRepairCostMultiplier(tower)
+      });
+    }
+    return planRepairAll(candidates, gold);
+  }
+
+  /** "Tumunu Onar" ozeti; hic onarim olmadiysa sessiz. */
+  private sendRepairAllResult(client: Client, stats: { count: number; cost: number; towerIds: string[] }) {
+    if (stats.count <= 0) return;
+    client.send("structure:repairedAll", { count: stats.count, cost: stats.cost, towerIds: stats.towerIds.slice() });
+  }
+
+  /** Bedensiz "Tumunu Onar": plandaki yapilar aninda, tek tek `repairStructure` ile. */
+  private repairAllStructures(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    const plan = this.getRepairAllPlan(client.sessionId, player.gold);
+    const stats = { count: 0, cost: 0, towerIds: [] as string[] };
+    for (const towerId of plan.ids) {
+      const cost = this.repairStructure(client, { towerId }, { quiet: true });
+      if (cost <= 0) continue;
+      stats.count += 1;
+      stats.cost += cost;
+      stats.towerIds.push(towerId);
+    }
+    this.sendRepairAllResult(client, stats);
   }
 
   /**
@@ -14816,7 +14875,7 @@ export class MatchRoom extends Room<MatchState> {
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!player || !tower || tower.ownerId !== client.sessionId) return;
     if (tower.hp <= 0 || tower.hp >= tower.maxHp) return;
-    if (body.tasks.some((task) => task.kind === "repair" && task.towerId === tower.id)) return;
+    if (this.getQueuedRepairTowerIds(body).has(tower.id)) return;
     const cost = this.getStructureRepairCost(tower);
     if (cost <= 0 || player.gold < cost) return;
     if (this.isOperatorBodyQueueFull(client, body)) return;
@@ -14829,6 +14888,72 @@ export class MatchRoom extends Room<MatchState> {
       reservedGold: cost,
       message: { ...message },
       towerId: tower.id,
+      tutorial: "repair"
+    });
+  }
+
+  /** Bedene verilmis, henuz yapilmamis onarimlarin yapilari (tekli ve "Tumunu Onar"in kalan duraklari). */
+  private getQueuedRepairTowerIds(body: OperatorBodyModel) {
+    const ids = new Set<string>();
+    for (const task of body.tasks) {
+      if (task.kind === "repair" && task.towerId) ids.add(task.towerId);
+      if (task.kind === "repairAll") {
+        for (const segment of (task.segments ?? []).slice(task.segmentIndex ?? 0)) {
+          if (segment.towerId) ids.add(segment.towerId);
+        }
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * `structure:repairAll` kapisi. Liste ve bedel sunucuda yeniden (istemcinin
+   * sayisina guvenilmiyor), ayni karsilanabilirlik kuraliyla. Bedenli oyuncuda
+   * tek gorev: butun bedel komut aninda ayriliyor, beden duraklari en yakin
+   * komsu sirasiyla geziyor ve her varista tekli onarimin isleyicisi.
+   */
+  private commandRepairAll(client: Client) {
+    const body = this.getCommandBody(client);
+    if (!body) {
+      this.repairAllStructures(client);
+      return;
+    }
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    const plan = this.getRepairAllPlan(client.sessionId, player.gold, this.getQueuedRepairTowerIds(body));
+    if (plan.ids.length === 0) return;
+    if (this.isOperatorBodyQueueFull(client, body)) return;
+    // En yakin komsu: bedenin bulundugu yerden her seferinde en yakin durak.
+    const pending = plan.ids.map((towerId, index) => ({ tower: this.towers.get(towerId)!, cost: plan.costs[index] }));
+    const segments: OperatorBodyWallSegment[] = [];
+    let from: { x: number; y: number } = { x: body.x, y: body.y };
+    while (pending.length > 0) {
+      let best = 0;
+      for (let index = 1; index < pending.length; index += 1) {
+        if (Math.hypot(pending[index].tower.x - from.x, pending[index].tower.y - from.y)
+          < Math.hypot(pending[best].tower.x - from.x, pending[best].tower.y - from.y)) best = index;
+      }
+      const [{ tower, cost }] = pending.splice(best, 1);
+      segments.push({
+        x: tower.x,
+        y: tower.y,
+        cost,
+        towerId: tower.id,
+        standoffCells: this.getTowerPlacementSpan(tower.definition.id) * 0.5 + OPERATOR_BODY_WORK_REACH_CELLS - 0.5
+      });
+      from = tower;
+    }
+    player.gold -= plan.cost;
+    this.enqueueOperatorBodyTask(body, {
+      kind: "repairAll",
+      x: segments[0].x,
+      y: segments[0].y,
+      standoffCells: segments[0].standoffCells ?? OPERATOR_BODY_WORK_REACH_CELLS,
+      reservedGold: plan.cost,
+      message: {},
+      segments,
+      segmentIndex: 0,
+      repairStats: { count: 0, cost: 0, towerIds: [] },
       tutorial: "repair"
     });
   }
@@ -14953,12 +15078,16 @@ export class MatchRoom extends Room<MatchState> {
       const enemy = this.enemies.get(task.enemyId);
       if (!enemy || enemy.hp <= 0) return undefined;
       work = enemy;
-    } else if (task.kind === "wall" && task.segments) {
+    } else if ((task.kind === "wall" || task.kind === "repairAll") && task.segments) {
+      // "Tumunu Onar": yolda gecersizlesen durak (yikildi, satildi, tam can)
+      // ucmadan atlaniyor; ayrilan payi hemen iade.
+      if (task.kind === "repairAll") this.skipInvalidRepairStops(body, task);
       const segment = task.segments[task.segmentIndex ?? 0];
       if (!segment) return undefined;
       work = segment;
     }
-    if (!(task.standoffCells > 0)) return { x: work.x, y: work.y, workX: work.x, workY: work.y };
+    const standoffCells = task.kind === "repairAll" ? task.segments?.[task.segmentIndex ?? 0]?.standoffCells ?? task.standoffCells : task.standoffCells;
+    if (!(standoffCells > 0)) return { x: work.x, y: work.y, workX: work.x, workY: work.y };
     // Is uzaktan, isinla: hedefin cevresinde dusmanlarin temas yaricapindan
     // uzak bir nokta. Her tick yeniden soruluyor (dusmanlar yuruyor); su anki
     // nokta hala iyiyse korunuyor, beden titremiyor.
@@ -14966,7 +15095,7 @@ export class MatchRoom extends Room<MatchState> {
     const stand = pickOperatorBodyStandPoint({
       from: body,
       target: work,
-      distance: gridSize * task.standoffCells,
+      distance: gridSize * standoffCells,
       threats: this.getBodyThreats(),
       safeRadius: this.scaleWorldDistance(OPERATOR_BODY_CONTACT_RADIUS + OPERATOR_BODY_SAFE_MARGIN),
       bounds: this.getActiveWorldBounds(),
@@ -14995,6 +15124,7 @@ export class MatchRoom extends Room<MatchState> {
     const tracked = this.tutorialMode && task.tutorial && task.kind !== "wall" ? task.tutorial : undefined;
 
     if (task.kind === "wall") return this.arriveWallSegment(body, task, client, player);
+    if (task.kind === "repairAll") return this.arriveRepairStop(body, task, client, player);
 
     // Ayrilan bedel geri; isleyici gercek bedeli kendisi aliyor.
     player.gold += task.reservedGold;
@@ -15062,6 +15192,65 @@ export class MatchRoom extends Room<MatchState> {
     this.sendWallLineResult(client, stats);
     if (task.towerIdsBefore && stats.placed > 0) this.reportBodyTutorialProgress(client, "build", task.towerIdsBefore);
     return true;
+  }
+
+  /** "Tumunu Onar" duraginin yapisi hala onarilabilir mi (sahibinin, ayakta, hasarli). */
+  private isRepairStopValid(body: OperatorBodyModel, segment: OperatorBodyWallSegment) {
+    const tower = segment.towerId ? this.towers.get(segment.towerId) : undefined;
+    return Boolean(tower && tower.ownerId === body.ownerId && tower.hp > 0 && tower.hp < tower.maxHp);
+  }
+
+  /** Gecersizlesen duraklari atla; her birinin ayrilan payi oyuncuya geri. */
+  private skipInvalidRepairStops(body: OperatorBodyModel, task: OperatorBodyTask) {
+    const segments = task.segments ?? [];
+    const player = this.state.players.get(body.ownerId);
+    let index = task.segmentIndex ?? 0;
+    while (index < segments.length && !this.isRepairStopValid(body, segments[index])) {
+      if (player) player.gold += segments[index].cost;
+      task.reservedGold = Math.max(0, task.reservedGold - segments[index].cost);
+      segments[index].cost = 0;
+      index += 1;
+    }
+    task.segmentIndex = index;
+  }
+
+  /**
+   * "Tumunu Onar"in tek duragi: ayrilan pay geri, tekli onarimin isleyicisi
+   * (gercek bedeli kendisi aliyor), sonuncusunda tek ozet.
+   */
+  private arriveRepairStop(body: OperatorBodyModel, task: OperatorBodyTask, client: Client, player: Player) {
+    const segments = task.segments ?? [];
+    this.skipInvalidRepairStops(body, task);
+    const index = task.segmentIndex ?? 0;
+    const stats = task.repairStats ?? (task.repairStats = { count: 0, cost: 0, towerIds: [] });
+    const segment = segments[index];
+    if (segment) {
+      player.gold += segment.cost;
+      task.reservedGold = Math.max(0, task.reservedGold - segment.cost);
+      segment.cost = 0;
+      const cost = this.repairStructure(client, { towerId: segment.towerId }, { quiet: true });
+      if (cost > 0) {
+        stats.count += 1;
+        stats.cost += cost;
+        stats.towerIds.push(segment.towerId!);
+      }
+      task.segmentIndex = index + 1;
+      this.skipInvalidRepairStops(body, task);
+    }
+    if ((task.segmentIndex ?? 0) < segments.length) return false;
+    this.finishRepairAllTask(client, task);
+    return true;
+  }
+
+  /** Rota bitti: tek ozet; hic onarim olmadiysa not. */
+  private finishRepairAllTask(client: Client, task: OperatorBodyTask) {
+    const stats = task.repairStats ?? { count: 0, cost: 0, towerIds: [] };
+    if (stats.count > 0) {
+      this.sendRepairAllResult(client, stats);
+      if (this.tutorialMode && task.tutorial) this.reportBodyTutorialProgress(client, task.tutorial);
+    } else {
+      client.send("body:task-failed", serverTextMessage("body.repairFailed"));
+    }
   }
 
   /**
@@ -15141,7 +15330,7 @@ export class MatchRoom extends Room<MatchState> {
     body.workX = target.workX;
     body.workY = target.workY;
     body.state = "w";
-    body.workUntil = now + (task.kind === "wall" && !done ? OPERATOR_BODY_WALL_PIECE_MS : OPERATOR_BODY_WORK_MS);
+    body.workUntil = now + ((task.kind === "wall" || task.kind === "repairAll") && !done ? OPERATOR_BODY_WALL_PIECE_MS : OPERATOR_BODY_WORK_MS);
     if (done) {
       body.tasks.shift();
       // Park yeri son isin yakininda, isin bitiminde yeniden seciliyor.
@@ -15259,6 +15448,8 @@ export class MatchRoom extends Room<MatchState> {
         task.wallStats.skippedBlocked += Math.max(0, (task.segments?.length ?? 0) - (task.segmentIndex ?? 0));
         this.sendWallLineResult(client, task.wallStats);
       }
+      // Yarida kalan "Tumunu Onar": yapilan onarimlarin ozeti; kalan pay iade.
+      if (task.kind === "repairAll" && task.repairStats && task.repairStats.count > 0) this.sendRepairAllResult(client, task.repairStats);
     }
     this.clearOperatorBodyTasks(body);
     body.workUntil = 0;

@@ -85,6 +85,11 @@ export const trControls = {
   // ------------------------------------------------------------ Envanter ve kartlar
   "controls.inventory.empty": "Envanterin boş. Mağazadan aldığın eşyalar burada birikir.",
   "controls.inventory.cancelEquip": "Takmayı iptal et",
+  "controls.repairAll.action": "Tümünü Onar · {count} yapı · {cost}g",
+  "controls.repairAll.actionOne": "Tümünü Onar · {count} yapı · {cost}g",
+  "controls.repairAll.partial": "Tümünü Onar · {affordable}/{count} yapı · {cost}g",
+  "controls.repairAll.none": "Tümünü Onar · Onarılacak yapı yok",
+  "controls.repairAll.noGold": "Tümünü Onar · {count} yapı · Yetersiz altın",
   "controls.workerBan.active": "Yasak: kare seç",
   "controls.workerBan.idle": "İşçi Yolu Yasakla",
   "controls.workerBan.idleCount": "İşçi Yolu Yasakla ({count})",
@@ -331,6 +336,11 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   // ------------------------------------------------------------ Inventory and cards
   "controls.inventory.empty": "Inventory empty. Items bought in the shop collect here.",
   "controls.inventory.cancelEquip": "Cancel equip",
+  "controls.repairAll.action": "Repair all · {count} structures · {cost}g",
+  "controls.repairAll.actionOne": "Repair all · {count} structure · {cost}g",
+  "controls.repairAll.partial": "Repair all · {affordable}/{count} structures · {cost}g",
+  "controls.repairAll.none": "Repair all · Nothing to repair",
+  "controls.repairAll.noGold": "Repair all · {count} structures · Not enough gold",
   "controls.workerBan.active": "Ban: pick a tile",
   "controls.workerBan.idle": "Ban Worker Path",
   "controls.workerBan.idleCount": "Ban Worker Path ({count})",

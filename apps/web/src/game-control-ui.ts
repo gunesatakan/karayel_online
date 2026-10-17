@@ -253,6 +253,8 @@ type ControlState = {
     open: boolean;
     /** Bir esya secildiyse oyuncu simdi kule bekliyor demektir. */
     pendingItemId?: string;
+    /** "Tumunu Onar": metin yapi sayisi ve bedelle; onarilacak ya da karsilanacak yapi yoksa kapali. */
+    repairAll?: { label: string; enabled: boolean };
     /** `alreadyUnlocked`: kilidi kartlardan zaten geliyor (`isShopItemAlreadyUnlocked`). */
     items: Array<{ id: string; name: string; description: string; category: string; count: number; alreadyUnlocked?: boolean }>;
   };
@@ -1395,6 +1397,11 @@ export function setupGameControlUi(game: Phaser.Game) {
     const actions: HTMLElement[] = [];
     if (state.inventory?.pendingItemId) {
       actions.push(makeActionButton(t("controls.inventory.cancelEquip"), "game-controls__inventory-button", true, () => dispatch({ action: "cancelEquip" })));
+    }
+    // Tumunu Onar: kac yapi ve ne kadar altin, dokunmadan once dugmede.
+    if (state.inventory?.repairAll) {
+      const repairAll = state.inventory.repairAll;
+      actions.push(makeActionButton(repairAll.label, "game-controls__repair-all", repairAll.enabled, () => dispatch({ action: "repairAll" })));
     }
     if (state.workerBan) {
       const ban = state.workerBan;
