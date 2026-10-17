@@ -768,6 +768,10 @@ const FROZEN_CRIT_CHANCE = 0.3;
 const UCUBE_CHAIN_RADIUS = TOWER_GRID_SIZE * 3;
 /** Tek vurusta kac dusmana sekiyor. */
 const UCUBE_CHAIN_TARGETS = 2;
+/** Geri Itme'nin vurus basina geri attigi mesafe (dunya birimi, olcekten once). */
+const UCUBE_PUSHBACK_DISTANCE = 18;
+/** Genis Govde: menzil carpani (azami can da iki kat: `chooseUcubePerk`). */
+const UCUBE_HULL_RANGE_MULTIPLIER = 2;
 /** Genis arama acikken gosterilen kart sayisi. */
 const WIDE_SEARCH_CARD_COUNT = 4;
 /** Dalga elinde ucretsiz yenileme hakki (`card:reroll`). */
@@ -15797,7 +15801,9 @@ export class MatchRoom extends Room<MatchState> {
       tower.maxHp = TOWER_BASE_HP
         * getStructureHealthMultiplier(tower.definition, tower.level)
         * getModifierMultiplier(healthModifiers, "towerHealth")
-        * getVeteranHealthMultiplier(getModifierAdd(healthModifiers, "veteranHealth"), tower.veteranWaves ?? 0);
+        * getVeteranHealthMultiplier(getModifierAdd(healthModifiers, "veteranHealth"), tower.veteranWaves ?? 0)
+        // Genis Govde'nin iki kat cani secimden geliyor, kart listesinden degil.
+        * (hasUcubePerk(tower, "range-hull") ? 2 : 1);
       tower.hp = tower.maxHp * damageRatio;
     }
 
@@ -19736,7 +19742,9 @@ export class MatchRoom extends Room<MatchState> {
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     const zeynepRangeMultiplier = this.zeynepRangeUntil > now ? this.zeynepRangeMultiplier : 1;
     if (hasUcubePerk(tower, "range-hull")) {
-      return applyRangeAura(this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * getTowerRangePerLevel(tower.definition)) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
+      // "Menzil iki katina cikar": seviyenin menzili, ikiye. Eskiden yalnizca
+      // taban ikiye katlaniyordu (seviye buyumesi tek): 8. seviyede x1,6, 10.da x1,54.
+      return applyRangeAura(this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * getTowerRangePerLevel(tower.definition)) * UCUBE_HULL_RANGE_MULTIPLIER * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
     }
 
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
@@ -22037,7 +22045,48 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (hasUcubePerk(tower, "pushback") && this.enemies.has(target.id)) {
-      target.pathDistance = Math.max(0, target.pathDistance - this.scaleWorldDistance(18));
+      this.pushUcubeTarget(tower, target);
+    }
+  }
+
+  /**
+   * Geri Itme: vurulan dusman geldigi yone `UCUBE_PUSHBACK_DISTANCE` geri.
+   *
+   * Eskiden yalnizca `pathDistance` azaliyordu. Yer dusmanlari akis alaniyla
+   * yuruyor ve konumlari o sayactan okunmuyor: sayac yalnizca bir ilerleme
+   * olcusu. Dusman yerinde kaliyor, menzilde bir an bile fazla durmuyordu;
+   * ozellik yalnizca "ilk" hedef sirasini bozuyordu.
+   *
+   * Yon dusmanin son yuruyus hizinin tersi; yurumuyorsa (yapiya vuruyor,
+   * donmus) kuleden disa. Hedef kare yapiya, harita disina ya da Metal
+   * Kalkan'in obur yanina dusuyorsa yarim mesafe deneniyor, o da olmuyorsa
+   * itme yok: dusman duvarin icine sokulmuyor.
+   */
+  private pushUcubeTarget(tower: TowerModel, target: EnemyModel) {
+    let dx = -(target.moveVx ?? 0);
+    let dy = -(target.moveVy ?? 0);
+    if (Math.hypot(dx, dy) < 0.001) {
+      dx = target.x - tower.x;
+      dy = target.y - tower.y;
+    }
+    const length = Math.hypot(dx, dy);
+    if (length < 0.001) return;
+    const distance = this.scaleWorldDistance(UCUBE_PUSHBACK_DISTANCE);
+    const bounds = this.getActiveWorldBounds();
+    const from = worldToGrid(target.x, target.y, this.activeMap);
+    for (const share of [1, 0.5]) {
+      const x = target.x + (dx / length) * distance * share;
+      const y = target.y + (dy / length) * distance * share;
+      if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) continue;
+      if (target.movementKind !== "air") {
+        const to = worldToGrid(x, y, this.activeMap);
+        if ((to.col !== from.col || to.row !== from.row) && !this.isStructurePassable(from, to.col, to.row)) continue;
+        if (this.metalShields.length > 0 && this.isShieldBlockingSegment(target.x, target.y, x, y)) continue;
+      }
+      target.x = x;
+      target.y = y;
+      target.pathDistance = Math.max(0, target.pathDistance - distance * share);
+      return;
     }
   }
 
