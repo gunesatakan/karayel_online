@@ -758,7 +758,9 @@ const TAR_SLOW_KIND = "item:ziftli-zemin";
 const DEBRIS_SLOW_KIND = "terrain:debris";
 const CRYSTAL_TRAP_SLOW_KIND = "worker:crystal-trap";
 const REPAIR_BREACH_SLOW_KIND = "worker:repair-breach";
-const SYMPATHY_SLOW_KIND = "ultimate:sympathy";
+/** Sempati ultisinin kaynagi: kanamasinin `originSourceId`si ve yavaslatma etkisi. */
+const SYMPATHY_SOURCE_ID = "ultimate:sympathy";
+const SYMPATHY_SLOW_KIND = SYMPATHY_SOURCE_ID;
 /** Elle yazilmis tek sayilik aura carpani (etkisiz kayit): eski yol ve testler. */
 const AURA_SLOW_KIND = "aura";
 
@@ -1124,6 +1126,18 @@ const DEBUG_LASER_TIER_COLORS: Record<number, { beam: number; overdrive: number 
 const TOWER_DPS_WINDOW_MS = 5000;
 const UCUBE_STACK_INTERVAL_REDUCTION = (1 - 300 / 940) / 15;
 const ATAKAN_ULTIMATE_EXHAUSTION_MS = 3000;
+/**
+ * AttackLord ultisinde ardisik drone'larin cikis araligi (oyun ms).
+ *
+ * Drone'lar ayni anda cikinca ust uste biniyor ve tek drone gibi
+ * gorunuyordu. Ilki atis aninda, gerisi kule sirasiyla bu arayla cikiyor.
+ * Drone omru gibi oyun suresi (`updateDrones` sayiyor): duvar saatinde 75 ms,
+ * yani 60 ms'lik snapshot araligindan (60 Hz tick'te ~67 ms) uzun -- her
+ * karede en fazla bir yeni drone beliriyor.
+ */
+export const ATAKAN_ULTIMATE_DRONE_LAUNCH_GAP_MS = 60;
+/** AttackLord saldiri drone'unun hasar kaynagi (tamir drone'u hasar vermiyor). */
+const ATAKAN_ULTIMATE_DRONE_SOURCE_ID = "warrior-ultimate-drone";
 const ATAKAN_DRONE_REPAIR_AMOUNT = 3;
 const ATAKAN_DRONE_ATTACK_SPEED = 180;
 const ATAKAN_DRONE_REPAIR_SPEED = 150;
@@ -1467,10 +1481,45 @@ type UltimateReport = {
   heal?: number;
   /** Atakan: bu atisin henuz dusmeyen drone'lari; hepsi bitince rapor gidiyor. */
   droneIds?: Set<string>;
+  /**
+   * Atakan: bu atisin sirasi gelmemis drone'lari (`pendingAtakanDrones`).
+   * Karne bunlar da cikip (ya da atlanip) dusmeden gitmiyor.
+   */
+  pendingDrones?: number;
   /** Sureli ulti (Kabus, Sempati): bu andan sonra rapor gidiyor. */
   until?: number;
   /** Sempati: baga takilip kanayan dusmanlar; olumler bunlardan sayiliyor. */
   markedIds?: Set<string>;
+};
+
+/**
+ * AttackLord ultisinin sirasi gelmemis drone'u.
+ *
+ * Kule kimligi tutuluyor, kule degil: sirasini beklerken satilan kulenin
+ * drone'u cikmiyor. Hasar atistaki ulti gucuyle; hedef ve cikis noktasi
+ * (beden ya da kule) cikis aninda seciliyor.
+ */
+type PendingAtakanDrone = {
+  towerId: string;
+  repairNexus: boolean;
+  damage: number;
+  /** Cikisa kalan oyun suresi (ms); drone omru gibi `updateDrones` sayiyor. */
+  delayMs: number;
+  report: UltimateReport;
+};
+
+/**
+ * Dusmandaki durum kaydi: paylasilan kayit ve onu son uygulayan kulesiz
+ * etkinin kaynagi.
+ */
+type EnemyStatusState = StatusEffectRuntimeState & {
+  /**
+   * Durumu son uygulayan kulesiz etki (Sempati kanamasi: `ultimate:sympathy`).
+   * Kule uygulamasi yazmiyor. `applyTowerStatusEffect` her uygulamada yeni
+   * kayit kurdugu icin sonraki uygulama alani dusuruyor: tikin gucu ve
+   * kaynagi son uygulayaninki (butun kanamalar `refresh`).
+   */
+  originSourceId?: string;
 };
 
 type KillStreakLock = {
@@ -1510,7 +1559,7 @@ type EnemyModel = {
   damageResistances: Partial<Record<DamageType, number>>;
   hitTypeResistances: Partial<Record<HitType, number>>;
   statusResistances: Partial<Record<StatusEffectId, number>>;
-  statusEffects: Partial<Record<TowerStatusEffectType, StatusEffectRuntimeState>>;
+  statusEffects: Partial<Record<TowerStatusEffectType, EnemyStatusState>>;
   statusTickAt: Partial<Record<TowerStatusEffectType, number>>;
   stackStates: Record<string, TowerStackRuntimeState>;
   abilities: string[];
@@ -3188,6 +3237,12 @@ export class MatchRoom extends Room<MatchState> {
   private melisGothicNightmareOwnerUntil = new Map<string, number>();
   /** Sonucu henuz belli olmayan ultiler (drone, Kabus, Sempati); bitince raporlaniyor. */
   private openUltimateReports: UltimateReport[] = [];
+  /**
+   * AttackLord ultilerinin sirasi gelmemis drone'lari, atis ve kule sirasiyla
+   * (`useAtakanUltimate`). Ayni anda cikan drone'lar tek drone gibi
+   * gorunuyordu; her biri sirasi gelince `updateDrones`da cikiyor.
+   */
+  private pendingAtakanDrones: PendingAtakanDrone[] = [];
   /**
    * Bagisiklik kapisini gecen her vurusta artiyor. `damageEnemy` inmeyen
    * vurusu da "olmedi" diye donduruyor; ulti karnesi isabeti bununla ayiriyor.
@@ -6510,6 +6565,8 @@ export class MatchRoom extends Room<MatchState> {
     this.matchResult = result;
     // Yolda kalan bedenin bedeli iade; kuyruklar bos (beden artik is yapmiyor).
     this.releaseOperatorBodies();
+    // Sirasi gelmemis ulti drone'u sonuctan sonra cikmiyor; karnesi havadakilerle kapaniyor.
+    this.cancelPendingAtakanDrones();
     // Sonuctan sonra serit yapilari vurmasin ve telde kalmasin.
     this.clearCounterSurges();
     this.metalShields = [];
@@ -8420,13 +8477,13 @@ export class MatchRoom extends Room<MatchState> {
     enemy: EnemyModel,
     definition: TowerStatusEffectDefinition,
     now: number,
-    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceTowerId?: string; sourceOwnerId?: string; slowFraction?: number; slowFloorKey?: string; slowKind?: string } = {}
+    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceTowerId?: string; sourceOwnerId?: string; slowFraction?: number; slowFloorKey?: string; slowKind?: string; originSourceId?: string } = {}
   ) {
     const scaledDefinition = {
       ...definition,
       durationMs: scaleGameDuration(overrides.durationMs ?? definition.durationMs)
     };
-    const state = applyTowerStatusEffect(enemy.statusEffects[definition.type], scaledDefinition, {
+    const state: EnemyStatusState = applyTowerStatusEffect(enemy.statusEffects[definition.type], scaledDefinition, {
       now,
       resistance: enemy.statusResistances[definition.type === "mark" ? "tracking" : definition.type],
       magnitude: overrides.magnitude,
@@ -8434,6 +8491,9 @@ export class MatchRoom extends Room<MatchState> {
       sourceTowerId: overrides.sourceTowerId,
       sourceOwnerId: overrides.sourceOwnerId
     });
+    // Kulesiz kaynak (ulti) kaydin uzerinde: tikin oldurmesi kimin, buradan
+    // okunuyor (`isUltimateKill`). Yeni kayit eskisinin kaynagini tasimiyor.
+    if (overrides.originSourceId) state.originSourceId = overrides.originSourceId;
     enemy.statusEffects[definition.type] = state;
     if (definition.type === "slow") {
       // Hizi durumun `magnitude` degeri degil yavaslatma kesri belirliyor;
@@ -9978,9 +10038,9 @@ export class MatchRoom extends Room<MatchState> {
         if (distanceSq(drone.x, drone.y, target.x, target.y) <= hitRadius * hitRadius) {
           const report = this.findDroneUltimateReport(id);
           if (report) {
-            this.strikeForUltimate(report, target, drone.damage, 0, "warrior-ultimate-drone", drone.ownerId);
+            this.strikeForUltimate(report, target, drone.damage, 0, ATAKAN_ULTIMATE_DRONE_SOURCE_ID, drone.ownerId);
           } else {
-            this.damageEnemy(target, drone.damage, 0, "warrior-ultimate-drone", drone.ownerId);
+            this.damageEnemy(target, drone.damage, 0, ATAKAN_ULTIMATE_DRONE_SOURCE_ID, drone.ownerId);
           }
           this.drones.delete(id);
         }
@@ -10014,6 +10074,10 @@ export class MatchRoom extends Room<MatchState> {
         this.drones.delete(id);
       }
     }
+    // Sirasi gelen ulti drone'lari donguden sonra cikiyor: bu tick'in
+    // karesinde cikis noktasinda (bedenin icinde) gorunuyor, ilk adimini
+    // atistaki drone gibi bir sonraki tick'te atiyor.
+    if (this.pendingAtakanDrones.length > 0) this.launchPendingAtakanDrones(deltaTime);
   }
 
   private updateEnemies(seconds: number) {
@@ -17333,7 +17397,8 @@ export class MatchRoom extends Room<MatchState> {
     }
     const now = this.runtime.now();
     for (const report of [...this.openUltimateReports]) {
-      const dronesDone = report.droneIds !== undefined && ![...report.droneIds].some((id) => this.drones.has(id));
+      // Sirasi gelmemis drone'u olan karne bekliyor: son drone cikip dusmeden gitmiyor.
+      const dronesDone = report.droneIds !== undefined && !report.pendingDrones && ![...report.droneIds].some((id) => this.drones.has(id));
       const timeUp = report.until !== undefined && now >= report.until;
       if (dronesDone || timeUp) {
         this.finishUltimateReport(report);
@@ -17457,43 +17522,109 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Atakan ultisi: her Atakan kulesinden bir drone.
+   * Atakan ultisi: her Atakan kulesinden bir drone, kule sirasiyla birer birer.
+   *
+   * Ilk drone atis aninda, gerisi `ATAKAN_ULTIMATE_DRONE_LAUNCH_GAP_MS` arayla
+   * cikiyor (`launchPendingAtakanDrones`): ayni anda cikan drone'lar bedenin
+   * icinde ust uste biniyor ve tek drone gibi gorunuyordu. Her drone'un
+   * hedefi, cikis noktasi ve omru kendi cikisindan; hasari atistaki ulti
+   * gucuyle. Kulelerin yorgunlugu atis aninda, eskisi gibi.
    *
    * Drone'lar zamanla sonuclaniyor; atis hicbir seyi beklemiyor. Karne bu
-   * atisin drone'larini tutuyor ve sonuncusu dusunce (vurdu, hedefsiz kaldi ya
-   * da suresi bitti) raporlaniyor. Hic drone cikmadiysa hemen.
+   * atisin drone'larini tutuyor ve sonuncusu cikip dusunce (vurdu, hedefsiz
+   * kaldi ya da suresi bitti) raporlaniyor. Hic drone cikmayacaksa hemen.
    */
   private useAtakanUltimate(client: Client, mode: "attack" | "repair", report: UltimateReport) {
     const ownTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId && tower.characterId === "warrior");
     const repairNexus = mode === "repair";
     const droneDamage = this.getAtakanDroneDamage(client.sessionId);
 
-    // Drone'lar AttackLord'un bedeninden cikip sahaya yayiliyor; hedefini
-    // yine kendi kulesinin yakinindan seciyor. Bedeni yoksa kuleden.
-    const body = this.operatorBodies.get(client.sessionId);
-    const origin = body && !body.dead ? { x: body.x, y: body.y } : undefined;
-    const droneIds = new Set<string>();
-    for (const tower of ownTowers) {
-      const droneId = this.spawnAtakanDrone(tower, repairNexus, droneDamage, origin);
-      if (droneId) {
-        droneIds.add(droneId);
-      }
+    if (repairNexus) {
+      report.heal = 0;
     }
+    const droneIds = new Set<string>();
+    report.droneIds = droneIds;
+    let pendingDrones = 0;
+    ownTowers.forEach((tower, index) => {
+      const launch: PendingAtakanDrone = {
+        towerId: tower.id,
+        repairNexus,
+        damage: droneDamage,
+        delayMs: index * ATAKAN_ULTIMATE_DRONE_LAUNCH_GAP_MS,
+        report
+      };
+      if (index === 0) {
+        this.launchAtakanDrone(launch);
+      } else {
+        this.pendingAtakanDrones.push(launch);
+        pendingDrones += 1;
+      }
+    });
+    report.pendingDrones = pendingDrones;
 
     const now = this.runtime.now();
     for (const tower of ownTowers) {
       tower.offlineUntil = Math.max(tower.offlineUntil, now + ATAKAN_ULTIMATE_EXHAUSTION_MS);
     }
 
-    if (repairNexus) {
-      report.heal = 0;
-    }
-    if (droneIds.size === 0) {
+    if (droneIds.size === 0 && pendingDrones === 0) {
       this.finishUltimateReport(report);
       return;
     }
-    report.droneIds = droneIds;
     this.openUltimateReports.push(report);
+  }
+
+  /**
+   * Sirasi gelen drone'u cikarir; cikan drone karnesine yaziliyor.
+   *
+   * Kule sirasini beklerken satildiysa drone'u da yok. Yikilan kule (cani
+   * bitmis enkaz) haritada kaliyor ve atis aninda da drone veriyordu; sirada
+   * da veriyor, kural atistakiyle ayni.
+   *
+   * Drone AttackLord'un bedeninden cikip sahaya yayiliyor, hedefini yine
+   * kendi kulesinin yakinindan seciyor; beden cikis aninda dustuyse ya da
+   * yoksa kuleden. Beden ve sahip kuleden okunuyor: yeniden baglanan
+   * oyuncunun kulesi ve bedeni yeni oturuma geciyor (`transferPlayerSession`).
+   */
+  private launchAtakanDrone(launch: PendingAtakanDrone) {
+    const tower = this.towers.get(launch.towerId);
+    if (!tower) return;
+    const body = this.operatorBodies.get(tower.ownerId);
+    const origin = body && !body.dead ? { x: body.x, y: body.y } : undefined;
+    const droneId = this.spawnAtakanDrone(tower, launch.repairNexus, launch.damage, origin);
+    if (droneId) launch.report.droneIds?.add(droneId);
+  }
+
+  /**
+   * Siradaki ulti drone'larinin sayaci; `updateDrones` drone omruyle ayni oyun
+   * suresiyle (`deltaTime`) cagiriyor. Vakti gelenler atis ve kule sirasiyla
+   * cikiyor; hedef yoksa saldiri drone'u atistaki gibi atlaniyor.
+   */
+  private launchPendingAtakanDrones(deltaTime: number) {
+    const waiting: PendingAtakanDrone[] = [];
+    // Ulti basina tikte en fazla bir drone: takilan bir tikte (GC, agir dalga)
+    // sirasi gelmis birkac drone ayni noktadan birlikte cikip yine tek drone
+    // gibi gorunurdu. Kalan bir sonraki tike kayiyor.
+    const launchedThisTick = new Set<UltimateReport>();
+    for (const launch of this.pendingAtakanDrones) {
+      launch.delayMs -= deltaTime;
+      if (launch.delayMs > 0 || launchedThisTick.has(launch.report)) {
+        waiting.push(launch);
+        continue;
+      }
+      launchedThisTick.add(launch.report);
+      launch.report.pendingDrones = Math.max(0, (launch.report.pendingDrones ?? 0) - 1);
+      this.launchAtakanDrone(launch);
+    }
+    this.pendingAtakanDrones = waiting;
+  }
+
+  /** Mac bitti: sirasi gelmemis drone'lar cikmiyor; havadakiler eskisi gibi suruyor. */
+  private cancelPendingAtakanDrones() {
+    for (const launch of this.pendingAtakanDrones) {
+      launch.report.pendingDrones = Math.max(0, (launch.report.pendingDrones ?? 0) - 1);
+    }
+    this.pendingAtakanDrones = [];
   }
 
   private spawnAtakanDrone(tower: TowerModel, repairNexus: boolean, damage: number, origin?: { x: number; y: number }) {
@@ -18525,6 +18656,8 @@ export class MatchRoom extends Room<MatchState> {
     overkill?: number;
   }) {
     const { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists } = context;
+    // Olum etkileri (patlama, parcalanma) durumu degistirmeden once okunuyor.
+    const ultimateKill = this.isUltimateKill(enemy, sourceDefinitionId);
     const damagePlayer = this.state.players.get(sourceOwnerId);
     // Sampiyon yerine gectigi dogumlar kadar oldurme sayiliyor: seri, kule
     // yiginlari ve ulti sarji (dalganin toplami ayni kalsin). Oldurme sayaci,
@@ -18616,10 +18749,32 @@ export class MatchRoom extends Room<MatchState> {
       for (const assist of assists) this.runLedger.recordAssist(assist.slot, assist.kind);
       this.addKillEvent(sourceOwnerId, enemy.id, ownerGold, assists, killUnits);
     }
-    for (const player of this.state.players.values()) {
-      player.ultimateCharge = Math.min(100, player.ultimateCharge + this.getUltimateChargeGain(player, 7 * killUnits));
+    // Ulti kendi oldurdugu ile dolmuyor (sahibinin karari): ultinin oldurmesi
+    // ne atana ne takim arkadasina sarj veriyor. Oldurmenin geri kalani
+    // (altin, XP, seri, asist, defter) aynen; zamanla dolum da suruyor.
+    if (!ultimateKill) {
+      for (const player of this.state.players.values()) {
+        player.ultimateCharge = Math.min(100, player.ultimateCharge + this.getUltimateChargeGain(player, 7 * killUnits));
+      }
     }
     if (enemy.champion) this.announceChampionDown(enemy, now);
+  }
+
+  /**
+   * Oldurucu hasar bir ultiden mi: ultinin kendi vurusu
+   * (`isUltimateDamageSource`) ya da ultinin uyguladigi durumun tiki
+   * (Sempati kanamasi; kaynagi durum kaydinda).
+   *
+   * Ultinin guclendirdigi (Gotik Kabus) ya da yavaslattigi dusmani bir kulenin
+   * oldurmesi ultinin degil. Ultinin oldurdugu dusmanin olum zinciri de degil:
+   * lanet patlamasi, parcalanma, hasar bagi ve kronal iz kendi kaynaklariyla
+   * oldurup sarj veriyor (`strikeForUltimate` karnesi de onlari saymiyor).
+   */
+  private isUltimateKill(enemy: EnemyModel, sourceDefinitionId: string) {
+    if (isUltimateDamageSource(sourceDefinitionId)) return true;
+    if (!sourceDefinitionId.startsWith("status:")) return false;
+    const state = enemy.statusEffects[sourceDefinitionId.slice("status:".length) as TowerStatusEffectType];
+    return isUltimateDamageSource(state?.originSourceId);
   }
 
   /**
@@ -22825,6 +22980,7 @@ export class MatchRoom extends Room<MatchState> {
         report.markedIds.add(enemy.id);
         report.hits += 1;
       }
+      // Kanama ultinin: tikinin oldurmesi ulti sarji vermiyor (`isUltimateKill`).
       this.applyEnemyStatusEffect(
         enemy,
         {
@@ -22833,7 +22989,8 @@ export class MatchRoom extends Room<MatchState> {
           durationMs: SYMPATHY_BLEED_DURATION_MS,
           stacking: "refresh"
         },
-        now
+        now,
+        { originSourceId: SYMPATHY_SOURCE_ID }
       );
     }
   }
@@ -23729,6 +23886,34 @@ const GRAVITY_PULL_HOLD_MS = 250;
 const SYNTHETIC_KILL_SOURCES: ReadonlySet<string> = new Set(["archer-4-underworld-execute", ATAKAN_EXECUTE_SOURCE_ID, LEGENDARY_SOURCE_IDS.execute]);
 function isSyntheticKillSource(sourceDefinitionId: string) {
   return SYNTHETIC_KILL_SOURCES.has(sourceDefinitionId);
+}
+
+/**
+ * Ultilerin hasar kaynaklari. Bunlarin oldurmesi kimseye ulti sarji vermiyor
+ * (sahibinin karari: ulti kendi oldurdugu ile dolmasin; bkz. `isUltimateKill`).
+ *
+ * Her karakterin ultisi ve hasar yolu (`useUltimate`):
+ * - `ultimate` (`strikeForUltimate` varsayilani): Zeynep sutunu, Mage
+ *   meteoru, Tank kilit alani ve tanimsiz karakterin duz vurusu. Kulesiz
+ *   vurus: durum, isaret, sicrama ve efsanevi tetik tasimiyor, yalnizca
+ *   yavaslatma (o da hasar vermiyor).
+ * - `warrior-ultimate-drone`: AttackLord'un saldiri drone'u. Tamir drone'u
+ *   hasar vermiyor.
+ * - `ultimate:sympathy`: Onur Sempati'sinin kanamasi. Hasari `status:bleed`
+ *   tiki; ultiden geldigi durum kaydinin `originSourceId`sinde.
+ * Hasarsiz ultiler: Healer can dalgasi (`ultimate:healer` yavaslatmasi) ve
+ * Melis Gotik Kabus (kendi kulelerini guclendiriyor; oldurme kulenin, sarj
+ * veriyor -- guclendirilen ya da yavaslatilan dusmani kule oldurdugunde
+ * oldurme ultinin degil).
+ *
+ * Yeni bir ulti kaynagi `ultimate:<ad>` adiyla taniniyor; baska adla
+ * eklenirse bu listeye yazilmali. tests/ultimate-own-kill-charge.test.mjs
+ * her karakterin ultisini surup kulesiz hasarin kaynagini buradan soruyor.
+ */
+const ULTIMATE_DAMAGE_SOURCE_IDS: ReadonlySet<string> = new Set(["ultimate", ATAKAN_ULTIMATE_DRONE_SOURCE_ID]);
+const ULTIMATE_SOURCE_PREFIX = "ultimate:";
+export function isUltimateDamageSource(sourceId: string | undefined) {
+  return sourceId !== undefined && (ULTIMATE_DAMAGE_SOURCE_IDS.has(sourceId) || sourceId.startsWith(ULTIMATE_SOURCE_PREFIX));
 }
 
 export function getPlayerStartGold(_characterId: CharacterId) {

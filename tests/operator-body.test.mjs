@@ -429,7 +429,11 @@ test("AttackLord ultisi: drone'lar bedeninden cikiyor; sarj komutta harcaniyor",
     const body = bodyOf(room);
     const at = { x: body.x, y: body.y };
     fly(room, clock, 50);
-    const drones = [...room.drones.values()].filter((drone) => drone.mode === "attack");
+    const attackDrones = () => [...room.drones.values()].filter((drone) => drone.mode === "attack");
+    // Drone'lar birer birer cikiyor: ilki atis aninda, ikincisi sirasi gelince.
+    assert.equal(attackDrones().length, 1, "ilk drone atis aninda cikmali");
+    room.updateDrones(60, 0.06);
+    const drones = attackDrones();
     assert.equal(drones.length, 2, "her kuleden bir drone");
     for (const drone of drones) {
       assert.ok(Math.hypot(drone.x - at.x, drone.y - at.y) <= 40, "drone bedenden cikmadi");
@@ -437,6 +441,79 @@ test("AttackLord ultisi: drone'lar bedeninden cikiyor; sarj komutta harcaniyor",
     // Yeniden atis bedeni ayni ultiyle tekrar kuyruga sokmuyor (sarj yok).
     send(room, client, "useUltimate", { mode: "attack" });
     assert.equal(body.tasks.length, 0);
+  } finally {
+    clock.restore();
+    cleanup(room);
+  }
+});
+
+test("AttackLord ultisi: drone bedenin cikis anindaki yerinden; beden yoksa kendi kulesinden", async () => {
+  const { room, clients: [client] } = await startedRoom(["warrior"]);
+  const clock = withClock();
+  try {
+    room.setupPhase = false;
+    const player = room.state.players.get("p1");
+    player.gold = 100_000;
+    for (const spot of spots(room, "warrior-1", 3)) room.placeTower(client, { ...spot, definitionId: "warrior-1" });
+    const towers = ownTowers(room).filter((tower) => tower.characterId === "warrior");
+    assert.equal(towers.length, 3);
+    spawnEnemy(room, { hp: 1_000_000, maxHp: 1_000_000 });
+    const body = bodyOf(room);
+    player.ultimateCharge = 100;
+    room.useUltimate(client, { mode: "attack" });
+    const launched = () => [...room.drones.values()].filter((drone) => drone.mode === "attack");
+    assert.equal(launched().length, 1);
+
+    // Beden sirada yer degistirdi: ikinci drone yeni yerinden cikiyor.
+    body.x += 30;
+    body.y += 10;
+    room.updateDrones(60, 0.06);
+    const second = launched().at(-1);
+    assert.equal(launched().length, 2);
+    assert.deepEqual({ x: second.x, y: second.y }, { x: body.x, y: body.y });
+
+    // Beden yok sayilinca (dusmus) ucuncu drone kendi kulesinden.
+    body.dead = true;
+    room.updateDrones(60, 0.06);
+    const third = launched().at(-1);
+    assert.equal(launched().length, 3);
+    assert.deepEqual({ x: third.x, y: third.y }, { x: towers[2].x, y: towers[2].y });
+  } finally {
+    clock.restore();
+    cleanup(room);
+  }
+});
+
+test("AttackLord ultisi: beden duserse (yenilgi) sirasi gelmemis drone cikmiyor, karne havadakiyle kapaniyor", async () => {
+  const { room, clients: [client] } = await startedRoom(["warrior"]);
+  const clock = withClock();
+  try {
+    room.setupPhase = false;
+    const player = room.state.players.get("p1");
+    player.gold = 100_000;
+    for (const spot of spots(room, "warrior-1", 3)) room.placeTower(client, { ...spot, definitionId: "warrior-1" });
+    const body = bodyOf(room);
+    const enemy = spawnEnemy(room, { hp: 1_000_000, maxHp: 1_000_000, attack: 50 });
+    player.ultimateCharge = 100;
+    room.useUltimate(client, { mode: "attack" });
+    assert.equal(room.pendingAtakanDrones.length, 2);
+
+    // Dusman bedenin ustunde: beden duser, mac biter.
+    body.hp = 5;
+    Object.assign(enemy, { x: body.x, y: body.y });
+    room.enemySpatialGrid.rebuild(room.enemies.values());
+    clock.advance(10);
+    room.updateOperatorBodies(0.001, 0.5);
+    assert.equal(room.matchResult, "defeat");
+    assert.equal(room.pendingAtakanDrones.length, 0, "mac bittikten sonra yeni drone cikmamali");
+
+    // Havadaki tek drone hedefine iniyor; karne onunla gidiyor.
+    for (let tick = 0; tick < 400 && [...room.drones.values()].some((drone) => drone.mode === "attack"); tick += 1) {
+      room.updateDrones(50, 0.05);
+      room.settleUltimateReports();
+    }
+    room.settleUltimateReports();
+    assert.deepEqual(messages(client, "ultimate:result"), [{ kind: "drones", hits: 1, kills: 0 }]);
   } finally {
     clock.restore();
     cleanup(room);

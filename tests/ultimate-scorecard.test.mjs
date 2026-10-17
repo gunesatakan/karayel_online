@@ -353,8 +353,11 @@ function atakanWithDrones(room, towerCount) {
   return towers;
 }
 
+/** Drone'lari ucurur; sirasini bekleyen drone (`pendingAtakanDrones`) kaldikca da. */
 function flyDrones(room, ticks = 400) {
-  for (let tick = 0; tick < ticks && [...room.drones.values()].some((drone) => drone.mode === "attack" || drone.mode === "repair"); tick += 1) {
+  const airborne = () => room.pendingAtakanDrones.length > 0
+    || [...room.drones.values()].some((drone) => drone.mode === "attack" || drone.mode === "repair");
+  for (let tick = 0; tick < ticks && airborne(); tick += 1) {
     room.updateDrones(50, 0.05);
     room.settleUltimateReports();
   }
@@ -376,9 +379,11 @@ test("Atakan drone'lari atisi bekletmez; karne son drone dusunce bir kez gider",
 
   room.useUltimate(io.owner, { mode: "attack" });
 
-  // Atis aninda: sarj harcandi, drone'lar havada, karne henuz yok.
+  // Atis aninda: sarj harcandi, ilk drone havada, ikincisi sirasini bekliyor
+  // (drone'lar birer birer cikiyor), karne henuz yok.
   assert.equal(room.state.players.get("p1").ultimateCharge, 0);
-  assert.equal([...room.drones.values()].filter((drone) => drone.mode === "attack").length, 2);
+  assert.equal([...room.drones.values()].filter((drone) => drone.mode === "attack").length, 1);
+  assert.equal(room.pendingAtakanDrones.length, 1);
   assert.equal(io.results().length, 0, "drone'lar inmeden karne gitmemeli");
 
   flyDrones(room);
