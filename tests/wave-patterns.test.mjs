@@ -248,12 +248,15 @@ test("ritim: baskin kisa, sizma uzun, yiginlar arasinda sessizlik; giris sutunla
   assert.equal(sure(balanced), today, "dengeli: bugunku aralik");
   assert.ok(sure(rush) < sure(balanced) * 0.75, `baskin ${sure(rush)} / ${sure(balanced)}`);
   assert.ok(sure(trickle) > sure(balanced) * 1.3, `sizma ${sure(trickle)} / ${sure(balanced)}`);
-  // Yigin: uc yigin, yigin ici aralik tabanin cok altinda, aralarda uzun sessizlik.
+  // Yigin: uc yigin (serit), yigin ici aralik tabanin cok altinda ve
+  // sessizlik yok (sahibinin istegi): dalga hic beklemeden, cok hizli geliyor.
   assert.equal(burst.groups, 3);
   assert.ok(burst.intervalMs < getWaveSpawnIntervalMs(wave) * 0.5);
-  assert.ok(burst.pauseMs >= burst.intervalMs * 10, `sessizlik ${burst.pauseMs}`);
+  assert.equal(burst.pauseMs, 0, "yiginlar arasi sessizlik kalkti");
   const delays = Array.from({ length: burst.slotCount - 1 }, (_, slot) => getWavePatternSlotDelayMs(burst, slot));
-  assert.equal(delays.filter((delay) => delay === burst.pauseMs).length, 2, "iki sessizlik");
+  assert.ok(delays.every((delay) => delay === burst.intervalMs), "her bekleme yigin araligi");
+  assert.ok(sure(burst) < sure(balanced) * 0.5, `yigin baskin hizli: ${sure(burst)} / ${sure(balanced)}`);
+  assert.ok(sure(pincer) < sure(balanced) * 0.7, `kiskac hizli: ${sure(pincer)} / ${sure(balanced)}`);
   assert.equal(pincer.groups, 2);
   // Kanat: tekler sol ceyrek, ciftler sag ceyrek.
   for (let slot = 0; slot < 8; slot += 1) {

@@ -5850,11 +5850,11 @@ export class MatchRoom extends Room<MatchState> {
     const champion = this.spawnNextWaveEnemy();
     // Formul paylasilan pakette: istemcinin kombo penceresi ayni aralikla sayiyor.
     //
-    // Sampiyon yerine gectigi dogumlarin araliklarini bosaltiyor: dalganin
-    // suresi ayni kaliyor ve sampiyon sahnede bir sure tek basina. Boslugun
-    // `leadSlots` kadari sampiyondan once, gerisi sonra.
-    const next = champion ? undefined : this.getPendingChampion();
-    const slots = champion ? champion.replaced - champion.leadSlots : next ? 1 + next.leadSlots : 1;
+    // Sampiyon eskiden yerine gectigi dogumlarin araliklarini bosaltiyordu
+    // (dalga suresi ayni, sampiyon bir sure tek basina). Sahibinin istegiyle
+    // dalga icinde bekleme yok: sampiyondan sonra akis hemen suruyor.
+    void champion;
+    const slots = 1;
     // Dalga paterni ritmi verdiyse (aralik, yiginlar arasi sessizlik) onun
     // beklemeleri; plan yoksa taban aralik.
     const pattern = this.getActiveWavePattern();

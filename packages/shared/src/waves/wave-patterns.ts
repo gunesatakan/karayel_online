@@ -101,8 +101,9 @@ export type WavePatternSpec = {
  * | airRaid  | bugunku karisim (hepsi ucuyor)  | taban aralik                  | dagink | 5,10|
  * | airMixed | bugunku karisim (yarisi ucuyor) | taban aralik                  | dagink |15,20|
  *
- * Yiginli paternde dalganin toplam suresi surekli akisinkiyle ayni hedefe
- * gore kuruluyor; aradaki sessizlik `WAVE_PATTERN_PAUSE_MAX_MS`ta kirpiliyor.
+ * Yiginli paternlerde yiginlar arasi sessizlik yok: yigin ici aralik butun
+ * dalgada gecerli, dalga surekli akistan cok daha kisa surede geliyor
+ * (`WAVE_PATTERN_PAUSE_MAX_MS` artik kullanilmiyor, eski kayitlar icin duruyor).
  */
 export const WAVE_PATTERN_TABLE: Readonly<Record<WavePatternId, Readonly<WavePatternSpec>>> = {
   balanced: { intervalScale: 1, groups: 1, groupIntervalScale: 1, entry: "spread", minWave: 1 },
@@ -410,12 +411,14 @@ export function planWavePattern(input: WavePatternPlanInput): WavePatternPlan {
   const groupSize = Math.max(1, Math.ceil(slotCount / groups));
   const flowInterval = Math.max(WAVE_PATTERN_MIN_INTERVAL_MS, baseInterval * spec.intervalScale);
   let intervalMs = flowInterval;
-  let pauseMs = 0;
+  // Yiginlar arasinda sessizlik yok (sahibinin istegi: dalga basladiysa
+  // dusman hic beklemeden gelmeli). Yiginli paternler (Kiskac, Yigin baskin)
+  // yigin ici sik araligi butun dalgaya yayiyor: dalga cok daha kisa surede
+  // geliyor, yani bunlar "hizli, zorlayici" dalgalar. Yigin sayisi yalnizca
+  // giris seritlerini belirliyor.
+  const pauseMs = 0;
   if (groups > 1) {
     intervalMs = Math.max(WAVE_PATTERN_MIN_INTERVAL_MS, baseInterval * spec.groupIntervalScale);
-    const target = slotCount * flowInterval;
-    const pauses = groups - 1;
-    pauseMs = Math.max(intervalMs * 3, Math.min(WAVE_PATTERN_PAUSE_MAX_MS, (target - (slotCount - groups) * intervalMs) / pauses));
   }
   const laneCount = Math.max(groups, 4);
   const lanes: number[] = [];
@@ -447,10 +450,8 @@ export function getWavePatternSlotType(plan: WavePatternPlan, slot: number): Ene
   return plan.types[index % length];
 }
 
-/** `slot`. dogumdan sonraki bekleme (oyun ms): yigin sinirinda sessizlik, yoksa aralik. */
-export function getWavePatternSlotDelayMs(plan: WavePatternPlan, slot: number) {
-  const next = Math.floor(slot) + 1;
-  if (plan.groups > 1 && next % plan.groupSize === 0 && next < plan.slotCount) return plan.pauseMs;
+/** `slot`. dogumdan sonraki bekleme (oyun ms): her zaman paternin araligi (yiginlar arasi sessizlik yok). */
+export function getWavePatternSlotDelayMs(plan: WavePatternPlan, _slot: number) {
   return plan.intervalMs;
 }
 

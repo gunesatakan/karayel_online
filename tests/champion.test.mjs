@@ -269,16 +269,15 @@ test("sunucu: dalga planla doguyor, sampiyon ortada ve tek, sayac sampiyonu bir 
       const slot = index < plan.slot ? index : index + plan.replaced - 1;
       assert.equal(enemy.movementKind === "air", isFlyingWaveSpawn(wave, slot), `${wave}. dalga ${index}. dogum`);
     });
-    // Sampiyondan sonra yerine gectigi dogumlar kadar bekleniyor: dalganin
-    // suresi ayni. Beklemeler paternin ritminden (aralik, yigin sessizligi).
+    // Dalga icinde bekleme yok (sahibinin istegi): sampiyondan once ve sonra
+    // akis tek aralikla suruyor, sampiyon yerine gectigi dogumlarin suresini
+    // bosaltmiyor.
     dogumlar.forEach((enemy, index) => {
       const slot = index <= plan.slot ? index : index + plan.replaced - 1;
-      const count = index === plan.slot ? plan.replaced : 1;
-      assert.equal(araliklar[index], getWavePatternDelayMs(pattern, slot, count), `${wave}. dalga ${index}. bekleme`);
+      assert.equal(araliklar[index], getWavePatternDelayMs(pattern, slot, 1), `${wave}. dalga ${index}. bekleme`);
     });
-    const toplam = araliklar.reduce((sum, value) => sum + value, 0);
-    const tumu = Array.from({ length: slots }, (_, slot) => getWavePatternSlotDelayMs(pattern, slot)).reduce((sum, value) => sum + value, 0);
-    assert.equal(toplam, tumu, `${wave}. dalganin suresi sampiyonla ayni`);
+    void slots;
+    void getWavePatternSlotDelayMs;
   }
 });
 
