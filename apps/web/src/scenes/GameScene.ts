@@ -56,7 +56,7 @@ import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
 import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signatures";
 import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEventInput, type CourtFrame, type ReceiptContext } from "../vfx/zeynep-signatures";
 import { getTowerBodySize, getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_SCALE } from "../tower-art";
-import { PROJECTILE_VISUAL_SCALE, WORKER_VISUAL_SCALE } from "../visual-scale";
+import { ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE, PROJECTILE_VISUAL_SCALE, WORKER_VISUAL_SCALE } from "../visual-scale";
 import { arcade } from "../arcade";
 import { getArcadeRunScore } from "../arcade-score";
 import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
@@ -11002,7 +11002,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const isLogisticsWorker = (HIRABLE_WORKER_ROLES as readonly string[]).includes(drone.mode);
       // Lojistik iscinin govdesi gorunuste %10 kucuk (visual-scale); yol ve
       // secme alani ayni. Operator bedenleri bundan bagimsiz (operator-bodies).
-      const workerScale = isLogisticsWorker ? 0.69 * 0.75 * WORKER_VISUAL_SCALE : drone.mode === "attack" ? 1.55 : 1.38;
+      // Ulti dronlari (saldiri, onarim) gorunuste 2/3 (visual-scale).
+      const workerScale = isLogisticsWorker ? 0.69 * 0.75 * WORKER_VISUAL_SCALE : (drone.mode === "attack" ? 1.55 : 1.38) * ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE;
       sprite.setScale(workerScale * mapEntityScale * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
       const tint = drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : drone.mode === "repairer" ? 0xf472b6 : 0xffffff;

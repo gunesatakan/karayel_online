@@ -16,7 +16,11 @@
  * - `WORKER_VISUAL_SCALE`: lojistik iscilerin govdesi (sprite, gelismis besgen,
  *   can cubugu). Yol, temas yaricapi ve isci secme alani ayni. Operator
  *   bedenleri bundan bagimsiz: mutlak boylari degismiyor (operator-bodies).
+ * - `ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE`: AttackLord ultisinin dronlari
+ *   (saldiri ve onarim). Sahibin istegi (2026-10): "dronlarin boyutunu 2/3
+ *   yap". Hiz, hedef ve vurus sunucuda; ayni.
  */
 export const TOWER_BODY_VISUAL_SCALE = 0.8;
 export const PROJECTILE_VISUAL_SCALE = 0.8;
 export const WORKER_VISUAL_SCALE = 0.9;
+export const ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE = 2 / 3;
