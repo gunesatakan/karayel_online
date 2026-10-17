@@ -80,6 +80,28 @@ const CRACKS = 5;
 /** Sunucunun gonderdigi renk yere indirilmis (kenar tonu): renk basina bir kez (kit'in onbellegi). */
 const grounded = groundHueCached;
 
+/**
+ * Taht Muhru'nun iki Gosteri sentezinin vurdugu isin (`zeynep-3-burn`).
+ *
+ * Kalinlik yalnizca gorselde yarida: sunucunun isabet bandi
+ * (`ZEYNEP_SHOWCASE_BEAM_RADIUS`) degismedi, kulenin gucu ayni. Renk
+ * kulenin kademesinden: 1-4 mavi, 5-9 lacivert, 10 koyu mor.
+ */
+export const TAHT_BURN_BEAM_WIDTH_SCALE = 0.5;
+export const TAHT_BURN_BEAM_TIER_COLORS: Readonly<Record<1 | 2 | 3, number>> = { 1: 0x3a86d6, 2: 0x2f45a8, 3: 0x5b2a9e };
+/** Sunucunun taban rengi; Abarti'dan gecen isin bunun koyulasmis hali geliyor. */
+const TAHT_BURN_BASE_COLOR = 0x22d3ee;
+
+export function getTahtBurnBeamColor(beam: { tier?: number; color: number }) {
+  const tier = beam.tier === 3 ? 3 : beam.tier === 2 ? 2 : 1;
+  const color = TAHT_BURN_BEAM_TIER_COLORS[tier];
+  if (beam.color === TAHT_BURN_BASE_COLOR) return color;
+  // Abarti koyulastirmasi: sunucunun oranini kademe rengine tasi.
+  const factor = Math.max(0.3, Math.min(1, ((beam.color >> 8) & 0xff) / ((TAHT_BURN_BASE_COLOR >> 8) & 0xff)));
+  const channel = (shift: number) => Math.round(((color >> shift) & 0xff) * factor);
+  return (channel(16) << 16) | (channel(8) << 8) | channel(0);
+}
+
 export type BeamRenderOptions = {
   /** Efekt saati (ms). */
   now: number;
@@ -261,7 +283,10 @@ export class BeamRenderer {
       this.drawBeamTierHeat(beam, grounded(color));
     } else if (beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray") {
       this.drawMirrorSpear(beam, color);
-    } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3-burn") {
+    } else if (beam.definitionId === "zeynep-3-burn") {
+      // Taht Muhru (iki Gosteri): isin yari kalinlikta, renk kademeden.
+      this.drawShowcaseBeam({ ...beam, width: beam.width * TAHT_BURN_BEAM_WIDTH_SCALE }, grounded(getTahtBurnBeamColor(beam)));
+    } else if (beam.definitionId === "zeynep-2") {
       this.drawShowcaseBeam(beam, grounded(color));
     } else if (beam.definitionId === "zeynep-3-burn-trail") {
       this.drawSynthesisBurnTrail(beam, color);
