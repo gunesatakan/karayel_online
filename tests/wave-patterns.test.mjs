@@ -254,7 +254,7 @@ test("ritim: baskin kisa, sizma uzun, yiginlar arasinda sessizlik; giris sutunla
   assert.ok(burst.intervalMs < getWaveSpawnIntervalMs(wave) * 0.5);
   assert.equal(burst.pauseMs, 0, "yiginlar arasi sessizlik kalkti");
   const delays = Array.from({ length: burst.slotCount - 1 }, (_, slot) => getWavePatternSlotDelayMs(burst, slot));
-  assert.ok(delays.every((delay) => delay === burst.intervalMs), "her bekleme yigin araligi");
+  assert.ok(delays.every((delay) => delay >= burst.intervalMs && delay <= delays[0]), "sessizlik yok: bekleme hep tepe araligi ile baslangic araligi arasinda");
   assert.ok(sure(burst) < sure(balanced) * 0.5, `yigin baskin hizli: ${sure(burst)} / ${sure(balanced)}`);
   assert.ok(sure(pincer) < sure(balanced) * 0.7, `kiskac hizli: ${sure(pincer)} / ${sure(balanced)}`);
   assert.equal(pincer.groups, 2);
@@ -422,4 +422,28 @@ test("ongoru: patern adi ve ipucu TR ve EN, kutuda ikinci satir, sahne sunucunun
   assert.ok(scene.includes("forecastPattern: forecastVisible ? snapshot.team.wavePattern : undefined"), "sahne paterni gecirmiyor");
   const css = await readFile(new URL("../apps/web/src/style.css", import.meta.url), "utf8");
   assert.ok(css.includes(".game-hud__forecast-pattern"), "patern satirinin stili yok");
+});
+
+const forcedAt = (pattern, wave) => {
+  const base = getArenaWaveEnemyCount(wave, 1, 1);
+  for (const stage of [5, 4, 3, 1]) for (const seed of SEEDS) if (getWavePattern(stage, wave, seed) === pattern) return planWavePattern({ stage, wave, baseSlotCount: base, seed });
+  throw new Error(pattern);
+};
+
+test("hizli dalgalarda tempo dalga icinde tirmaniyor: Kiskac 1,5x -> 3x, Yigin baskin 2x -> 4x", () => {
+  for (const [id, from, to] of [["pincer", 1.5, 3], ["burst", 2, 4]]) {
+    const wave = 12;
+    const plan = forcedAt(id, wave);
+    const base = getWaveSpawnIntervalMs(wave);
+    const first = getWavePatternSlotDelayMs(plan, 0);
+    const middle = getWavePatternSlotDelayMs(plan, Math.round((plan.slotCount - 1) / 2));
+    const last = getWavePatternSlotDelayMs(plan, plan.slotCount - 2);
+    assert.ok(Math.abs(first - base / from) <= 1, `${id} baslangic ${first} != ${base / from}`);
+    assert.ok(Math.abs(middle - base / to) <= 2, `${id} orta ${middle} != ${base / to}`);
+    assert.ok(Math.abs(last - base / to) <= 1, `${id} son ${last}`);
+    const delays = Array.from({ length: plan.slotCount - 1 }, (_, slot) => getWavePatternSlotDelayMs(plan, slot));
+    for (let index = 1; index < delays.length; index += 1) assert.ok(delays[index] <= delays[index - 1], `${id} tempo dustu`);
+  }
+  const balanced = forcedAt("balanced", 12);
+  assert.equal(getWavePatternSlotDelayMs(balanced, 0), getWavePatternSlotDelayMs(balanced, balanced.slotCount - 2), "dengeli dalga sabit tempo");
 });

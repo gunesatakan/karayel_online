@@ -84,6 +84,12 @@ export type WavePatternSpec = {
   order?: readonly EnemyType[];
   /** Paternin secilebildigi ilk dalga (erken dalgalar sade). */
   minWave: number;
+  /**
+   * Dalga ici tempo: dogum hizi taban hizin `from` katiyla basliyor,
+   * dalganin `peakAt` payinda (0..1) `to` katina cikiyor ve sonra orada
+   * kaliyor. Verilirse yigin ici aralik yerine bu egri gecerli.
+   */
+  ramp?: { from: number; to: number; peakAt: number };
 };
 
 /**
@@ -112,8 +118,8 @@ export const WAVE_PATTERN_TABLE: Readonly<Record<WavePatternId, Readonly<WavePat
   ranged: { shares: { shooter: 0.6, grunt: 0.4 }, intervalScale: 1, groups: 1, groupIntervalScale: 1, entry: "spread", order: ["grunt"], minWave: 4 },
   rush: { intervalScale: 0.65, groups: 1, groupIntervalScale: 1, entry: "spread", minWave: 4 },
   armored: { shares: { brute: 0.75, siege: 0.15, shooter: 0.1 }, intervalScale: 1.5, groups: 1, groupIntervalScale: 1, entry: "lane", order: ["brute"], minWave: 6 },
-  pincer: { intervalScale: 1, groups: 2, groupIntervalScale: 0.45, entry: "flanks", minWave: 7 },
-  burst: { intervalScale: 1, groups: 3, groupIntervalScale: 0.3, entry: "lane", minWave: 9 },
+  pincer: { intervalScale: 1, groups: 2, groupIntervalScale: 0.45, entry: "flanks", minWave: 7, ramp: { from: 1.5, to: 3, peakAt: 0.5 } },
+  burst: { intervalScale: 1, groups: 3, groupIntervalScale: 0.3, entry: "lane", minWave: 9, ramp: { from: 2, to: 4, peakAt: 0.5 } },
   airRaid: { intervalScale: 1, groups: 1, groupIntervalScale: 1, entry: "spread", minWave: 1 },
   airMixed: { intervalScale: 1, groups: 1, groupIntervalScale: 1, entry: "spread", minWave: 1 }
 };
@@ -316,6 +322,10 @@ export type WavePatternPlan = {
   intervalMs: number;
   /** Yiginlar arasi sessizlik, oyun ms; surekli akista 0. */
   pauseMs: number;
+  /** Dalganin taban araligi (oyun ms); tempo egrisi bunun katlariyla. */
+  baseIntervalMs: number;
+  /** Dalga ici tempo egrisi (bkz. `WavePatternSpec.ramp`); yoksa sabit aralik. */
+  ramp?: { from: number; to: number; peakAt: number };
   entry: WaveEntry;
   /** Serit girisinin merkezleri, 0..1 (sutun payi). */
   lanes: number[];
@@ -420,6 +430,8 @@ export function planWavePattern(input: WavePatternPlanInput): WavePatternPlan {
   if (groups > 1) {
     intervalMs = Math.max(WAVE_PATTERN_MIN_INTERVAL_MS, baseInterval * spec.groupIntervalScale);
   }
+  // Tempo egrisi varsa `intervalMs` tepe hizin araligi (en sik an).
+  if (spec.ramp) intervalMs = Math.max(WAVE_PATTERN_MIN_INTERVAL_MS, baseInterval / spec.ramp.to);
   const laneCount = Math.max(groups, 4);
   const lanes: number[] = [];
   for (let index = 0; index < laneCount; index += 1) lanes.push(0.15 + 0.7 * random());
@@ -436,6 +448,8 @@ export function planWavePattern(input: WavePatternPlanInput): WavePatternPlan {
     groups,
     groupSize,
     intervalMs: Math.round(intervalMs),
+    baseIntervalMs: Math.round(baseInterval),
+    ...(spec.ramp ? { ramp: { ...spec.ramp } } : {}),
     pauseMs: Math.round(pauseMs),
     entry: spec.entry,
     lanes
@@ -450,9 +464,18 @@ export function getWavePatternSlotType(plan: WavePatternPlan, slot: number): Ene
   return plan.types[index % length];
 }
 
-/** `slot`. dogumdan sonraki bekleme (oyun ms): her zaman paternin araligi (yiginlar arasi sessizlik yok). */
-export function getWavePatternSlotDelayMs(plan: WavePatternPlan, _slot: number) {
-  return plan.intervalMs;
+/**
+ * `slot`. dogumdan sonraki bekleme (oyun ms). Yiginlar arasi sessizlik yok.
+ * Tempo egrisi olan paternde (Kiskac, Yigin baskin) hiz dalganin basinda
+ * `from` katindan dalganin ortasina dogru `to` katina cikiyor; yoksa sabit aralik.
+ */
+export function getWavePatternSlotDelayMs(plan: WavePatternPlan, slot: number) {
+  const ramp = plan.ramp;
+  if (!ramp || !(plan.baseIntervalMs > 0)) return plan.intervalMs;
+  const progress = plan.slotCount > 1 ? Math.min(1, Math.max(0, Math.floor(slot) / (plan.slotCount - 1))) : 1;
+  const t = ramp.peakAt > 0 ? Math.min(1, progress / ramp.peakAt) : 1;
+  const speed = ramp.from + (ramp.to - ramp.from) * t;
+  return Math.max(WAVE_PATTERN_MIN_INTERVAL_MS, Math.round(plan.baseIntervalMs / speed));
 }
 
 /** `slot`tan baslayan `slots` dogumun beklemelerinin toplami (sampiyonun bosalttigi araliklar dahil). */
