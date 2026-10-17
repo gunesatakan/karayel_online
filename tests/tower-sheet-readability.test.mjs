@@ -260,3 +260,18 @@ test("yeni metinler iki dilde ve Ingilizcede Turkce harf yok", () => {
   assert.deepEqual(texts.filter((text) => /[ğüşıöçĞÜŞİÖÇ]/.test(text)), []);
   assert.ok(texts.includes("Power core"));
 });
+
+test("panel basligindaki azami seviye kulenin kendi azami seviyesi (binalarda 5)", () => {
+  withLocale("tr", () => {
+    for (const id of ["warehouse-1", "warrior-7", "repair-depot-1", "warrior-8"]) {
+      const model = buildTowerSheetModel(building(id, {}));
+      assert.match(model.subtitle, /Sv 2\/5\b/, `${id} basligi ${model.subtitle}`);
+    }
+    const tower = buildTowerSheetModel(building("warrior-1", {}));
+    assert.match(tower.subtitle, /Sv 2\/10\b/, `savas kulesi basligi ${tower.subtitle}`);
+  });
+  withLocale("en", () => {
+    assert.match(buildTowerSheetModel(building("warehouse-1", {})).subtitle, /Lv 2\/5\b/);
+  });
+  assert.doesNotMatch(read("apps/web/src/locales/tr.ts"), /"sheet\.level": "Sv \{level\}\/10"/);
+});

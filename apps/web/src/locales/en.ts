@@ -158,7 +158,7 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "sheet.accuracyShare": "{v} accuracy",
   "sheet.readOnly": "read-only",
   "sheet.ownerReadOnly": "{owner} · read-only",
-  "sheet.level": "Lv {level}/10",
+  "sheet.level": "Lv {level}/{max}",
   "sheet.tier": "Tier {tier}",
   "sheet.rate.orbit": "Orbit tempo",
   "sheet.rate.effect": "Effect rate",

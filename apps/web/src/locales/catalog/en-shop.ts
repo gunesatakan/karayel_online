@@ -50,7 +50,7 @@ export const enShopItems: Readonly<Record<string, { name: string; description: s
   "enkaz-alani": { name: "Debris Field", description: "If the equipped tower is destroyed, it leaves slowing debris for 12 seconds." },
   "zafer-serisi": { name: "Victory Streak", description: "Equipped tower gains +3% damage per kill; per-wave cap 45%." },
   "kidem": { name: "Seniority", description: "Equipped tower gains a permanent +2% damage for each completed wave." },
-  "kristal-rafinerisi": { name: "Crystal Refinery", description: "Equipped tower's fuel consumption -40%; only towers that use power crystals." },
+  "kristal-rafinerisi": { name: "Crystal Refinery", description: "Equipped tower's fuel consumption -40%; only towers that use power cores." },
   "dusuk-guc-modu": { name: "Low Power Module", description: "Equipped tower's operating energy consumption -25%." },
   "bitisik-devre": { name: "Adjacent Circuit", description: "Equipped tower gains +8% damage for each adjacent neighbor; max 4 neighbors." },
   "yalniz-kurt": { name: "Lone Wolf", description: "If the equipped tower has no neighbors, it gains +25% damage and +15% range." },

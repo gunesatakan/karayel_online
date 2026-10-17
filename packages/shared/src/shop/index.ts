@@ -396,7 +396,7 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("zafer-serisi", "Zafer Serisi", "Takıldığı kule öldürme başına +%3 hasar kazanır; dalga içi tavan %45.", "power", 125, { scope: { kind: "tagged", combat: true }, unlocks: ["stack:kill"] }),
   defineItem("kidem", "Kıdem", "Takıldığı kule tamamlanan her dalga için kalıcı +%2 hasar kazanır.", "power", 150, { scope: { kind: "tagged", combat: true }, unlocks: ["stack:wave"] }),
 
-  defineItem("kristal-rafinerisi", "Kristal Rafinerisi", "Takıldığı kulenin yakıt tüketimi -%40; yalnızca güç kristali kullanan kulelere takılır.", "class", 85, { scope: { kind: "tagged", ammoTypes: ["powerCrystal"] }, effects: [effect("kristal-rafinerisi", "shotFuelCost", -0.4)] }),
+  defineItem("kristal-rafinerisi", "Kristal Rafinerisi", "Takıldığı kulenin yakıt tüketimi -%40; yalnızca güç çekirdeği kullanan kulelere takılır.", "class", 85, { scope: { kind: "tagged", ammoTypes: ["powerCrystal"] }, effects: [effect("kristal-rafinerisi", "shotFuelCost", -0.4)] }),
   defineItem("dusuk-guc-modu", "Düşük Güç Modülü", "Takıldığı kulenin çalışma enerjisi tüketimi -%25.", "utility", 110, { effects: [effect("dusuk-guc-modu", "operatingEnergyCost", -0.25)] }),
   defineItem("bitisik-devre", "Bitişik Devre", "Takıldığı kule bitişik her komşusu için +%8 hasar kazanır; en fazla 4 komşu.", "map", 110, { unlocks: ["adjacencyBonus"] }),
   defineItem("yalniz-kurt", "Yalnız Kurt", "Takıldığı kule komşusuzsa +%25 hasar ve +%15 menzil kazanır.", "map", 100, { unlocks: ["isolationBonus"] }),

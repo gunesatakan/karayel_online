@@ -44,7 +44,7 @@ export const enCards: Readonly<Record<string, { name: string; description: strin
   "iletken-cekirdek": { name: "Conductive Core", description: "Electric towers' damage +45%." },
   "prizma-kesiti": { name: "Prism Cut", description: "Light towers' damage +45%." },
   "zihin-baskisi": { name: "Mind Pressure", description: "Psychic towers' status effect duration +50%." },
-  "kristal-ekonomisi": { name: "Crystal Economy", description: "Shot energy of towers that burn power crystals -60%." },
+  "kristal-ekonomisi": { name: "Crystal Economy", description: "Shot energy of towers that burn power cores -60%." },
   "kursun-fabrikasi": { name: "Bullet Factory", description: "Ammo consumption of towers that use bullets -50%." },
   "agir-carpma": { name: "Heavy Impact", description: "Impact towers' damage +40%, turn rate -15%." },
   "hafif-kizak": { name: "Light Rails", description: "All towers' turn rate +30%, health -8%." },

@@ -158,7 +158,7 @@ export const trCore = {
   "sheet.accuracyShare": "{v} isabet",
   "sheet.readOnly": "salt okunur",
   "sheet.ownerReadOnly": "{owner} · salt okunur",
-  "sheet.level": "Sv {level}/10",
+  "sheet.level": "Sv {level}/{max}",
   "sheet.tier": "Kademe {tier}",
   "sheet.rate.orbit": "Dönüş temposu",
   "sheet.rate.effect": "Etki hızı",
