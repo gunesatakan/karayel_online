@@ -20123,12 +20123,23 @@ export class MatchRoom extends Room<MatchState> {
     return {
       serverTime: now,
       hostId: this.hostSessionId,
-      players: Array.from(this.state.players.entries()).map(([id, player]) => ({
+      // Kayitlar iki parca (oyuncu, dusman, kule, isci): yayilim (`...`) ilk
+      // parcanin sonunda, kalan alanlar ikinci parcada `Object.assign` ile.
+      // Literalde yayilimdan sonra gelen her alan V8'de yavas yoldan (alan
+      // basina calisma zamani cagrisi) tanimlaniyordu; snapshot bunu her
+      // karede her kayit icin yapiyordu (2026-10 profili: isci kaydini
+      // kurmanin cogu, kule kaydininkinin kabaca ucte biri; snapshot
+      // bolumu bununla ~%10 kisaldi). Sonuc birebir ayni: ifadeler ayni sirada
+      // hesaplaniyor (once ilk parca, sonra ikincisi) ve `Object.assign`
+      // yeni anahtari sona ekliyor, var olani yerinde yaziyor -- literal gibi.
+      // Undefined degerli anahtarlar da kopyalaniyor, yani anahtar kumesi ayni.
+      players: Array.from(this.state.players.entries()).map(([id, player]) => Object.assign({
         id,
         name: player.name,
         characterId: player.characterId,
         // 0. yuva yazilmiyor; `slot: undefined` bile msgpack'te anahtar tasirdi.
-        ...(player.slot > 0 ? { slot: player.slot } : {}),
+        ...(player.slot > 0 ? { slot: player.slot } : {})
+      }, {
         gold: Math.floor(player.gold),
         goldSpent: player.goldSpent,
         experience: Math.round(player.experience * 100) / 100,
@@ -20171,7 +20182,7 @@ export class MatchRoom extends Room<MatchState> {
           : this.getWorkerHireCostMultiplier(player),
         noAirDefense: checkAirDefense && !this.playerHasAirDefense(id) ? true : undefined
       })),
-      enemies: Array.from(this.enemies.values()).map((enemy) => stripWireDefaults({
+      enemies: Array.from(this.enemies.values()).map((enemy) => stripWireDefaults(Object.assign({
         id: enemy.id,
         x: roundNetworkNumber(enemy.x),
         y: roundNetworkNumber(enemy.y),
@@ -20184,7 +20195,8 @@ export class MatchRoom extends Room<MatchState> {
         // Isareti koyan kule (Atakan imzasi `k`): istemci nisangahi kulenin
         // kademesinde ve sahibinin alfasinda ciziyor. Yalnizca isaret varken;
         // delta yuzunden yalnizca isaretleyen kule degisince telde.
-        ...this.getTrackingSourceWire(enemy, now),
+        ...this.getTrackingSourceWire(enemy, now)
+      }, {
         isFeared: enemy.fearUntil > now,
         isArmorBroken: enemy.armorBrokenUntil > now,
         isDominated: enemy.dominatedUntil > now,
@@ -20202,8 +20214,8 @@ export class MatchRoom extends Room<MatchState> {
         ...(enemy.special?.harvest ? { cargo: Math.round(enemy.special.harvest.total), escaping: enemy.special.harvest.returning } : {}),
         // Irk mekanikleri: yalnizca dolu alanlar (ozelliksiz dusmanda hic anahtar yok).
         ...this.getRaceTraitWire(enemy, now)
-      })),
-      towers: Array.from(this.towers.values()).map((tower) => stripWireDefaults({
+      }))),
+      towers: Array.from(this.towers.values()).map((tower) => stripWireDefaults(Object.assign({
         id: tower.id,
         facing: towerAims(tower.definition.id) ? Math.round(tower.facing * 1000) / 1000 : undefined,
         level: tower.level,
@@ -20280,7 +20292,9 @@ export class MatchRoom extends Room<MatchState> {
         melisUnderworldPullCount: tower.definition.id === "archer-4" ? tower.melisUnderworldPullCount : undefined,
         ucubePerks: tower.definition.id === "warrior-6" ? [...tower.ucubePerks] : undefined,
         ucubePendingLevel: tower.definition.id === "warrior-6" && tower.ucubePendingLevel > 0 ? tower.ucubePendingLevel : undefined,
-        ...this.getAtakanStackWire(tower),
+        ...this.getAtakanStackWire(tower)
+      }, {
+        // Ikinci parca: bkz. `players` ustundeki not.
         serverKnowledge: tower.definition.id === "warrior-2" ? this.getServerKnowledgeWire(tower) : undefined,
         linkedTowerIds: [...tower.linkedTowerIds],
         zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined,
@@ -20293,7 +20307,7 @@ export class MatchRoom extends Room<MatchState> {
         // kart sokuldugunde delta istemciye `null` gonderebiliyor.
         ,targetedCardIds: [...tower.targetedCardIds]
         ,unlockBits: this.getTowerUnlockBits(tower)
-      })),
+      }))),
       projectiles: Array.from(this.projectiles.values())
         .filter((projectile) => !usesLinearBallistics(projectile.hitType)
           && projectile.x >= worldBounds.left - projectileMargin && projectile.x <= worldBounds.right + projectileMargin
@@ -20310,10 +20324,11 @@ export class MatchRoom extends Room<MatchState> {
         vy: roundNetworkNumber(projectile.vy),
         tier: this.getProjectileTier(projectile)
       })),
-      drones: Array.from(this.drones.values()).map((drone) => ({
+      drones: Array.from(this.drones.values()).map((drone) => Object.assign({
         id: drone.id,
         mode: drone.mode === "ammoCollector" ? "crystalCollector" : drone.mode === "ammoTransport" ? "energyTransport" : drone.mode,
-        ...this.getWorkerAssignmentSnapshot(drone),
+        ...this.getWorkerAssignmentSnapshot(drone)
+      }, {
         cargoResource: drone.cargoResource,
         x: roundNetworkNumber(drone.x),
         y: roundNetworkNumber(drone.y),
