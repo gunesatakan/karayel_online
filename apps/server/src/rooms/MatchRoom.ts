@@ -3693,12 +3693,25 @@ export class MatchRoom extends Room<MatchState> {
   private lastSnapshotBroadcastAt = 0;
   /** Duran tahtada en son gonderilen snapshotin icerigi ve ani. */
   private lastIdleSnapshotSignature = "";
+  /**
+   * Ayni imzanin agac hali (`compileJsonTree(JSON.parse(imza))`): tekrar
+   * kontrolu metin kurmadan bununla yapiliyor. Yalnizca imzayla birlikte
+   * yaziliyor (`rememberIdleSnapshot`); imza bosken (ilk an) yok.
+   */
+  private lastIdleSnapshotTree: JsonTreeNode | undefined;
   private lastIdleSnapshotSentAt = 0;
   private lastPerfBroadcastAt = 0;
   private lastSnapshotSizeSampleAt = 0;
   private snapshotBroadcastTimes: number[] = [];
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
   private perfFrames: ServerPerfFrame[] = [];
+  /**
+   * `latestPerfSnapshot` son `recordPerfFrame`'den beri yeniden kurulmadi mi.
+   * Ozet yalnizca saniyede bir yayinda okunuyor; her tick kurulmasi bosunaydi.
+   */
+  private perfSummaryStale = false;
+  /** Son `recordPerfFrame` anindaki yayin hizi (ozet o anki degeri tasiyor). */
+  private perfSummarySnapshotHz = 0;
   private latestPerfSnapshot: ServerPerfSnapshot = {
     tickMs: 0,
     tickMaxMs: 0,
@@ -5664,7 +5677,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
     if (now - this.lastPerfBroadcastAt >= PERF_SEND_INTERVAL_MS) {
-      this.broadcast("perf:snapshot", this.latestPerfSnapshot);
+      this.broadcast("perf:snapshot", this.getLatestPerfSnapshot());
       this.lastPerfBroadcastAt = now;
     }
     this.debugSections.wireMs = performance.now() - wireStart;
@@ -5693,21 +5706,50 @@ export class MatchRoom extends Room<MatchState> {
    * kare farkli, kiyaslamak bosuna is olurdu. Yine de belirli araliklarla bir
    * kare geciyor -- istemcinin oynatma saati ve tamponu taze kalsin, arada
    * yeniden baglanan biri de guncel durumu gorsun diye.
+   *
+   * Karar `idleSnapshotSignature(snapshot) === lastIdleSnapshotSignature`
+   * ile birebir ayni; yalnizca metin her karede kurulmuyor. Olculdu: uzun
+   * kurulum evreli bir macta tick suresinin beste biri bu `JSON.stringify`
+   * idi (24 KB, saniyede ~15 kez) ve karelerin cogu gercekten ayni. Imzanin
+   * agac hali (`lastIdleSnapshotTree`) metnin kendisinden ayristiriliyor, yani
+   * canli durumla hicbir nesneyi paylasmiyor; snapshot sonradan degisse de
+   * hatirlanan icerik degismez. Esitse imza zaten ayni oldugundan nabiz
+   * karesinde de yeniden kurulmuyor. Agacin karar veremedigi bir deger
+   * (`toJSON`, sinif ornegi, fonksiyon...) gorulurse eski yola, metne dusuluyor.
    */
   private isRepeatOfLastIdleSnapshot(snapshot: WireGameSnapshot, now: number) {
+    const tree = this.lastIdleSnapshotTree;
+    // Agac yoksa imza bos metin; hicbir snapshotin imzasi bos olamaz.
+    const match = tree === undefined
+      ? JSON_TREE_DIFFERENT
+      : matchJsonTree({ ...snapshot, serverTime: 0 }, tree);
+    let signature: string | undefined;
+    let same: boolean;
+    if (match === JSON_TREE_UNKNOWN) {
+      signature = idleSnapshotSignature(snapshot);
+      same = signature === this.lastIdleSnapshotSignature;
+    } else {
+      same = match === JSON_TREE_SAME;
+    }
+
     if (now - this.lastIdleSnapshotSentAt >= SNAPSHOT_IDLE_HEARTBEAT_MS) {
-      this.lastIdleSnapshotSignature = idleSnapshotSignature(snapshot);
+      if (!same) this.rememberIdleSnapshot(signature ?? idleSnapshotSignature(snapshot));
       this.lastIdleSnapshotSentAt = now;
       return false;
     }
 
-    const signature = idleSnapshotSignature(snapshot);
-    if (signature === this.lastIdleSnapshotSignature) {
+    if (same) {
       return true;
     }
-    this.lastIdleSnapshotSignature = signature;
+    this.rememberIdleSnapshot(signature ?? idleSnapshotSignature(snapshot));
     this.lastIdleSnapshotSentAt = now;
     return false;
+  }
+
+  /** Imzayi ve agac halini birlikte yazar; ikisi hep ayni metni anlatir. */
+  private rememberIdleSnapshot(signature: string) {
+    this.lastIdleSnapshotSignature = signature;
+    this.lastIdleSnapshotTree = compileJsonTree(JSON.parse(signature));
   }
 
   /**
@@ -23211,10 +23253,32 @@ export class MatchRoom extends Room<MatchState> {
     };
   }
 
+  /**
+   * Tick ozetini pencereye ekler.
+   *
+   * Ortalamalar (on uc ayri `reduce`, altmis kare uzerinden) artik burada
+   * degil, yayinda kuruluyor (`getLatestPerfSnapshot`): ozeti okuyan tek yer
+   * saniyede bir giden `perf:snapshot`. Pencere ve yayin hizi bu an
+   * sabitleniyor, yani yayinda kurulan ozet her tick kurulanin birebir aynisi.
+   */
   private recordPerfFrame(frame: ServerPerfFrame) {
     this.perfFrames.push(frame);
-    this.perfFrames = this.perfFrames.slice(-60);
+    // `slice(-60)` ile ayni pencere, her tick yeni dizi kurmadan.
+    if (this.perfFrames.length > 60) this.perfFrames.shift();
+    this.perfSummarySnapshotHz = this.getSnapshotBroadcastHz();
+    this.perfSummaryStale = true;
+  }
 
+  /** Son `recordPerfFrame` anindaki pencerenin ozeti (gerekirse simdi kuruluyor). */
+  private getLatestPerfSnapshot() {
+    if (this.perfSummaryStale) {
+      this.perfSummaryStale = false;
+      this.buildPerfSummary();
+    }
+    return this.latestPerfSnapshot;
+  }
+
+  private buildPerfSummary() {
     const sampleCount = Math.max(1, this.perfFrames.length);
     const average = (key: keyof ServerPerfFrame) => this.perfFrames.reduce((total, sample) => total + sample[key], 0) / sampleCount;
     const averageSentSnapshot = (key: "snapshotMs" | "snapshotBytes") => {
@@ -23228,7 +23292,7 @@ export class MatchRoom extends Room<MatchState> {
       tickMs: roundMetric(average("tickMs")),
       tickMaxMs: roundMetric(maxTickMs),
       snapshotBytes: Math.round(averageSentSnapshot("snapshotBytes")),
-      snapshotHz: roundMetric(this.getSnapshotBroadcastHz()),
+      snapshotHz: roundMetric(this.perfSummarySnapshotHz),
       sections: {
         spawnMs: roundMetric(average("spawnMs")),
         towersMs: roundMetric(average("towersMs")),
@@ -23702,6 +23766,107 @@ export function stripWireDefaults<T extends Record<string, unknown>>(entity: T):
     trimmed[key] = value;
   }
   return trimmed as T;
+}
+
+/**
+ * JSON metninin karsilastirma agaci: `JSON.parse` sonucunun nesneleri anahtar
+ * ve deger dizisine acilmis hali. Dizi dizi, ilkel deger kendisi kaliyor.
+ *
+ * Agac yalnizca kendi metninden kuruluyor ve disari verilmiyor; icindeki hicbir
+ * nesne canli durumla ya da bir snapshotla paylasilmiyor.
+ */
+class JsonObjectNode {
+  constructor(readonly keys: string[], readonly values: JsonTreeNode[]) {}
+}
+export type JsonTreeNode = null | boolean | number | string | JsonTreeNode[] | JsonObjectNode;
+
+/** `JSON.parse` ciktisindan agac (baska bir girdi icin degil). */
+export function compileJsonTree(parsed: unknown): JsonTreeNode {
+  if (parsed === null || typeof parsed !== "object") return parsed as JsonTreeNode;
+  if (Array.isArray(parsed)) return parsed.map(compileJsonTree);
+  const record = parsed as Record<string, unknown>;
+  const keys = Object.keys(record);
+  return new JsonObjectNode(keys, keys.map((key) => compileJsonTree(record[key])));
+}
+
+/** `matchJsonTree` sonucu: metinler ayni, farkli, ya da bu yoldan bilinemez. */
+export const JSON_TREE_DIFFERENT = 0;
+export const JSON_TREE_SAME = 1;
+export const JSON_TREE_UNKNOWN = 2;
+type JsonTreeMatch = typeof JSON_TREE_DIFFERENT | typeof JSON_TREE_SAME | typeof JSON_TREE_UNKNOWN;
+
+/** Uye olarak kesin yaziliyor mu: `JSON.stringify` bunu atlamaz ve hata vermeden yazar. */
+function isCertainJsonMember(value: unknown) {
+  const type = typeof value;
+  if (type === "number" || type === "string" || type === "boolean" || value === null) return true;
+  return type === "object" && typeof (value as { toJSON?: unknown }).toJSON !== "function";
+}
+
+/**
+ * `JSON.stringify(value) === JSON.stringify(agacin kaynagi)` sorusunun metin
+ * kurmadan cevabi. `SAME` ve `DIFFERENT` kesin; `UNKNOWN` donerse cagiran
+ * metne dusmeli.
+ *
+ * Kurallar JSON'un kendisinden: nesnede `undefined` uye yazilmiyor, dizide
+ * `undefined` ve sonlu olmayan sayi `null` yaziliyor, `-0` ile `0` ayni metin,
+ * anahtar sirasi metnin parcasi. Yalnizca duz nesne (`Object.prototype` ya da
+ * `null` atali) ve duz dizi aciliyor; `toJSON`, baska atali nesne (tarih,
+ * Map, sarmalayici sayi...), fonksiyon, sembol ve BigInt `UNKNOWN`. Agacin
+ * dugumleri disari verilmedigi icin `===` esitligi yalnizca ilkel degerde
+ * olabiliyor; o yuzden kisa yol guvenli. En ustteki `value` `undefined`
+ * olmamali: `undefined` burada yalnizca dizi elemani (`null` yazilan) sayiliyor.
+ */
+export function matchJsonTree(value: unknown, node: JsonTreeNode): JsonTreeMatch {
+  if (value === null || typeof value !== "object") {
+    const type = typeof value;
+    if (type === "function" || type === "symbol" || type === "bigint") return JSON_TREE_UNKNOWN;
+    // Kalanlar null, undefined (yalnizca dizi elemani olarak buraya geliyor), sayi, metin, bayrak.
+    if (node === null) {
+      return value === null || value === undefined || (type === "number" && !Number.isFinite(value as number))
+        ? JSON_TREE_SAME
+        : JSON_TREE_DIFFERENT;
+    }
+    return value === node ? JSON_TREE_SAME : JSON_TREE_DIFFERENT;
+  }
+  if (typeof (value as { toJSON?: unknown }).toJSON === "function") return JSON_TREE_UNKNOWN;
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) return JSON_TREE_UNKNOWN;
+    if (!Array.isArray(node)) return JSON_TREE_DIFFERENT;
+    const length = value.length;
+    if (length !== node.length) return JSON_TREE_DIFFERENT;
+    for (let index = 0; index < length; index += 1) {
+      const item: unknown = value[index];
+      const expected = node[index];
+      if (item === expected) continue;
+      const result = matchJsonTree(item, expected);
+      if (result !== JSON_TREE_SAME) return result;
+    }
+    return JSON_TREE_SAME;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return JSON_TREE_UNKNOWN;
+  if (!(node instanceof JsonObjectNode)) return JSON_TREE_DIFFERENT;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  const nodeKeys = node.keys;
+  const nodeValues = node.values;
+  let matched = 0;
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    const field = record[key];
+    // Nesnede `undefined` uye metne hic girmiyor.
+    if (field === undefined) continue;
+    if (matched === nodeKeys.length || key !== nodeKeys[matched]) {
+      // Fazla ya da baska sirada bir uye: kesin yaziliyorsa metinler farkli.
+      return isCertainJsonMember(field) ? JSON_TREE_DIFFERENT : JSON_TREE_UNKNOWN;
+    }
+    const expected = nodeValues[matched];
+    matched += 1;
+    if (field === expected) continue;
+    const result = matchJsonTree(field, expected);
+    if (result !== JSON_TREE_SAME) return result;
+  }
+  return matched === nodeKeys.length ? JSON_TREE_SAME : JSON_TREE_DIFFERENT;
 }
 
 export function roundNetworkNumber(value: number) {
