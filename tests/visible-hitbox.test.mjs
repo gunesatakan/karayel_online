@@ -26,14 +26,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AIR_ENEMY_DISPLAY_SCALE,
+  AEGIS_DRAWN,
+  MEKA_SHIELD_DRAWN,
   BODY_DEFAULT_HEADING_X,
   BODY_DEFAULT_HEADING_Y,
   BODY_HEADING_MIN_STEP,
-  BODY_HEADING_TICK_STEP,
   BODY_HEADING_WIRE_DEAD_BAND,
   CHAMPION_SPRITE_SCALE,
   ENEMY_BODY_OUTLINES,
@@ -53,31 +56,44 @@ import {
   getEnemyBodyPolygon,
   getEnemyTextureKey,
   createEnemyBodyPolygon,
+  getCounterSurgeWidthCells,
   getMapGridSize,
+  getMapOrigin,
   getMekaShieldFace,
+  getMekaShieldTickHalf,
   getOrbitBladeInner,
   getProjectileBody,
   getProjectileBodyContact,
   getProjectileReach,
   getProjectileSceneScale,
   getProjectileShape,
+  getSnapshotHeadingMinStep,
   getSoulDrawerMultipliers,
   getTowerTier,
+  gridToWorld,
   isBandTouchingBody,
   isBodyHeadingStep,
   isBodyInKinShowcase,
   isPointInBody,
   isSegmentTouchingBody,
+  mergeDynamicEnemySnapshots,
+  pruneStaticSnapshotCache,
   selectOrbitSweepContacts,
   updateBodyHeading,
   writeEnemyBodyShape,
   writeProjectileBodyContactPoint,
+  worldToGrid,
   writeProjectileSupport
 } from "../packages/shared/dist/index.js";
 import { bodyMask, decodePng } from "../tools/measure-enemy-hitboxes.mjs";
 import { isBodyTouchingAnnularSector, isBodyTouchingSector } from "./helpers/body-shapes.mjs";
+import { MatchRoom } from "../apps/server/dist/rooms/MatchRoom.js";
+import { SeededRoomRuntime } from "../apps/server/dist/debug/room-runtime.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { runRecordedBotMatch } from "../tools/debug/bot-match.mjs";
+import { loadRecordingFile, replayRecording } from "../tools/debug/replay-lib.mjs";
 import { importWebModule } from "./helpers/web-module.mjs";
+import { createGeometryRecorder, isBodyPrim } from "./helpers/geometry-recorder.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -142,7 +158,13 @@ function boundaryDistance(polygon, q) {
   return best;
 }
 
-const pointDistance = (polygon, q) => (inside(polygon, q) ? 0 : boundaryDistance(polygon, q));
+/**
+ * Alansiz (kesimin cizgisine yatmis) cokgenin ici yok: dogan Ucube'nin damlasi
+ * `reach` 0'da x = 0'da bir parca. Kenar testi o cizginin tamamini (parcanin
+ * disini da) "icerde" sayardi; uzaklik parcaya.
+ */
+const polygonArea2 = (polygon) => polygon.reduce((sum, p, i) => sum + cross([0, 0], p, polygon[(i + 1) % polygon.length]), 0);
+const pointDistance = (polygon, q) => (polygonArea2(polygon) > 1e-9 && inside(polygon, q) ? 0 : boundaryDistance(polygon, q));
 
 function segmentsCross(a, b, c, d) {
   const d1 = cross(a, b, c);
@@ -451,21 +473,107 @@ test("sunucu ve istemci ayni govdeyi kullaniyor: dogum, sampiyon, hava, ozel, ru
   same(drawer.body, bodies.writeSnapshotEnemyBody(bodies.createBodyScratch(), { ...clientView(room, sent, drawer), race: "fallen" }, undefined, grid), "ruh cekici");
 });
 
-test("yon: yuruyus yonu; dururken son yon; istemcinin izi ayni kurali uyguluyor; esik gosterilen sureyle", () => {
+const roundWire = (value) => Math.round(value * 10) / 10;
+
+/**
+ * Istemcinin snapshot yolu (GameScene `hydrateSnapshot` -> `queueSnapshot`):
+ * tam karede dinamik onbellek bosaliyor, delta kayitlar birlesiyor, sonra
+ * yon izi (`EnemyHeadingTracker`) birlesmis kayitlarin konumlariyla.
+ */
+function clientMirror() {
+  const cache = new Map();
+  const tracker = new bodies.EnemyHeadingTracker();
+  return {
+    tracker,
+    receive(frame) {
+      if (frame.wireFull) cache.clear();
+      const enemies = mergeDynamicEnemySnapshots(cache, frame.enemies);
+      pruneStaticSnapshotCache(cache, frame.enemies.map((enemy) => enemy.id));
+      tracker.note(enemies, frame.serverTime);
+      return enemies;
+    }
+  };
+}
+
+/** Sunucunun her govdesinin yonu istemcinin iziyle bire bir ayni (kayan nokta esitligi). */
+function assertHeadingsMatch(room, tracker, label) {
+  let count = 0;
+  for (const enemy of room.enemies.values()) {
+    const seen = tracker.get(enemy.id);
+    assert.ok(seen, `${label}: ${enemy.id} istemcide yok`);
+    assert.ok(enemy.body.headingX === seen.headingX && enemy.body.headingY === seen.headingY,
+      `${label}: ${enemy.id} sunucu (${enemy.body.headingX}, ${enemy.body.headingY}) / iz (${seen.headingX}, ${seen.headingY})`);
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * Uretim yolundaki oda: tohumlu saat, `setupRoom` + `onJoin`, tam tik
+ * (`update`); istemciye giden snapshot'lar (`client.send`) oldugu gibi.
+ */
+function liveRoom({ seed = 7, stage = 1, characterId = "warrior" } = {}) {
+  MatchRoom.createRuntime = () => new SeededRoomRuntime(seed, 1_800_000_000_000, { tick: () => 1_800_000_000_000, scope: () => 1_800_000_000_000 });
+  try {
+    const room = new MatchRoom();
+    room.setSimulationInterval = () => {};
+    room.broadcast = () => {};
+    room.setupRoom({ autoStart: true, stage, characterId, playerName: "P1" });
+    const frames = [];
+    const peer = { sessionId: "s1", ref: { bufferedAmount: 0 }, send(type, payload) { if (type === "snapshot") frames.push(payload); }, leave() {} };
+    room.clients.push(peer);
+    room.onJoin(peer, { autoStart: true, stage, characterId, playerName: "P1" });
+    const mirror = clientMirror();
+    let read = 0;
+    /** Bir tik; gelen snapshot istemcide; sunucunun govdeleri istemcinin iziyle karsilastiriliyor. */
+    const tick = (label) => {
+      // Kurulum evresinde oyuncu hazir: dalgalar arka arkaya.
+      if (room.setupPhase) room.markSetupReady(peer);
+      room.update(1000 / 60);
+      let fresh = 0;
+      while (read < frames.length) {
+        mirror.receive(frames[read++]);
+        fresh += 1;
+      }
+      return fresh > 0 ? assertHeadingsMatch(room, mirror.tracker, label) : 0;
+    };
+    return { room, frames, mirror, tick };
+  } finally {
+    MatchRoom.createRuntime = undefined;
+  }
+}
+
+const headingAngle = (x, y) => Math.atan2(y, x);
+const angleGap = (a, b) => {
+  const d = Math.abs(a - b) % (2 * Math.PI);
+  return d > Math.PI ? 2 * Math.PI - d : d;
+};
+
+test("yon: yuruyus yonu; dururken son yon; sunucunun govdesi yayinda istemcinin iziyle ayni kural ve girdiler", () => {
   const room = createRoom("warrior");
+  room.broadcast = () => {};
   room.spawnEnemy();
   const enemy = [...room.enemies.values()].at(-1);
+  // Dogumda yon olculmedi: son konum yok (NaN), yon dondurulmemis doku.
+  assert.ok(Number.isNaN(enemy.body.fromX) && Number.isNaN(enemy.body.fromY), "dogumda son konum yazildi");
   const tracker = new bodies.EnemyHeadingTracker();
-  let serverTime = 0;
+  let serverTime = 1000;
+  // Yayin: sunucu govdeleri olcuyor, istemci ayni snapshot'i goruyor (0,1'e yuvarli).
+  const broadcast = () => {
+    serverTime += SNAPSHOT_INTERVAL_MS;
+    room.noteSnapshotHeadings(serverTime);
+    tracker.note([{ id: enemy.id, x: roundWire(enemy.x), y: roundWire(enemy.y) }], serverTime);
+  };
   const step = (dx, dy) => {
     enemy.x += dx;
     enemy.y += dy;
     room.rebuildEnemyGrid();
-    // Istemci ayni konumlari gelen snapshot'larda goruyor (her tik bir snapshot).
-    serverTime += SERVER_TICK_MS;
-    tracker.note([enemy], serverTime);
+    broadcast();
   };
-  tracker.note([enemy], serverTime);
+  // Ilk gorulen snapshot yalnizca konumu yaziyor (istemcide de).
+  enemy.x += 7;
+  broadcast();
+  assert.deepEqual([enemy.body.headingX, enemy.body.headingY], [BODY_DEFAULT_HEADING_X, BODY_DEFAULT_HEADING_Y], "ilk yayin yonu cevirdi");
   step(3, 0);
   near(enemy.body.headingX, 1, "saga yuruyor");
   near(enemy.body.headingY, 0, "saga yuruyor y");
@@ -478,169 +586,431 @@ test("yon: yuruyus yonu; dururken son yon; istemcinin izi ayni kurali uyguluyor;
   // Itilen dusman da itme yonune donuyor (istemci dokuyu ekrandaki konum degisimiyle ceviriyor).
   step(-6, 0);
   near(enemy.body.headingX, -1, "itme yonu");
-  const seen = tracker.get(enemy.id);
-  near(seen.headingX, enemy.body.headingX, "istemcinin yonu x");
-  near(seen.headingY, enemy.body.headingY, "istemcinin yonu y");
-  // Esikler ayri. Sunucu gercek konumlarla, tik basina yurume esigiyle
-  // (0,05). Istemci 0,1'e yuvarli konumlarla: ayni hiz arti telin olu bandi
-  // (snapshot adimi basina iki yuvarlama adimi, 0,2; karede o adimin payi).
-  // Eskiden iki yan ayni hizi (0,075 / tik) paylasiyordu: sunucunun esigi
-  // yuvarlama yuzunden yukseliyor, istemcinin bandi (0,1) yuvarlamanin iki
-  // adimlik kipirtisini (0,2) yine de tasimiyordu.
-  assert.equal(BODY_HEADING_TICK_STEP, BODY_HEADING_MIN_STEP);
-  near(BODY_HEADING_TICK_STEP, 0.05, "sunucunun tik esigi", 1e-12);
+  assertHeadingsMatch(room, tracker, "kisa yol");
+  // Izgara yonu cevirmiyor: yon yalnizca yayinda.
+  enemy.x += 9;
+  room.rebuildEnemyGrid();
+  near(enemy.body.headingX, -1, "izgara yonu cevirdi");
+  enemy.x -= 9;
+  // Esikler. Snapshot adimi: yurume esigi aradaki tiklerde (0,05 x 4) arti telin
+  // olu bandi (snapshot adimi basina iki yuvarlama adimi, 0,2): 0,4.
+  near(BODY_HEADING_MIN_STEP, 0.05, "yurume esigi", 1e-12);
   near(BODY_HEADING_WIRE_DEAD_BAND, 2 * WIRE_POSITION_QUANTUM, "olu bant", 1e-12);
   // Snapshot araligi gonderme araliginin tik kati: 60 ms -> 4 tik.
   assert.equal(SNAPSHOT_SEND_INTERVAL_MS, 60);
   near(SNAPSHOT_INTERVAL_MS, 4 * SERVER_TICK_MS, "snapshot araligi", 1e-12);
-  // Snapshot adimi (iz): 4 tik x 0,05 + 0,2 = 0,4; iki snapshot'luk adimda 0,6 (bant bir kez).
-  near(getBodyHeadingMinStep(SNAPSHOT_INTERVAL_MS, SNAPSHOT_INTERVAL_MS), 0.4, "snapshot adimi", 1e-12);
-  near(getBodyHeadingMinStep(2 * SNAPSHOT_INTERVAL_MS, 2 * SNAPSHOT_INTERVAL_MS), 0.6, "iki snapshot'luk adim", 1e-12);
-  // Karede (doku): adimin payi; hangi hizda cizilirse cizilsin bir snapshot adimina toplam ayni esik.
-  near(getBodyHeadingMinStep(SERVER_TICK_MS), 0.1, "60 Hz kare", 1e-12);
-  near(getBodyHeadingMinStep(1000 / 144), 0.1 * 60 / 144, "144 Hz kare", 1e-12);
-  near(4 * getBodyHeadingMinStep(SERVER_TICK_MS), getBodyHeadingMinStep(SNAPSHOT_INTERVAL_MS, SNAPSHOT_INTERVAL_MS), "kareler toplami", 1e-12);
-  near(144 / 15 * getBodyHeadingMinStep(1000 / 144), getBodyHeadingMinStep(SNAPSHOT_INTERVAL_MS), "144 Hz toplami", 1e-12);
-  // Takilan uzun karede bandin tamami, fazlasi degil (oynatilan iki konumun yuvarlama hatasi en fazla iki adim).
-  near(getBodyHeadingMinStep(200), 0.05 * 12 + 0.2, "uzun kare", 1e-12);
-  // Gosterilen saat ilerlemediyse (0 ya da eksi) esik sonsuz: hicbir adim dondurmuyor.
+  near(getBodyHeadingMinStep(SNAPSHOT_INTERVAL_MS), 0.4, "snapshot adimi", 1e-12);
+  near(getBodyHeadingMinStep(2 * SNAPSHOT_INTERVAL_MS), 0.6, "iki snapshot'luk adim (bant bir kez)", 1e-12);
+  near(getBodyHeadingMinStep(200), 0.05 * 12 + 0.2, "uzun adim", 1e-12);
+  // Snapshot'tan snapshot'a esik (sunucu ve iz ayni fonksiyon): ilk snapshot ve geri giden saat bir tik.
+  near(getSnapshotHeadingMinStep(5000, 5000 - SNAPSHOT_INTERVAL_MS), 0.4, "ardisik iki snapshot", 1e-12);
+  near(getSnapshotHeadingMinStep(5000, undefined), 0.25, "ilk snapshot", 1e-12);
+  near(getSnapshotHeadingMinStep(5000, 5005), 0.25, "geri giden saat", 1e-12);
+  // Gecen sure yoksa (0 ya da eksi) esik sonsuz: hicbir adim dondurmuyor.
   assert.equal(getBodyHeadingMinStep(0), Infinity);
   assert.equal(getBodyHeadingMinStep(-5), Infinity);
-  assert.equal(getBodyHeadingMinStep(0, 0), Infinity);
-  // Kural tutarli: tam konumlarla istemci yalnizca sunucunun donecegi hizda
-  // donuyor (|dx| + |dy| hizi 6 birim/sn ustu; sunucu 3 ustunde). Arada
-  // sunucu ceviriyor, istemci cevirmiyor (bant), tersi hic yok.
+  // Duz yuruyuste donme hizi: |dx| + |dy| hizi 6 birim/sn ustu (snapshot adimi 0,4).
   for (const perSecond of [2, 2.9, 3.1, 4, 5, 5.9, 6.1, 8, 26]) {
-    const server = perSecond / 60 > BODY_HEADING_TICK_STEP;
-    const tracked = perSecond * (SNAPSHOT_INTERVAL_MS / 1000) > getBodyHeadingMinStep(SNAPSHOT_INTERVAL_MS, SNAPSHOT_INTERVAL_MS);
-    const drawn60 = perSecond / 60 > getBodyHeadingMinStep(SERVER_TICK_MS);
-    const drawn144 = perSecond / 144 > getBodyHeadingMinStep(1000 / 144);
-    assert.ok(server || (!tracked && !drawn60 && !drawn144), `${perSecond}: istemci sunucudan once dondu`);
-    assert.equal(tracked, drawn60, `${perSecond}: doku ile iz ayrisiyor`);
-    assert.equal(drawn60, drawn144, `${perSecond}: 60 ve 144 Hz ayrisiyor`);
-    assert.equal(server, perSecond > 3, `${perSecond}: sunucunun esigi`);
-    assert.equal(tracked, perSecond > 6 + 1e-9, `${perSecond}: istemcinin esigi`);
+    const tracked = perSecond * (SNAPSHOT_INTERVAL_MS / 1000) > getBodyHeadingMinStep(SNAPSHOT_INTERVAL_MS);
+    assert.equal(tracked, perSecond > 6 + 1e-9, `${perSecond}: esik`);
   }
   // Dokunun acisi: +y ekseni yon (dondurulmemis doku +y'ye bakiyor).
   near(getBodyHeadingRotation(0, 1), 0, "+y");
   near(getBodyHeadingRotation(1, 0), -Math.PI / 2, "+x");
 });
 
-test("yuvarlama kipirtisi: 0,1'e yuvarli snapshot konumlari yavas yuruyen ya da duran dusmanin istemcideki yonunu cevirmiyor; sunucu gercek konumlarla tik esigiyle", () => {
+test("yuvarlama kipirtisi: 0,1'e yuvarli snapshot konumlari yavas yuruyen ya da duran dusmanin yonunu cevirmiyor (iz de govde de)", () => {
   // Dusman 1,2 birim/sn ile x yonunde (snapshot basina 0,08): yuvarlanmis
   // konum farkinin |dx| + |dy|'si 0 ile 0,2 arasinda zipliyor. Eski esik
   // (snapshot basina 0,2) zaman zaman asiliyor ve doku y'ye de donuyordu.
+  const room = createRoom("warrior");
+  room.broadcast = () => {};
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()].at(-1);
   const tracker = new bodies.EnemyHeadingTracker();
-  const round = (value) => Math.round(value * 10) / 10;
   let serverTime = 0;
-  let x = 10.04;
-  let y = 20.04;
-  const turns = [];
-  tracker.note([{ id: "slow", x: round(x), y: round(y) }], serverTime);
-  const start = { ...tracker.get("slow") };
+  enemy.x = 10.04;
+  enemy.y = 20.04;
+  const broadcast = () => {
+    room.noteSnapshotHeadings(serverTime);
+    tracker.note([{ id: enemy.id, x: roundWire(enemy.x), y: roundWire(enemy.y) }], serverTime);
+  };
+  broadcast();
+  const start = { ...tracker.get(enemy.id) };
   for (let snapshot = 0; snapshot < 400; snapshot += 1) {
-    x += 1.2 * (SNAPSHOT_INTERVAL_MS / 1000);
+    enemy.x += 1.2 * (SNAPSHOT_INTERVAL_MS / 1000);
     // Yanda yuvarlama sinirinda kipirti (0,05 cevresinde).
-    y = 20.04 + (snapshot % 2 === 0 ? 0.02 : -0.02);
+    enemy.y = 20.04 + (snapshot % 2 === 0 ? 0.02 : -0.02);
     serverTime += SNAPSHOT_INTERVAL_MS;
-    tracker.note([{ id: "slow", x: round(x), y: round(y) }], serverTime);
-    const seen = tracker.get("slow");
-    turns.push(seen.headingX !== start.headingX || seen.headingY !== start.headingY);
+    broadcast();
+    const seen = tracker.get(enemy.id);
+    assert.ok(seen.headingX === start.headingX && seen.headingY === start.headingY, `${snapshot}: yuvarlama kipirtisi yonu cevirdi`);
+    assert.ok(enemy.body.headingX === start.headingX && enemy.body.headingY === start.headingY, `${snapshot}: govde dondu`);
   }
-  assert.ok(turns.every((turned) => !turned), "yuvarlama kipirtisi yonu cevirdi");
-  // Sunucu ayni hizdaki dusmani da cevirmiyor (gercek konumlarla, tik basina 0,02 < 0,05).
-  const state = { headingX: 0, headingY: 1, fromX: 0, fromY: 0 };
-  let moved = false;
-  for (let tick = 0; tick < 60; tick += 1) moved = updateBodyHeading(state, (tick + 1) * 1.2 / 60, 0) || moved;
-  assert.equal(moved, false);
-  // 5 birim/sn (tik basina 0,083): sunucu ceviriyor (istemci 6 birim/sn ustunde, bkz. bir onceki test).
-  for (let tick = 0; tick < 4; tick += 1) moved = updateBodyHeading(state, state.fromX + 5 / 60, 0) || moved;
-  assert.equal(moved, true);
 });
 
-test("yon kurali yavas ve capraz yuruyende: istemcinin izi ve dokusu sunucunun donmedigi bir adimda hic donmuyor; bandin icindeki son adim yonu degistirmiyor", () => {
-  // Turun dogrulayicisinin ornegi: tek, ortak hiz esigi yuvarlamanin iki
-  // adimlik kipirtisini tasimiyordu; 2-4 birim/sn'de istemci donuyor, sunucu
-  // donmuyordu (2 birim/sn'de 200 yonden 169'u). Simdi: dusman 1,5-8
-  // birim/sn ile rastgele yonde (capraz dahil) yuruyor, ortada 90 derece
-  // donuyor ve duruyor. Sunucu her tik gercek konumla (`updateBodyHeading`),
-  // istemcinin izi her snapshot'ta 0,1'e yuvarli konumla
-  // (`EnemyHeadingTracker`), doku 60 ve 144 Hz'de iki yuvarli snapshot
-  // arasini dogrusal oynatarak (GameScene'in kurali: `isBodyHeadingStep` ve
-  // `getBodyHeadingMinStep(elapsed)`).
+test("yon kurali yavas ve capraz yuruyende: sunucunun govdesi her snapshot'ta istemcinin iziyle bire bir ayni, doku snapshot sinirlarinda; eski tik kurali ayrisiyordu", () => {
+  // Turun dogrulayicisinin ornegi: sunucu govdeyi gercek konumla tik basina
+  // 0,05 esigiyle ceviriyordu; |dx| + |dy| hizi 3-6 birim/sn olan (yavaslamis)
+  // yuruyende istemcinin yuvarli snapshot adimi esigi asmiyor, doku ve iz
+  // eski yonde kaliyordu. Simdi: dusman 1,5-8 birim/sn ile rastgele yonde
+  // (capraz dahil) yuruyor, ortada 90 derece donuyor ve duruyor; sunucu
+  // (`noteSnapshotHeadings`) ve iz (`EnemyHeadingTracker`) her snapshot'ta
+  // ayni; doku 60 Hz'de snapshot sinirlarinda sunucunun yonunde, 144 Hz'de
+  // yalnizca sunucunun dondugu bir snapshot adiminda donuyor.
+  const room = createRoom("warrior");
+  room.broadcast = () => {};
   const rnd = random(4242);
-  const round = (value) => Math.round(value * 10) / 10;
   let clientTurns = 0;
-  let serverTurns = 0;
+  let oldRuleSplits = 0;
   for (let run = 0; run < 240; run += 1) {
+    room.enemies.clear();
+    room.spawnEnemy();
+    const enemy = [...room.enemies.values()].at(-1);
     const speed = 1.5 + rnd() * 6.5;
     const angle = run % 4 === 0 ? Math.PI / 4 + (run % 8) * (Math.PI / 2) : rnd() * Math.PI * 2;
     const corner = 40 + Math.floor(rnd() * 40);
     const stop = corner + 40 + Math.floor(rnd() * 40);
     const ticks = stop + 60;
-    const server = { headingX: 0, headingY: 1, fromX: 50.03, fromY: 50.07 };
-    const positions = [[server.fromX, server.fromY]];
-    const serverTurnTicks = [];
+    const positions = [[50.03, 50.07]];
     let ux = Math.cos(angle);
     let uy = Math.sin(angle);
     for (let tick = 1; tick <= ticks; tick += 1) {
       if (tick === corner) [ux, uy] = [-uy, ux];
       const [px, py] = positions[tick - 1];
-      const moving = tick < stop;
-      const next = moving ? [px + ux * speed / 60, py + uy * speed / 60] : [px, py];
-      positions.push(next);
-      if (updateBodyHeading(server, next[0], next[1])) serverTurnTicks.push(tick);
+      positions.push(tick < stop ? [px + ux * speed / 60, py + uy * speed / 60] : [px, py]);
     }
-    serverTurns += serverTurnTicks.length;
-    const turnedWithin = (fromTick, toTick) => serverTurnTicks.some((tick) => tick > fromTick && tick <= toTick);
-    // Snapshot'lar her 4. tikte, konumlar telde 0,1'e yuvarli.
+    // Eski kural: gercek konumla tik basina 0,05.
+    const old = { headingX: 0, headingY: 1, fromX: positions[0][0], fromY: positions[0][1] };
+    const oldAt = [[0, 1]];
+    for (let tick = 1; tick <= ticks; tick += 1) {
+      updateBodyHeading(old, positions[tick][0], positions[tick][1], BODY_HEADING_MIN_STEP);
+      oldAt.push([old.headingX, old.headingY]);
+    }
+    // Snapshot'lar her 4. tikte, konumlar telde 0,1'e yuvarli; sunucu ayni yayinda olcuyor.
     const snapshots = [];
-    for (let tick = 0; tick <= ticks; tick += 4) snapshots.push({ tick, at: tick * SERVER_TICK_MS, x: round(positions[tick][0]), y: round(positions[tick][1]) });
     const tracker = new bodies.EnemyHeadingTracker();
-    let previous = { headingX: BODY_DEFAULT_HEADING_X, headingY: BODY_DEFAULT_HEADING_Y };
-    for (let index = 0; index < snapshots.length; index += 1) {
-      const snapshot = snapshots[index];
-      tracker.note([{ id: "e", x: snapshot.x, y: snapshot.y }], snapshot.at);
-      const seen = tracker.get("e");
-      if (index > 0 && (seen.headingX !== previous.headingX || seen.headingY !== previous.headingY)) {
-        clientTurns += 1;
-        assert.ok(turnedWithin(snapshots[index - 1].tick, snapshot.tick), `iz: ${speed.toFixed(2)} birim/sn, ${snapshot.tick}. tikte sunucu donmeden dondu`);
-        // Bandin icindeki adim (iki yuvarlama adimi kadar) yonu degistirmiyor.
-        const dx = snapshot.x - snapshots[index - 1].x;
-        const dy = snapshot.y - snapshots[index - 1].y;
-        assert.ok(Math.abs(dx) + Math.abs(dy) > BODY_HEADING_WIRE_DEAD_BAND + 1e-9, "bandin icindeki adimdan yon alindi");
-      }
-      previous = { headingX: seen.headingX, headingY: seen.headingY };
+    let previous;
+    let split = false;
+    for (let tick = 0; tick <= ticks; tick += 4) {
+      const at = tick * SERVER_TICK_MS;
+      enemy.x = positions[tick][0];
+      enemy.y = positions[tick][1];
+      room.noteSnapshotHeadings(at);
+      // Istemcinin hidratlanmis kaydi: iz bu snapshot'taki yonu kayda yaziyor.
+      const record = { id: enemy.id, x: roundWire(enemy.x), y: roundWire(enemy.y) };
+      tracker.note([record], at);
+      const seen = tracker.get(enemy.id);
+      assert.ok(enemy.body.headingX === seen.headingX && enemy.body.headingY === seen.headingY, `${run}: ${speed.toFixed(2)} birim/sn, ${tick}. tikte sunucu ile iz ayri`);
+      assert.ok(record.hx === seen.headingX && record.hy === seen.headingY, "kayda yon yazilmadi");
+      if (previous && (seen.headingX !== previous[0] || seen.headingY !== previous[1])) clientTurns += 1;
+      if (angleGap(headingAngle(...oldAt[tick]), headingAngle(seen.headingX, seen.headingY)) > 0.5) split = true;
+      previous = [seen.headingX, seen.headingY];
+      snapshots.push({ at, record, server: [enemy.body.headingX, enemy.body.headingY] });
     }
+    if (split) oldRuleSplits += 1;
+    // Doku (GameScene): oynatma ani t icin onceki (<= t) ve sonraki (>= t)
+    // snapshot, ara degerlenmis kayit sonrakinden (`...enemy`); aci kaydin
+    // yonu. Kare evresi rastgele (60 ve 144 Hz): her karede doku oynattigi
+    // adimin sonundaki snapshot'ta sunucunun govdesinin yonunde, snapshot
+    // sinirinda ikisi ayni; iki adimin karisik yonu yok.
     for (const hz of [60, 144]) {
       const frame = 1000 / hz;
-      let rotation = 0;
-      let last;
-      let lastAt;
-      for (let at = 0; at <= snapshots.at(-1).at; at += frame) {
-        const segment = Math.min(snapshots.length - 2, Math.floor(at / SNAPSHOT_INTERVAL_MS));
-        const a = snapshots[segment];
-        const b = snapshots[segment + 1];
-        const alpha = (at - a.at) / (b.at - a.at);
-        const shown = [a.x + (b.x - a.x) * alpha, a.y + (b.y - a.y) * alpha];
-        if (last) {
-          const minStep = getBodyHeadingMinStep(at - lastAt);
-          const dx = shown[0] - last[0];
-          const dy = shown[1] - last[1];
-          const turned = isBodyHeadingStep(dx, dy, minStep) ? getBodyHeadingRotation(dx, dy) : rotation;
-          if (turned !== rotation) {
-            const fromTick = Math.floor(lastAt / SNAPSHOT_INTERVAL_MS) * 4;
-            const toTick = (Math.floor(at / SNAPSHOT_INTERVAL_MS) + 1) * 4;
-            assert.ok(turnedWithin(fromTick, toTick), `doku ${hz} Hz: ${speed.toFixed(2)} birim/sn, sunucu donmeden dondu`);
-          }
-          rotation = turned;
-        }
-        last = shown;
-        lastAt = at;
+      const phase = rnd() * frame;
+      for (let at = phase; at <= snapshots.at(-1).at; at += frame) {
+        const next = snapshots.find((snapshot) => snapshot.at >= at);
+        const shown = { ...next.record };
+        const rotation = getBodyHeadingRotation(shown.hx, shown.hy);
+        assert.ok(angleGap(rotation, getBodyHeadingRotation(...next.server)) < 1e-12, `doku ${hz} Hz: ${speed.toFixed(2)} birim/sn, sunucunun yonunde degil`);
       }
     }
   }
-  assert.ok(serverTurns > 200 && clientTurns > 100, `${serverTurns} / ${clientTurns}`);
+  // Ornekler gercekten donuyor; eski tik kurali bu kosularin coklugunda izden ayrisiyordu.
+  assert.ok(clientTurns > 200 && oldRuleSplits > 40, `${clientTurns} / ${oldRuleSplits}`);
+});
+
+test("yon: sonradan gelen istemci yonu tam statik kayittan (hx, hy) baslatiyor; doguma ve dondurulmemis dokuya anahtar yazilmiyor", () => {
+  // Sonradan gelen (ya da yeniden baglanip tam kayit isteyen) istemcinin izi
+  // dusmani ilk gordugu snapshot'ta baslatiyor: eskiden hep +y, duran
+  // dusman yuruyene kadar sunucunun govdesinden ayri yone bakiyordu.
+  const room = createRoom("warrior");
+  room.broadcast = () => {};
+  room.spawnEnemy();
+  room.spawnEnemy();
+  const [walker, idle] = [...room.enemies.values()];
+  let serverTime = 1000;
+  const broadcast = () => {
+    serverTime += SNAPSHOT_INTERVAL_MS;
+    room.noteSnapshotHeadings(serverTime);
+  };
+  broadcast();
+  walker.x += 6;
+  broadcast();
+  assert.deepEqual([walker.body.headingX, walker.body.headingY], [1, 0]);
+  const sent = [];
+  room.sendFullStaticSnapshot({ send: (type, payload) => sent.push({ type, payload }) });
+  const statics = new Map(sent[0].payload.enemies.map((entry) => [entry.id, entry]));
+  assert.deepEqual([statics.get(walker.id).hx, statics.get(walker.id).hy], [walker.body.headingX, walker.body.headingY], "yon tohumu");
+  assert.ok(!("hx" in statics.get(idle.id)) && !("hy" in statics.get(idle.id)), "dondurulmemis dokuya anahtar yazildi");
+  // Dogumun statik kaydinda (`enemy:spawn`) anahtar yok.
+  const spawned = [];
+  room.broadcast = (type, payload) => spawned.push({ type, payload });
+  room.spawnEnemy();
+  const spawn = spawned.find((entry) => entry.type === "enemy:spawn");
+  assert.ok(spawn && !("hx" in spawn.payload), "dogum kaydina yon yazildi");
+  room.broadcast = () => {};
+  room.enemies.delete(spawn.payload.id);
+  // Yeni iz: ilk snapshot'ta tohumla basliyor, sunucunun yonuyle ayni; kayda o snapshot'taki yon yaziliyor.
+  const tracker = new bodies.EnemyHeadingTracker();
+  const records = () => [...room.enemies.values()].map((enemy) => ({ ...statics.get(enemy.id), id: enemy.id, x: roundWire(enemy.x), y: roundWire(enemy.y) }));
+  broadcast();
+  const first = records();
+  tracker.note(first, serverTime);
+  assertHeadingsMatch(room, tracker, "ilk snapshot");
+  assert.deepEqual([first[0].hx, first[0].hy], [walker.body.headingX, walker.body.headingY]);
+  assert.deepEqual([first[1].hx, first[1].hy], [BODY_DEFAULT_HEADING_X, BODY_DEFAULT_HEADING_Y]);
+  // Duran dusman durdukca (tohumsuz olsaydi +y'de kalirdi) ve yuruyen yeniden yuruyunce ayni.
+  for (let step = 0; step < 20; step += 1) {
+    walker.y += step < 10 ? 0 : 0.6;
+    broadcast();
+    tracker.note(records(), serverTime);
+    assertHeadingsMatch(room, tracker, `${step}. snapshot`);
+  }
+  assert.deepEqual([walker.body.headingX, walker.body.headingY], [0, 1]);
+});
+
+test("yon: rastgele dusmanlar, yayinlar arasi dogum, kacan ve tekrarlanmayan yayinlar, titresimli tik: sunucu her snapshot'ta istemcinin iziyle ayni", () => {
+  // Yayin istemcinin aldigi snapshot'la ayni anda: kimseye gitmeyen kare
+  // (geri basinc) ve bos tahtanin tekrarlanan karesi iki yanda da yok; fark
+  // bir sonraki giden kareye kadar buyuyor. Yavas (yavaslamis), hizli,
+  // duran, itilen ve kosede donen dusmanlar; bazilari yayinlar arasinda
+  // doguyor, bazilari olup gidiyor.
+  const room = createRoom("warrior");
+  room.broadcast = () => {};
+  const rnd = random(90210);
+  const tracker = new bodies.EnemyHeadingTracker();
+  const movers = new Map();
+  const spawn = () => {
+    room.spawnEnemy();
+    const enemy = [...room.enemies.values()].at(-1);
+    enemy.x = 100 + rnd() * 600;
+    enemy.y = 100 + rnd() * 400;
+    const angle = rnd() * Math.PI * 2;
+    movers.set(enemy.id, { speed: rnd() < 0.5 ? 2 + rnd() * 6 : rnd() * 40, ux: Math.cos(angle), uy: Math.sin(angle) });
+  };
+  for (let index = 0; index < 24; index += 1) spawn();
+  let now = 0;
+  let lastBroadcast = -Infinity;
+  let snapshots = 0;
+  let skipped = 0;
+  let turns = 0;
+  let checks = 0;
+  const lastSeen = new Map();
+  for (let tick = 0; tick < 6000; tick += 1) {
+    now += 15.6 + rnd() * 1.6;
+    for (const enemy of room.enemies.values()) {
+      const mover = movers.get(enemy.id);
+      const roll = rnd();
+      if (roll < 0.004) [mover.ux, mover.uy] = [-mover.uy, mover.ux];
+      else if (roll < 0.006) mover.speed = rnd() < 0.3 ? 0 : rnd() < 0.6 ? 2 + rnd() * 6 : rnd() * 40;
+      else if (roll < 0.007) {
+        // Itme (vurus, sicrama): tek tikte birkac birim.
+        enemy.x += (rnd() - 0.5) * 8;
+        enemy.y += (rnd() - 0.5) * 8;
+      }
+      enemy.x += mover.ux * mover.speed / 60;
+      enemy.y += mover.uy * mover.speed / 60;
+    }
+    if (rnd() < 0.01 && room.enemies.size > 4) {
+      const [id] = [...room.enemies.keys()].slice(Math.floor(rnd() * room.enemies.size));
+      room.enemies.delete(id);
+    }
+    if (rnd() < 0.02) spawn();
+    room.rebuildEnemyGrid();
+    if (now - lastBroadcast < SNAPSHOT_SEND_INTERVAL_MS) continue;
+    lastBroadcast = now;
+    if (rnd() < 0.12) {
+      skipped += 1;
+      continue;
+    }
+    const serverTime = Math.floor(now);
+    room.noteSnapshotHeadings(serverTime);
+    tracker.note([...room.enemies.values()].map((enemy) => ({ id: enemy.id, x: roundWire(enemy.x), y: roundWire(enemy.y) })), serverTime);
+    snapshots += 1;
+    checks += assertHeadingsMatch(room, tracker, `${tick}. tik`);
+    for (const enemy of room.enemies.values()) {
+      const previous = lastSeen.get(enemy.id);
+      if (previous && (previous[0] !== enemy.body.headingX || previous[1] !== enemy.body.headingY)) turns += 1;
+      lastSeen.set(enemy.id, [enemy.body.headingX, enemy.body.headingY]);
+    }
+  }
+  assert.ok(snapshots > 1000 && skipped > 100 && checks > 20000 && turns > 500, `${snapshots} / ${skipped} / ${checks} / ${turns}`);
+});
+
+/**
+ * Tek dusman, tik tik verilen konumlarla: sunucunun yayini
+ * (`noteSnapshotHeadings`, snapshot her 4. tikte) ve istemcinin izi (0,1'e
+ * yuvarli konumlar); eski kural (gercek konumla tik basina 0,05) yaninda.
+ * Her snapshot'ta sunucu ile iz ayni olmali.
+ */
+function walkWithSnapshots(path, ticks) {
+  const room = createRoom("warrior");
+  room.broadcast = () => {};
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()].at(-1);
+  const tracker = new bodies.EnemyHeadingTracker();
+  const start = path(0);
+  const old = { headingX: BODY_DEFAULT_HEADING_X, headingY: BODY_DEFAULT_HEADING_Y, fromX: start[0], fromY: start[1] };
+  const states = [];
+  for (let tick = 0; tick <= ticks; tick += 1) {
+    [enemy.x, enemy.y] = path(tick);
+    if (tick > 0) updateBodyHeading(old, enemy.x, enemy.y, BODY_HEADING_MIN_STEP);
+    room.rebuildEnemyGrid();
+    if (tick % 4 !== 0) continue;
+    const serverTime = 5000 + tick * SERVER_TICK_MS;
+    room.noteSnapshotHeadings(serverTime);
+    tracker.note([{ id: enemy.id, x: roundWire(enemy.x), y: roundWire(enemy.y) }], serverTime);
+    assertHeadingsMatch(room, tracker, `${tick}. tik`);
+    states.push({ tick, server: [enemy.body.headingX, enemy.body.headingY], old: [old.headingX, old.headingY] });
+  }
+  return states;
+}
+
+test("yon: %85 yavaslamis piyade 90 derecelik kosede: sunucunun govdesi 1 sn sonra (ve her snapshot'ta) istemcinin iziyle ayni; eski tik kurali ayrisiyordu", () => {
+  // Turun dogrulayicisinin ornegi: piyade (26,2 birim/sn) +x'e 2 sn tam
+  // hizla yuruyor, sonra %85 yavaslayip (3,93 birim/sn, tik basina 0,0655)
+  // kosede +y'ye donuyor. Eski kuralda sunucu govdeyi koseden bir tik sonra
+  // ceviriyordu; iz ve doku (snapshot adimi ~0,26 < 0,4) 2,7-8 sn boyunca
+  // +x'te kaliyordu. Simdi ikisi ayni kuralla, ayni yonde; 90 ve 85
+  // derecelik (capraz) kose ve %90 yavaslamis kosucu da.
+  for (const [label, full, slow, turn] of [
+    ["piyade", 26.2, 0.15, Math.PI / 2],
+    ["piyade 85 derece", 26.2, 0.15, (85 * Math.PI) / 180],
+    ["kosucu", 46.2, 0.1, -Math.PI / 2]
+  ]) {
+    const cornerTick = 120;
+    const path = (tick) => {
+      const fast = Math.min(tick, cornerTick) * full / 60;
+      const after = Math.max(0, tick - cornerTick) * full * slow / 60;
+      return [37.04 + fast + Math.cos(turn) * after, 81.03 + Math.sin(turn) * after];
+    };
+    const states = walkWithSnapshots(path, cornerTick + 60 * 8);
+    const at = (tick) => states.find((state) => state.tick >= tick);
+    const second = at(cornerTick + 60);
+    // 1 sn sonra: sunucu ile iz ayni (her snapshot'ta da); ikisi de koseden onceki yonde.
+    near(second.server[0], 1, `${label}: govde +x'te degil`, 1e-12);
+    // Eski kural yeni yone donmustu (2-8 birimlik kenar kaymasi).
+    assert.ok(angleGap(headingAngle(...second.old), turn) < 0.05, `${label}: eski kural donmemis (ornek bandin disinda)`);
+    // Yavas yuruyus suresince (8 sn) hicbir snapshot'ta sunucu izden ayri degil (walkWithSnapshots).
+    assert.ok(states.length > 100);
+  }
+});
+
+test("yon: dogumdan beri yavas, duz yuruyen dusman: govde de iz de dondurulmemis dokuda (+y); eski kural yuruyus yonune ceviriyordu", () => {
+  // Turun dogrulayicisinin ikinci ornegi: dogar dogmaz %85 yavaslayan
+  // dusman +x'e duz yuruyor (snapshot adimi ~0,26). Istemcinin izi ve doku
+  // dondurulmemis dokuda (+y) kaliyor; eski kuralda sunucu govdeyi +x'e
+  // ceviriyordu. Yayinlar arasi dogum: ilk snapshot yalnizca konumu yaziyor.
+  for (const [speed, born] of [[3.93, 0], [4.62, 1], [5.5, 3]]) {
+    const states = walkWithSnapshots((tick) => [12.34 + Math.max(0, tick - born) * speed / 60, 56.78], 60 * 6);
+    for (const state of states) assert.deepEqual(state.server, [BODY_DEFAULT_HEADING_X, BODY_DEFAULT_HEADING_Y], `${speed}: ${state.tick}. tikte govde dondu`);
+    assert.ok(angleGap(headingAngle(...states.at(-1).old), 0) < 1e-9, `${speed}: eski kural donmemis`);
+  }
+});
+
+test("yon: uretim yolunda rastgele yavaslatmalar ve kulelerin bukttugu yollar: sunucunun govdesi giden her snapshot'ta istemcinin iziyle ayni", () => {
+  // Tam tik (tohumlu oda, \`update\`), giden snapshot'lar istemcinin snapshot
+  // yolundan (tam kare, delta). Yolun ortasina kuleler (yuruyus 15-65
+  // derece bukuluyor); her yeni dusmana ve ara ara rastgele dusmanlara
+  // rastgele yavaslatma (%55-95: bandin tamami). Eski tik kuralinin izden
+  // ayristigi snapshot'lar da sayiliyor: ornek gercekten o bandi geziyor.
+  const { room, tick, mirror } = liveRoom({ seed: 33 });
+  const peer = room.clients[0];
+  room.state.players.get(peer.sessionId).gold = 1e6;
+  const map = room.activeMap;
+  // Ilk dusmanin seridine, onune kuleler: yol onlarin cevresinden bukuluyor.
+  let checks = 0;
+  for (let step = 0; step < 60 * 30 && room.enemies.size === 0; step += 1) checks += tick(`bekleme ${step}. tik`);
+  const first = [...room.enemies.values()][0];
+  assert.ok(first, "dusman dogmadi");
+  const lane = worldToGrid(first.x, first.y, map);
+  for (let row = lane.row + 3; row < map.rows - 2; row += 3) {
+    for (const offset of [-2, -1, 0, 1, 2]) {
+      if (Math.abs(offset) === 2 && row % 2) continue;
+      const world = gridToWorld(lane.col + offset, row, map);
+      room.placeTower(peer, { x: world.x, y: world.y, definitionId: "warrior-1" });
+    }
+  }
+  assert.ok(room.towers.size > 3, `${room.towers.size} kule`);
+  const rnd = random(31337);
+  const olds = new Map();
+  let splits = 0;
+  let bent = 0;
+  for (let step = 0; step < 60 * 45; step += 1) {
+    const now = room.runtime.now();
+    for (const enemy of room.enemies.values()) {
+      if (!olds.has(enemy.id)) {
+        if (rnd() < 0.6) room.addEnemySlowFloor(enemy, 0.05 + rnd() * 0.4, now + 2000 + rnd() * 8000, "flat", now);
+        olds.set(enemy.id, { headingX: 0, headingY: 1, fromX: enemy.x, fromY: enemy.y });
+      } else if (rnd() < 0.003) {
+        room.addEnemySlowFloor(enemy, 0.05 + rnd() * 0.4, now + 500 + rnd() * 4000, `test${step}`, now);
+      }
+    }
+    const matched = tick(`${step}. tik`);
+    checks += matched;
+    for (const enemy of room.enemies.values()) {
+      const old = olds.get(enemy.id);
+      if (!old) continue;
+      updateBodyHeading(old, enemy.x, enemy.y, BODY_HEADING_MIN_STEP);
+      if (Math.abs(old.headingX) > 0.2) bent += 1;
+      if (matched > 0 && angleGap(headingAngle(old.headingX, old.headingY), headingAngle(enemy.body.headingX, enemy.body.headingY)) > 0.3) splits += 1;
+    }
+  }
+  assert.ok(checks > 5000 && bent > 500 && splits > 20, `${checks} / ${bent} / ${splits}`);
+});
+
+test("yon: kaydedilmis bir bot macinin yeniden oynatilan tel snapshot'lari (delta ve tam kare): sunucunun govdesi her snapshot'ta istemcinin iziyle ayni", async () => {
+  // Uretim yolu: bot maci (titresimli tik, Zeynep'in yavaslatmalari, tel
+  // mesajlari), kaydi bagimsiz oynatiliyor; oynatilan odanin giden her
+  // karesi (delta, `sendSnapshotWithBackpressure`) istemcinin snapshot
+  // yolundan geciyor. Iki tohum, iki operator.
+  const dir = mkdtempSync(join(tmpdir(), "nx-heading-"));
+  try {
+    let checks = 0;
+    let frames = 0;
+    for (const [operators, seed, stage] of [[["zeynep"], 5, 1], [["warrior"], 9, 2]]) {
+      const match = await runRecordedBotMatch({ operators, stage, seed, maxWaves: 2, dir });
+      const recording = loadRecordingFile(match.path);
+      const mirror = clientMirror();
+      let wrapped;
+      let fresh = 0;
+      const replay = await replayRecording(recording, {
+        beforeTick(room) {
+          if (wrapped === room) return;
+          wrapped = room;
+          const send = room.sendSnapshotWithBackpressure.bind(room);
+          room.sendSnapshotWithBackpressure = (wire, full) => {
+            const sent = send(wire, full);
+            if (sent) {
+              mirror.receive(wire);
+              fresh += 1;
+            }
+            return sent;
+          };
+        },
+        afterTick(room, tickIndex) {
+          if (fresh === 0) return;
+          fresh = 0;
+          frames += 1;
+          checks += assertHeadingsMatch(room, mirror.tracker, `${operators} ${seed}: ${tickIndex}. tik`);
+        }
+      });
+      assert.deepEqual(replay.mismatches, [], "yeniden oynatma ayristi");
+    }
+    assert.ok(frames > 500 && checks > 2000, `${frames} / ${checks}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
 });
 
 test("istemci dokuyu paylasilan kuralla ciziyor ve donduruyor; sahne olcegi paylasilan; sunucuda daire yaricapi kalmadi", () => {
@@ -650,12 +1020,15 @@ test("istemci dokuyu paylasilan kuralla ciziyor ve donduruyor; sahne olcegi payl
   assert.match(scene, /getEnemyBodyScale\(\{ champion: enemy\.champion, ds: raceView\?\.drawer \}\)/);
   assert.match(scene, /const artScale = getEnemyArtScale\(enemy\);/);
   assert.match(scene, /enemy\.movementKind === "air" \? AIR_ENEMY_DISPLAY_SCALE : 1\) \+ slowPulse/);
-  // Donus paylasilan yardimcilardan, esik gosterilen sureyle; havuzdan gelen doku izlenen yonle basliyor.
-  assert.match(scene, /return isBodyHeadingStep\(dx, dy, minStep\) \? getBodyHeadingRotation\(dx, dy\) : previousRotation;/);
-  assert.match(scene, /const turnStep = getBodyHeadingMinStep\(elapsed\);/);
-  assert.match(scene, /this\.getEnemySpriteRotation\(enemy, previousX, previousY, mover\.sprite\.rotation, turnStep\)/);
-  assert.match(scene, /const heading = this\.enemyHeadings\.get\(enemy\.id\);\s+sprite\.setRotation\(heading \? getBodyHeadingRotation\(heading\.headingX, heading\.headingY\) : 0\);/);
-  assert.doesNotMatch(scene, /> 0\.05\)/);
+  // Doku oynatilan snapshot'in yonuyle (iz gelen snapshot'in kaydina yaziyor,
+  // ara degerleme kaydi sonraki snapshot'tan kuruyor); kare kare konum
+  // farkiyla donmuyor. Havuzdan gelen doku dondurulmemis aciyla basliyor, ayni
+  // karede kaydin yonu yaziliyor.
+  assert.match(scene, /return hx !== undefined && hy !== undefined \? getBodyHeadingRotation\(hx, hy\) : previousRotation;/);
+  assert.match(scene, /mover\.sprite\.setRotation\(this\.getEnemySpriteRotation\(enemy, mover\.sprite\.rotation\)\);/);
+  assert.match(scene, /this\.enemyHeadings\.note\(hydratedSnapshot\.enemies, hydratedSnapshot\.serverTime\);[\s\S]*this\.snapshotBuffer\.push\(bufferedSnapshot\);/);
+  assert.match(scene, /const enemies = next\.enemies\.map\(\(enemy\) => \{[\s\S]*?return \{\s+\.\.\.enemy,/);
+  assert.doesNotMatch(scene, /isBodyHeadingStep|getBodyHeadingMinStep|lastEnemyTurnServerTime|> 0\.05\)/);
   // Mermilerin sahne olcegi sunucunun isabet seklinin olcegi.
   assert.match(scene, /private getTowerEffectScale\(\) \{\s+return getProjectileSceneScale\(this\.getMapCellSize\(\)\);/);
   // Carpmanin ani temasin tiki (mesajin tikinden bir tik once).
@@ -1236,12 +1609,32 @@ test("tikin basinda ortusen mermi: nokta dilimdeki kenar noktalarinin merminin c
     const axisNearest = samples.reduce((best, sample) => (sample.lateral < best.lateral ? sample : best));
     assert.ok(drawnDistance(id, tier, flown, 0, 0, 1, 0, 0, axisNearest.p) > 1, `${id}: eski olcut de cizimdeydi`);
   }
+  // Dogan Ucube (ucus tam 0, `reach` 0): damlanin kesigi x = 0 cizgisinde
+  // alansiz bir parca. Eskiden kirpmasi her kenarda "kesisiyor" diyordu;
+  // nokta govdenin obur yanina, cizilen bastan 15 birim uzaga (0, 18,25)
+  // dusuyordu (turun dogrulayicisinin ornegi, kutsal muhafiz iri, kare 34).
+  {
+    const shape = getProjectileShape("warrior-6", 1);
+    const body = createEnemyBody({ race: "holyGuardian", type: "brute" }, 34, -6, 6);
+    body.headingX = Math.cos(1.5 * Math.PI);
+    body.headingY = Math.sin(1.5 * Math.PI);
+    assert.equal(getProjectileBodyContact(0, 0, 1, 0, 5, shape, 0, body), 0, "dogan Ucube degmiyor");
+    const point = writeProjectileBodyContactPoint(0, 0, 1, 0, 0, shape, 0, body, { x: 0, y: 0 });
+    const polygon = worldPolygon(body);
+    assert.ok(boundaryDistance(polygon, [point.x, point.y]) <= 1e-6, "dogan Ucube: nokta kenarda degil");
+    const samples = sliceBoundarySamples(polygon, shape, 0, 0, 0, 1, 0, 0.01);
+    const nearest = Math.min(...samples.map((sample) => drawnDistance("warrior-6", 1, 0, 0, 0, 1, 0, 0, sample.p)));
+    const gap = drawnDistance("warrior-6", 1, 0, 0, 0, 1, 0, 0, [point.x, point.y]);
+    assert.ok(gap <= nearest + 2e-3 && Math.abs(point.y) < 5, `dogan Ucube: nokta cizimden uzak (${point.x.toFixed(2)}, ${point.y.toFixed(2)}: ${gap} / ${nearest})`);
+  }
   // Rastgele ortusmeler: secilen nokta dilimdeki kenar orneklerinin cizime en yakinindan uzak degil.
+  // Ucus uc turlu: tam 0 (dogan mermi, kesik kuyruk duz), kisa ve uzun.
   const rnd = random(2718);
   const ids = ["zeynep-1", "warrior-6", "warrior-4", "warrior-1", "warrior-2", "zeynep-3-copy", "archer-5", "warrior-3"];
   let overlaps = 0;
   let crossing = 0;
-  for (let index = 0; index < 600 && overlaps < 160; index += 1) {
+  let spawnUcube = 0;
+  for (let index = 0; index < 1500 && overlaps < 360; index += 1) {
     const body = randomBody(rnd);
     const id = ids[index % ids.length];
     const tier = 1 + (index % 3);
@@ -1251,9 +1644,10 @@ test("tikin basinda ortusen mermi: nokta dilimdeki kenar noktalarinin merminin c
     const uy = Math.sin(angle);
     const fx = body.x + (rnd() - 0.5) * (body.reach + shape.front) * 2;
     const fy = body.y + (rnd() - 0.5) * (body.reach + shape.front) * 2;
-    const flown = index % 2 ? 1000 : rnd() * 3;
+    const flown = [0, 1000, rnd() * 3][Math.floor(index / ids.length) % 3];
     if (getProjectileBodyContact(fx, fy, ux, uy, 1, shape, flown, body) !== 0) continue;
     overlaps += 1;
+    if (id === "warrior-6" && flown === 0) spawnUcube += 1;
     const polygon = worldPolygon(body);
     const point = writeProjectileBodyContactPoint(fx, fy, ux, uy, 0, shape, flown, body, { x: 0, y: 0 });
     const label = `${id} T${tier} ucus ${flown.toFixed(2)}`;
@@ -1275,7 +1669,7 @@ test("tikin basinda ortusen mermi: nokta dilimdeki kenar noktalarinin merminin c
       assert.ok(lateral <= best + 2e-3, `${label}: cizimdeki noktalarin eksene en yakini degil (${lateral} / ${best})`);
     }
   }
-  assert.ok(overlaps >= 120 && crossing > 40, `${overlaps} / ${crossing}`);
+  assert.ok(overlaps >= 300 && crossing > 80 && spawnUcube > 10, `${overlaps} / ${crossing} / ${spawnUcube}`);
 });
 
 test("gudumlu mermi hedefinin tam merkezinde: yon yok (0, 0) ama yine vuruyor; takilmiyor", () => {
@@ -1405,6 +1799,30 @@ function platePolygon(shield, face) {
   ];
 }
 
+/**
+ * Meka kalkaninin iki uc kertigi dunyada (race-traits `drawMekaShield`):
+ * ucun uzerinde, cizgiye dik, iki yana `getMekaShieldTickHalf`, parca
+ * boyunca `tickWidth` kalin (saat yonunun tersine).
+ */
+function tickPolygons(shield, grid) {
+  const length = Math.hypot(shield.x2 - shield.x1, shield.y2 - shield.y1);
+  const ux = (shield.x2 - shield.x1) / length;
+  const uy = (shield.y2 - shield.y1) / length;
+  const nx = -uy;
+  const ny = ux;
+  const tick = getMekaShieldTickHalf(grid);
+  const w = MEKA_SHIELD_DRAWN.tickWidth / 2;
+  return [[shield.x1, shield.y1], [shield.x2, shield.y2]].map(([x, y]) => [
+    [x - ux * w - nx * tick, y - uy * w - ny * tick],
+    [x + ux * w - nx * tick, y + uy * w - ny * tick],
+    [x + ux * w + nx * tick, y + uy * w + ny * tick],
+    [x - ux * w + nx * tick, y - uy * w + ny * tick]
+  ]);
+}
+
+/** Kalkanin cizilen opak parcalari: levha ve iki kertik. */
+const shieldPolygons = (shield, face, grid) => [platePolygon(shield, face), ...tickPolygons(shield, grid)];
+
 /** Inmis, suresi uzun bir meka kalkani (odaya yazilir). */
 function landShield(room, cx, cy, angle, half = 34) {
   const now = room.runtime.now();
@@ -1418,20 +1836,36 @@ function landShield(room, cx, cy, angle, half = 34) {
 }
 
 /**
- * Bagimsiz durus: mermi levhanin cizgisine gidiyorsa (merkezin yanindan
- * cizgiye dogru normal `m`, `u . m > 0`) cizilen parcalarin levhaya ilk
- * degdigi an (`referenceContact`) ile merkezin parcayi kestigi an (eski
- * kural) en erkeni; gitmiyorsa -1.
+ * Bagimsiz durus. Ana levha: mermi levhanin cizgisine gidiyorsa (merkezin
+ * yanindan cizgiye dogru normal `m`, `u . m > 0`) cizilen parcalarin levhaya
+ * ilk degdigi an (`referenceContact`) ile merkezin parcayi kestigi an (eski
+ * kural) en erkeni. Uc kertikleri kendi govdeleriyle: cizgiye gitmeyen mermi
+ * de kertige degince duruyor; yalnizca kertigin icinde baslayip hem ondan
+ * hem cizgiden uzaklasan mermi durmuyor. Hicbiri yoksa -1.
  */
-function referencePlateStop(shield, face, id, tier, flown, fx, fy, ux, uy, travel) {
+function referencePlateStop(shield, face, id, tier, flown, fx, fy, ux, uy, travel, grid = 34) {
   const length = Math.hypot(shield.x2 - shield.x1, shield.y2 - shield.y1);
   const nx = -(shield.y2 - shield.y1) / length;
   const ny = (shield.x2 - shield.x1) / length;
   const side = (fx - shield.x1) * nx + (fy - shield.y1) * ny;
   const rate = ux * nx + uy * ny;
-  const closing = side > 0 ? -rate : side < 0 ? rate : Math.abs(rate);
-  if (!(closing > 0)) return -1;
-  let best = referenceContact(platePolygon(shield, face), id, tier, flown, fx, fy, ux, uy, travel);
+  const closing = (side > 0 ? -rate : side < 0 ? rate : Math.abs(rate)) > 0;
+  let best = -1;
+  if (closing) {
+    const t = referenceContact(platePolygon(shield, face), id, tier, flown, fx, fy, ux, uy, travel);
+    if (t >= 0) best = t;
+  }
+  for (const polygon of tickPolygons(shield, grid)) {
+    const t = referenceContact(polygon, id, tier, flown, fx, fy, ux, uy, travel);
+    if (t < 0) continue;
+    if (t === 0 && !closing) {
+      const cx = polygon.reduce((sum, point) => sum + point[0], 0) / polygon.length;
+      const cy = polygon.reduce((sum, point) => sum + point[1], 0) / polygon.length;
+      if ((cx - fx) * ux + (cy - fy) * uy <= 0) continue;
+    }
+    if (best < 0 || t < best) best = t;
+  }
+  if (!closing) return best;
   const a = [fx, fy];
   const b = [fx + ux * travel, fy + uy * travel];
   const c = [shield.x1, shield.y1];
@@ -1443,7 +1877,7 @@ function referencePlateStop(shield, face, id, tier, flown, fx, fy, ux, uy, trave
   return best;
 }
 
-test("meka kalkaninin levhasi: cizilen govde levhaya (uclar ve koseler dahil) degdigi anda duruyor, bagimsiz hesapla ayni; uzaklasan ya da paralel giden mermi durmuyor", () => {
+test("meka kalkaninin levhasi: cizilen govde levhaya (uclar ve koseler dahil) degdigi anda duruyor, bagimsiz hesapla ayni; uzaklasan ya da paralel giden mermi levhada durmuyor, uc kertiginde duruyor", () => {
   const context = setup();
   const { room, center, grid } = context;
   const face = getMekaShieldFace(grid);
@@ -1476,7 +1910,7 @@ test("meka kalkaninin levhasi: cizilen govde levhaya (uclar ve koseler dahil) de
     const flown = [0, rnd() * 4, 1000][index % 3];
     const travel = 2 + rnd() * 14;
     const model = room.getProjectileBlockCrossing({ flown }, shape, fx, fy, ux, uy, travel);
-    const reference = referencePlateStop(shield, face, id, tier, flown, fx, fy, ux, uy, travel);
+    const reference = referencePlateStop(shield, face, id, tier, flown, fx, fy, ux, uy, travel, grid);
     const label = `${id} T${tier} ucus ${flown.toFixed(2)} boy ${along.toFixed(2)} yan ${offset.toFixed(2)}`;
     if (reference < 0) {
       assert.equal(model, undefined, `${label}: bagimsiz durmuyor, sunucu ${model}'de durdurdu`);
@@ -1495,7 +1929,7 @@ test("meka kalkaninin levhasi: cizilen govde levhaya (uclar ve koseler dahil) de
     const stopY = fy + uy * model;
     const markX = stopX + room.blockSupport.x;
     const markY = stopY + room.blockSupport.y;
-    assert.ok(boundaryDistance(platePolygon(shield, face), [markX, markY]) <= 1e-6, `${label}: isaret levhanin kenarinda degil`);
+    assert.ok(Math.min(...shieldPolygons(shield, face, grid).map((polygon) => boundaryDistance(polygon, [markX, markY]))) <= 1e-6, `${label}: isaret levhanin kenarinda degil`);
     if (model > 0) {
       const drawn = projectileWorldParts(id, tier, flown, fx, fy, ux, uy, model);
       let gap = Math.min(...drawn.map((part) => pointDistance(part, [markX, markY])));
@@ -1521,7 +1955,19 @@ test("meka kalkaninin levhasi: cizilen govde levhaya (uclar ve koseler dahil) de
     const fy = center.y + ny * side - along * nx;
     const angle = Math.atan2(ny, nx) + (side >= 0 ? 0 : Math.PI) + (rnd() - 0.5) * Math.PI * 0.98;
     if (side === 0) continue;
-    assert.equal(room.getProjectileBlockCrossing({ flown: [0, 1000][index % 2] }, shape, fx, fy, Math.cos(angle), Math.sin(angle), 10), undefined, `${id}: uzaklasan mermi durdu`);
+    // Levhada durmuyor; uca yakin dogup capraz uzaklasan mermi cizilen kertige
+    // degerse orada duruyor (kertik opak cizim) -- yalnizca bagimsiz hesap da
+    // kertige degdigini soyluyorsa.
+    const flown = [0, 1000][index % 2];
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const model = room.getProjectileBlockCrossing({ flown }, shape, fx, fy, ux, uy, 10);
+    const reference = referencePlateStop(shield, face, id, 1 + (index % 3), flown, fx, fy, ux, uy, 10, grid);
+    if (reference < 0) assert.equal(model, undefined, `${id}: uzaklasan mermi durdu`);
+    else {
+      assert.ok(model !== undefined && Math.abs(model - reference) < 2e-2, `${id}: uzaklasan mermi kertikte ${reference}'de durmali, sunucu ${model}`);
+      assert.ok(room.plateBlockPart !== undefined, `${id}: uzaklasan mermi ana levhada durdu`);
+    }
     away += 1;
   }
   assert.ok(stops > 150 && starts > 40 && ends > 40 && away > 100, `${stops} / ${starts} / ${ends} / ${away}`);
@@ -1618,6 +2064,211 @@ test("meka kalkani: mermi zaten levhaya degiyorsa (kalkan o tikte indi) yerinde 
   room.updateProjectiles(1 / 60);
   assert.ok(!room.projectiles.has(projectile.id), "yeni inen kalkan sayilmadan gecti");
   assert.equal(room.mekaBlockPending.get(shield.id)?.length, 1);
+});
+
+/** Merminin cizilen govdesi `along` kadar ilerlemisken: parcalar ve (Melis dokularinda) igne, parca olarak. */
+function projectileWorldShapes(id, tier, flown, fx, fy, ux, uy, along) {
+  const shapes = projectileWorldParts(id, tier, flown, fx, fy, ux, uy, along);
+  const shape = getProjectileShape(id, tier);
+  if (shape.disc === 2 && shape.nose > shape.wide + shape.radius) {
+    const rear = Math.max(shape.wide, -getProjectileReach(shape, flown));
+    const cx = fx + ux * along;
+    const cy = fy + uy * along;
+    shapes.push([[cx + ux * rear, cy + uy * rear], [cx + ux * shape.nose, cy + uy * shape.nose]]);
+  }
+  return shapes;
+}
+
+/** Kayittaki opak (govde) ilkellerin dis bukey zarflari, dunyada (saat yonunun tersine). */
+function opaqueHulls(...recorders) {
+  const out = [];
+  for (const recorder of recorders) {
+    for (const prim of recorder.prims) {
+      if (!isBodyPrim(prim)) continue;
+      const polygon = hull(prim.points);
+      if (polygon.length >= 3) out.push(polygon);
+    }
+  }
+  return out;
+}
+
+/** Dis bukey cokgenin `depth` kadar iceri kaydirilmisi (bossa bos dizi). */
+function erode(polygon, depth) {
+  let out = polygon;
+  for (let i = 0; i < polygon.length && out.length >= 3; i += 1) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const nx = (b[1] - a[1]) / length;
+    const ny = -(b[0] - a[0]) / length;
+    out = clip(out, nx, ny, nx * a[0] + ny * a[1] - depth);
+  }
+  return out.length >= 3 ? out : [];
+}
+
+/**
+ * Kaba kuvvet: engelin cizgisine giden (normal `n`, cizgide `p`) rastgele
+ * atislar. Sunucunun durusu (`getProjectileBlockCrossing`) cizimin kendisine
+ * karsi: durustan once merminin cizilen govdesi cizilen opak bir parcaya
+ * (renderer'in kaydi) 0,3'ten derin girmiyor (gec ya da hic durmayan atis
+ * yok); durdugu an cizilen govde bir opak parcaya 0,3'ten yakin (cizim
+ * degmeden durus yok). `trial(rnd)` atisin baslangicini ve yonunu veriyor.
+ */
+function bruteShieldTrials(room, drawn, line, trial, { trials, frontOnly = false, seed }) {
+  const box = (polygon) => {
+    const xs = polygon.map(([x]) => x);
+    const ys = polygon.map(([, y]) => y);
+    return { polygon, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  };
+  const drawnBoxes = drawn.map(box);
+  const erodedBoxes = drawn.map((polygon) => erode(polygon, 0.3)).filter((polygon) => polygon.length >= 3).map(box);
+  // Yolun cevresindeki parcalar (merminin govdesi merkezden en fazla ~25 birim).
+  const near = (boxes, x0, y0, x1, y1) => boxes.filter((entry) => entry.x1 >= Math.min(x0, x1) - 25 && entry.x0 <= Math.max(x0, x1) + 25 && entry.y1 >= Math.min(y0, y1) - 25 && entry.y0 <= Math.max(y0, y1) + 25).map((entry) => entry.polygon);
+  const rnd = random(seed);
+  const ids = ["zeynep-1", "warrior-1", "warrior-4", "warrior-6", "warrior-2", "warrior-3", "zeynep-3", "archer-5", "archer-1", "onur-2"];
+  const stats = { approaching: 0, stops: 0, touching: 0, passed: 0 };
+  for (let index = 0; index < trials; index += 1) {
+    const { fx, fy, angle } = trial(rnd);
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const side = (fx - line.x) * line.nx + (fy - line.y) * line.ny;
+    const rate = ux * line.nx + uy * line.ny;
+    const closing = side > 0 ? -rate : side < 0 ? rate : Math.abs(rate);
+    if (!(closing > 1e-3) || (frontOnly && !(side > 0))) continue;
+    stats.approaching += 1;
+    const id = ids[index % ids.length];
+    const tier = 1 + (index % 3);
+    const flown = [0, rnd() * 4, 1000][Math.floor(index / ids.length) % 3];
+    const travel = 2 + rnd() * 14;
+    const shape = getProjectileShape(id, tier);
+    const model = room.getProjectileBlockCrossing({ flown }, shape, fx, fy, ux, uy, travel);
+    const label = `${id} T${tier} ucus ${flown.toFixed(2)} (${fx.toFixed(2)}, ${fy.toFixed(2)}) ${((angle * 180) / Math.PI).toFixed(1)} derece`;
+    const end = model ?? travel;
+    const eroded = near(erodedBoxes, fx, fy, fx + ux * travel, fy + uy * travel);
+    const local = near(drawnBoxes, fx, fy, fx + ux * travel, fy + uy * travel);
+    // Durustan once: cizilen govde opak bir parcaya 0,3'ten derin girmiyor.
+    for (let s = 0; s < end - 1e-9; s += 0.1) {
+      const parts = projectileWorldShapes(id, tier, flown, fx, fy, ux, uy, s);
+      for (const part of parts) {
+        for (const polygon of eroded) assert.ok(polygonDistance(polygon, part) > 0, `${label}: ${s.toFixed(2)}'de cizilen parcaya 0,3'ten derin girdi, sunucu ${model}`);
+      }
+    }
+    if (model === undefined) {
+      stats.passed += 1;
+      continue;
+    }
+    stats.stops += 1;
+    // Durusta: cizilen govde cizilen bir opak parcaya degiyor (0,3 pay: siperin direginin on koseleri).
+    const parts = projectileWorldShapes(id, tier, flown, fx, fy, ux, uy, model);
+    let gap = Infinity;
+    for (const part of parts) for (const polygon of local) gap = Math.min(gap, polygonDistance(polygon, part));
+    assert.ok(gap <= 0.3 + 1e-6, `${label}: cizim degmeden durdu (${gap.toFixed(3)}, ${model})`);
+    if (gap <= 1e-6) stats.touching += 1;
+  }
+  return stats;
+}
+
+test("meka kalkaninin uclari: cizilen kertikler de levha; kaba kuvvette cizilen govde cizilen opak parcaya 0,3'ten derin girmeden duruyor, cizim degmeden durmuyor", async () => {
+  // Turun dogrulayicisinin ornegi: uc kertikleri (alfa 1, 1,6 kalin) yuzun
+  // 1,8, ucun 0,8 otesine tasiyordu; levha onlari kapsamadigindan mermi
+  // kertigin icine girip duruyor ya da icinden geciyordu. Cizim gercek
+  // cizicinin (race-traits `drawMekaShield`) kaydi.
+  const race = await importWebModule("apps/web/src/vfx/race-traits.ts");
+  const context = setup();
+  const { room, center, grid } = context;
+  assert.equal(getProjectileSceneScale(grid), 1);
+  const face = getMekaShieldFace(grid);
+  const tick = getMekaShieldTickHalf(grid);
+  assert.ok(tick > face + 1, `kertik ${tick} / yuz ${face}`);
+  let total = { approaching: 0, stops: 0, touching: 0, passed: 0 };
+  for (let shieldIndex = 0; shieldIndex < 6; shieldIndex += 1) {
+    const angle = (shieldIndex / 6) * Math.PI + 0.13;
+    const shield = landShield(room, center.x, center.y, angle);
+    const recorder = createGeometryRecorder();
+    race.drawMekaShield(recorder, { id: 9, x1: shield.x1, y1: shield.y1, x2: shield.x2, y2: shield.y2, ms: 2000 }, undefined, grid, { now: 0, reducedMotion: true });
+    const drawn = opaqueHulls(recorder);
+    // Cizilen kertikler yuzun otesinde: kaydin en uzak noktasi kertigin ucu.
+    const tx = Math.cos(angle);
+    const ty = Math.sin(angle);
+    const reachN = Math.max(...drawn.flat().map(([x, y]) => Math.abs(-(x - center.x) * ty + (y - center.y) * tx)));
+    near(reachN, tick, "kertigin cizilen ucu", 1e-6);
+    const line = { x: center.x, y: center.y, nx: -ty, ny: tx };
+    const stats = bruteShieldTrials(room, drawn, line, (rnd) => {
+      // Uclarin cevresinden, cogunlukla ucun yakinina dogru.
+      const end = rnd() < 0.5 ? -1 : 1;
+      const along = end * (28 + rnd() * 16);
+      const offset = (rnd() < 0.5 ? -1 : 1) * (1 + rnd() * 14);
+      const fx = center.x + tx * along - ty * offset;
+      const fy = center.y + ty * along + tx * offset;
+      const aim = end * (31 + rnd() * 6);
+      const lateral = (rnd() * 2 - 1) * (tick + 3);
+      const angleTo = Math.atan2(center.y + ty * aim + tx * lateral - fy, center.x + tx * aim - ty * lateral - fx);
+      return { fx, fy, angle: rnd() < 0.15 ? rnd() * Math.PI * 2 : angleTo + (rnd() - 0.5) * 0.4 };
+    }, { trials: 400, seed: 7100 + shieldIndex });
+    for (const key of Object.keys(total)) total[key] += stats[key];
+  }
+  assert.ok(total.approaching > 1400 && total.stops > 500 && total.touching > 350 && total.passed > 150, JSON.stringify(total));
+});
+
+test("siperin direkleri: cizilen direkler de levha; kaba kuvvette onden gelen atisin cizilen govdesi cizilen opak parcaya 0,3'ten derin girmeden duruyor, cizim degmeden durmuyor", async () => {
+  // Turun dogrulayicisinin ornegi: uclardaki iki direk (alfa 0,92, 0,28
+  // kare) seridin 4,8 disina ve on cizginin 2,9 onune tasiyordu; levha
+  // yalnizca on cizgi arti eksi 1,2 oldugundan mermi diregin icinden
+  // geciyordu. Cizim gercek cizicinin (counter-surge `drawCounterSurge`)
+  // kaydi; bant istemcinin kurdugu gibi (\`getCounterSurgeBand\`, telin kaydindan).
+  const surgeVfx = await importWebModule("apps/web/src/vfx/counter-surge.ts");
+  const realNow = Date.now;
+  const clock = { now: 1_800_000_000_000 };
+  Date.now = () => clock.now;
+  try {
+    const room = createRoom("warrior");
+    room.broadcast = () => {};
+    room.clients = [{ sessionId: "p1", ref: { bufferedAmount: 0 }, send() {} }];
+    room.mapScale = 1;
+    room.configureArenaForScale();
+    room.buildZones = undefined;
+    room.stage = 3;
+    room.wave = 8;
+    const map = room.activeMap;
+    const grid = getMapGridSize(map);
+    assert.equal(getProjectileSceneScale(grid), 1);
+    const surge = room.launchCounterSurge({ atSpawn: 0, kind: "aegis", travel: "down", lane: 3, width: getCounterSurgeWidthCells("aegis", map.cols, map.rows) }, clock.now);
+    const target = surge.launchAt + (9.5 / map.rows) * surge.crossMs;
+    while (clock.now < target) {
+      clock.now = Math.min(target, clock.now + 20);
+      room.updateCounterSurge(clock.now);
+    }
+    assert.equal(room.activeAegis, surge, "siper kalkmadi");
+    const plate = room.getAegisPlate(surge);
+    const band = surgeVfx.getCounterSurgeBand(room.getCounterSurgeWire(surge, clock.now), getMapOrigin(map), grid, map.cols, map.rows);
+    band.front = surge.frontAlong;
+    // Istemcinin bandi sunucunun levhasiyla ayni yerde.
+    near(band.baseX + band.axX * band.width / 2 + band.dirX * band.front, plate.x, "bandin on ortasi x", 1e-6);
+    near(band.baseY + band.axY * band.width / 2 + band.dirY * band.front, plate.y, "bandin on ortasi y", 1e-6);
+    const fill = createGeometryRecorder();
+    const edge = createGeometryRecorder();
+    surgeVfx.drawCounterSurge(fill, edge, band, grid, { now: 0, reducedMotion: true, lod: 0 });
+    const drawn = opaqueHulls(fill, edge);
+    // Cizilen direk seridin disina tasiyor (yarim direk arti kenar cizgisinin yarisi).
+    const across = drawn.flat().map(([x, y]) => (x - band.baseX) * band.axX + (y - band.baseY) * band.axY);
+    near(Math.min(...across), -((grid * AEGIS_DRAWN.postCells) / 2 + AEGIS_DRAWN.postRim / 2), "diregin cizilen dis yani", 1e-6);
+    const line = { x: plate.x, y: plate.y, nx: band.dirX, ny: band.dirY };
+    const stats = bruteShieldTrials(room, drawn, line, (rnd) => {
+      // Onden (seridin yol yonunde), uclarin cevresinden; cogunlukla diregin yakinina dogru.
+      const end = rnd() < 0.5 ? 0 : band.width;
+      const a = end + (rnd() * 2 - 1) * 14;
+      const s = band.front + 1 + rnd() * 24;
+      const fx = band.baseX + band.axX * a + band.dirX * s;
+      const fy = band.baseY + band.axY * a + band.dirY * s;
+      const aimA = end + (rnd() * 2 - 1) * 9;
+      const aimS = band.front + (rnd() * 2 - 1) * 6;
+      const angleTo = Math.atan2(band.baseY + band.axY * aimA + band.dirY * aimS - fy, band.baseX + band.axX * aimA + band.dirX * aimS - fx);
+      return { fx, fy, angle: rnd() < 0.15 ? rnd() * Math.PI * 2 : angleTo + (rnd() - 0.5) * 0.4 };
+    }, { trials: 1600, frontOnly: true, seed: 8800 });
+    assert.ok(stats.approaching > 800 && stats.stops > 300 && stats.touching > 200 && stats.passed > 100, JSON.stringify(stats));
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test("merminin destek noktasi kesik govdenin en ilerisi: disk ve Melis kapsulu de merkezin `reach` gerisinde kesik (bagimsiz ornekleme)", () => {
@@ -1741,4 +2392,37 @@ test("istemci: duran mermi ve carpma cizimi vurulan dusmana bagli; carpmanin ani
   const scene = read("apps/web/src/scenes/GameScene.ts");
   assert.match(scene, /x: enemy\.x \+ anchor!\.offsetX, y: enemy\.y \+ anchor!\.offsetY/);
   assert.match(scene, /mover\.sprite\.x - \(mover\.knockDx \?\? 0\) \+ anchor\.offsetX/);
+});
+
+test("meka kalkaninin uc kertigi kendi govdesiyle duruyor: cizgiye paralel ya da cizgiyi gecmis mermi kertige carpinca duruyor", () => {
+  const context = setup();
+  const { room, center, grid } = context;
+  const face = getMekaShieldFace(grid);
+  const ids = ["zeynep-1", "warrior-1", "warrior-4", "warrior-6"];
+  let parallelStops = 0;
+  for (const id of ids) {
+    const shape = getProjectileShape(id, 1, getProjectileSceneScale(grid));
+    for (const angle of [0, 0.7, 1.9]) {
+      const shield = landShield(room, center.x, center.y, angle);
+      const tx = (shield.x2 - shield.x1) / 68;
+      const ty = (shield.y2 - shield.y1) / 68;
+      // Cizgi boyunca, kalkanin uzantisindan uca dogru (cizgiye paralel), cizgiden 3 birim yanda.
+      const fx = shield.x2 + tx * 30 - ty * 3;
+      const fy = shield.y2 + ty * 30 + tx * 3;
+      const model = room.getProjectileBlockCrossing({ flown: 1000 }, shape, fx, fy, -tx, -ty, 40);
+      const reference = referencePlateStop(shield, face, id, 1, 1000, fx, fy, -tx, -ty, 40, grid);
+      assert.ok(reference >= 0, `${id}: kurgu kertige degmiyor`);
+      assert.ok(model !== undefined && Math.abs(model - reference) < 2e-2, `${id} ${angle}: paralel mermi kertikte ${reference}'de durmali, sunucu ${model}`);
+      assert.ok(room.plateBlockPart !== undefined, `${id}: kertik yerine ana levha`);
+      parallelStops += 1;
+    }
+  }
+  assert.equal(parallelStops, ids.length * 3);
+});
+
+test("ara karede sprite onceki snapshot'in yonuyle: sunucu o araliktaki vuruslari o yonle yapiyor", () => {
+  const source = readFileSync(new URL("../apps/web/src/scenes/GameScene.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const start = source.indexOf("  private interpolateSnapshot(");
+  const body = source.slice(start, source.indexOf("\n  }\n", start));
+  assert.match(body, /hx: oldEnemy\?\.hx \?\? enemy\.hx,\n\s+hy: oldEnemy\?\.hy \?\? enemy\.hy/);
 });

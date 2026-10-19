@@ -1,5 +1,6 @@
 import type Phaser from "phaser";
 import {
+  AEGIS_DRAWN,
   AEGIS_FRONT_STROKES,
   COUNTER_SURGE_KIND_TABLE,
   decodeCounterSurgeKind,
@@ -62,7 +63,8 @@ export const COUNTER_SURGE_STYLES: Readonly<Record<CounterSurgeKind, Readonly<Su
   wall: { body: 0x6a55c0, deep: 0x2e2466, edge: 0xefeaff, rim: 0x9a8ad6, wakeCells: 2, bodyCells: 3, scanGapCells: 0.6, scanCellsPerSecond: 0.15, streaks: 0 },
   sweep: { body: 0xc8973a, deep: 0x6b4d1e, edge: 0xfff4dc, rim: 0xd9b56c, wakeCells: 3.8, bodyCells: 0.45, scanGapCells: 0.45, scanCellsPerSecond: 0.7, streaks: 3 },
   slash: { body: 0x7fa8d0, deep: 0x34506e, edge: 0xf2f8ff, rim: 0xb4c6d8, wakeCells: 2.4, bodyCells: 1.5, scanGapCells: 0.4, scanCellsPerSecond: 0.9, streaks: 5 },
-  aegis: { body: 0x1c2a3a, deep: 0x33485e, edge: 0xe9f3f8, rim: 0xa9bfcc, wakeCells: 1.2, bodyCells: 0.9, scanGapCells: 0, scanCellsPerSecond: 0, streaks: 0 }
+  // Siperin derinligi paylasilan pakette (`AEGIS_DRAWN`): sunucu direklerin arka ucunu buradan olcuyor.
+  aegis: { body: 0x1c2a3a, deep: 0x33485e, edge: 0xe9f3f8, rim: 0xa9bfcc, wakeCells: 1.2, bodyCells: AEGIS_DRAWN.bodyCells, scanGapCells: 0, scanCellsPerSecond: 0, streaks: 0 }
 };
 
 /** Bugunku seridin (band) renkleri; eski cagiranlar ve yapi vurusunun varsayilani. */
@@ -794,16 +796,18 @@ function drawAegis(
   bandLine(edge, band, 0, front, band.width, front);
   edge.lineStyle(AEGIS_FRONT_STROKES.edge, style.edge, 0.55);
   bandLine(edge, band, 0, front + AEGIS_FRONT_STROKES.edgeOffset, band.width, front + AEGIS_FRONT_STROKES.edgeOffset);
-  // Uclarda iki direk.
-  const post = gridSize * 0.28;
+  // Uclarda iki direk; olculeri paylasilan pakette (`AEGIS_DRAWN`): sunucu
+  // mermiyi direklerde de durduruyor (`getAegisPostOutline`).
+  const post = gridSize * AEGIS_DRAWN.postCells;
+  const postReach = post * AEGIS_DRAWN.postReach;
   for (let end = 0; end < 2; end += 1) {
     const a = end === 0 ? 0 : band.width;
     edge.fillStyle(style.deep, 0.92);
-    fillBandRect(edge, band, a - post / 2, a + post / 2, Math.max(sMin, back - post * 0.3), front + post * 0.3);
-    edge.lineStyle(1.2, style.rim, 0.9);
-    bandLine(edge, band, a - post / 2, front + post * 0.3, a + post / 2, front + post * 0.3);
-    bandLine(edge, band, a - post / 2, Math.max(sMin, back - post * 0.3), a - post / 2, front + post * 0.3);
-    bandLine(edge, band, a + post / 2, Math.max(sMin, back - post * 0.3), a + post / 2, front + post * 0.3);
+    fillBandRect(edge, band, a - post / 2, a + post / 2, Math.max(sMin, back - postReach), front + postReach);
+    edge.lineStyle(AEGIS_DRAWN.postRim, style.rim, 0.9);
+    bandLine(edge, band, a - post / 2, front + postReach, a + post / 2, front + postReach);
+    bandLine(edge, band, a - post / 2, Math.max(sMin, back - postReach), a - post / 2, front + postReach);
+    bandLine(edge, band, a + post / 2, Math.max(sMin, back - postReach), a + post / 2, front + postReach);
   }
   // Kesik yan sinirlar: siperin genisligi haritanin sonuna kadar okunuyor.
   drawRails(edge, band, style, front, front, gridSize, { now, reducedMotion, lod });

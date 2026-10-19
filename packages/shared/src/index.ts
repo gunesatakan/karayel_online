@@ -558,12 +558,24 @@ export type EnemySnapshot = {
   ds?: number;
   ph?: true;
   fj?: [number, number, number];
+  /**
+   * Govdenin yonu (birim vektor). Telde yalnizca tam statik kayitta
+   * (`snapshot:full`) ve dondurulmemis dokudan (+y) farkliysa: sonradan
+   * gelen ya da yeniden baglanan istemcinin izi (`EnemyHeadingTracker`)
+   * dusmani sunucunun son olctugu yonle baslatiyor. Yoksa duran dusman
+   * yuruyene kadar +y'de kalirdi, sunucunun govdesi baska yone bakarken.
+   * Karelerde hic yok (yon telde gitmiyor; iki yan ayni kuralla olcuyor).
+   * Istemcide hidratlanmis kayitta o snapshot'taki yon (iz yaziyor): doku
+   * oynatmada onu ciziyor.
+   */
+  hx?: number;
+  hy?: number;
 };
 
 export type StaticEnemySnapshot = Required<Pick<EnemySnapshot,
   "id" | "type" | "race" | "maxHp" | "attack" |
   "healthRegenPerSecond" | "maxShield" | "movementKind"
->> & Pick<EnemySnapshot, "pathId" | "champion" | "special">;
+>> & Pick<EnemySnapshot, "pathId" | "champion" | "special" | "hx" | "hy">;
 export type DynamicEnemySnapshot = Omit<EnemySnapshot, keyof StaticEnemySnapshot> & { id: string };
 
 export type TowerSnapshot = import("./resource-economy.js").EconomyStock & {

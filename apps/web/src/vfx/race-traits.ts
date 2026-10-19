@@ -10,6 +10,7 @@ import {
   decodeRaceTrait,
   getMekaShieldDrawnHalf,
   getMekaShieldRimWidth,
+  getMekaShieldTickHalf,
   getBurrowTelegraphStart,
   getSoulDrawerMultipliers,
   type MekaShieldBlockMessage,
@@ -314,8 +315,9 @@ export function drawMekaShield(
   graphics.lineBetween(shield.x1 - nx * edge, shield.y1 - ny * edge, shield.x2 - nx * edge, shield.y2 - ny * edge);
   graphics.lineStyle(1, MEKA_SHIELD_EDGE_COLOR, 0.75 * alpha);
   graphics.lineBetween(shield.x1, shield.y1, shield.x2, shield.y2);
-  const tick = half + Math.max(3, cellSize * 0.1);
-  graphics.lineStyle(1.6, MEKA_SHIELD_RIM_COLOR, alpha);
+  // Uc kertikleri de paylasilan sayilardan (`getMekaShieldTickHalf`): sunucu onlarda da durduruyor.
+  const tick = getMekaShieldTickHalf(cellSize);
+  graphics.lineStyle(MEKA_SHIELD_DRAWN.tickWidth, MEKA_SHIELD_RIM_COLOR, alpha);
   graphics.lineBetween(shield.x1 - nx * tick, shield.y1 - ny * tick, shield.x1 + nx * tick, shield.y1 + ny * tick);
   graphics.lineBetween(shield.x2 - nx * tick, shield.y2 - ny * tick, shield.x2 + nx * tick, shield.y2 + ny * tick);
 }

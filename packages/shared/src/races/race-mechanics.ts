@@ -96,10 +96,12 @@ export const MEKA_SHIELD_THROWER = {
  * Inmis meka kalkaninin cizimi (race-traits `drawMekaShield`): koyu govde
  * cizginin iki yaninda `max(2, kare x 0,075) + 1`, iki uzun kenarinda
  * `max(1, yarim x 0,5)` kalinliginda kenar cizgisi (merkezi govdenin
- * kenarinda). Sunucu mermiyi cizilen yuzde durduruyor (`getMekaShieldFace`):
- * ikisi ayni sayilardan.
+ * kenarinda), iki ucunda cizgiye dik, `tickWidth` kalinliginda (alfa 1)
+ * kertik: cizgiden iki yana `yarim + max(3, kare x 0,1)`. Sunucu mermiyi
+ * cizilen yuzde (`getMekaShieldFace`) ve kertiklerde
+ * (`getMekaShieldTickHalf`) durduruyor: ikisi ayni sayilardan.
  */
-export const MEKA_SHIELD_DRAWN = { halfRatio: 0.075, minHalf: 2, frame: 1, rimRatio: 0.5, minRim: 1 } as const;
+export const MEKA_SHIELD_DRAWN = { halfRatio: 0.075, minHalf: 2, frame: 1, rimRatio: 0.5, minRim: 1, tickRatio: 0.1, minTick: 3, tickWidth: 1.6 } as const;
 
 /** Kalkanin cizilen yari kalinligi (kenar cizgisinin merkezine kadar, dunya birimi). */
 export function getMekaShieldDrawnHalf(cellSize: number) {
@@ -114,6 +116,15 @@ export function getMekaShieldRimWidth(cellSize: number) {
 /** Cizginin merkezinden kalkanin cizilen yuzune (kenar cizgisinin dis yani): mermi burada duruyor. */
 export function getMekaShieldFace(cellSize: number) {
   return getMekaShieldDrawnHalf(cellSize) + MEKA_SHIELD_DRAWN.frame + getMekaShieldRimWidth(cellSize) / 2;
+}
+
+/**
+ * Uc kertiginin cizgiden iki yana uzanisi (dunya birimi): yuzun otesine
+ * tasiyor (kare 34'te 5,95 / 4,19). Kertik ucun uzerinde, parcanin
+ * dogrultusunda `tickWidth` kalin: ucun `tickWidth / 2` otesine de.
+ */
+export function getMekaShieldTickHalf(cellSize: number) {
+  return getMekaShieldDrawnHalf(cellSize) + Math.max(MEKA_SHIELD_DRAWN.minTick, cellSize * MEKA_SHIELD_DRAWN.tickRatio);
 }
 
 export type MekaShieldGeometry = { cx: number; cy: number; x1: number; y1: number; x2: number; y2: number };

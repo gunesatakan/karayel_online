@@ -1,12 +1,14 @@
-import type {
-  BuildZoneMap,
-  EditableMapData,
-  StaticEnemySnapshot,
-  StaticSnapshot,
-  StaticTowerSnapshot
+import {
+  BODY_DEFAULT_HEADING_X,
+  BODY_DEFAULT_HEADING_Y,
+  type BuildZoneMap,
+  type EditableMapData,
+  type StaticEnemySnapshot,
+  type StaticSnapshot,
+  type StaticTowerSnapshot
 } from "@karayel/shared";
 
-type EnemyStaticSource = StaticEnemySnapshot;
+type EnemyStaticSource = Omit<StaticEnemySnapshot, "hx" | "hy">;
 
 type TowerStaticSource = {
   id: string;
@@ -28,7 +30,12 @@ type TowerStaticSource = {
   };
 };
 
-type EnemyStaticModel = Omit<EnemyStaticSource, "champion" | "special"> & { champion?: unknown; special?: { kind: StaticEnemySnapshot["special"] } };
+type EnemyStaticModel = Omit<EnemyStaticSource, "champion" | "special"> & {
+  champion?: unknown;
+  special?: { kind: StaticEnemySnapshot["special"] };
+  /** Sunucunun govdesi: yonu son giden snapshot'ta olculdu (`noteSnapshotHeadings`). */
+  body?: { headingX: number; headingY: number };
+};
 
 export function createStaticEnemySnapshot(enemy: EnemyStaticModel): StaticEnemySnapshot {
   const snapshot: StaticEnemySnapshot = {
@@ -49,6 +56,14 @@ export function createStaticEnemySnapshot(enemy: EnemyStaticModel): StaticEnemyS
   // Ozel dusman turu da yalnizca varken; sunucu modelindeki durum (emme,
   // butce) tele cikmiyor, yalnizca tur.
   if (enemy.special?.kind) snapshot.special = enemy.special.kind;
+  // Yon tohumu yalnizca dondurulmemis dokudan farkliysa: dogumda (`enemy:spawn`)
+  // hep +y, anahtar yazilmiyor; tam statik kayitta sonradan gelen istemcinin
+  // izi dusmani sunucunun yonuyle baslatiyor (degerler bire bir, yuvarlanmadan).
+  const body = enemy.body;
+  if (body && (body.headingX !== BODY_DEFAULT_HEADING_X || body.headingY !== BODY_DEFAULT_HEADING_Y)) {
+    snapshot.hx = body.headingX;
+    snapshot.hy = body.headingY;
+  }
   return snapshot;
 }
 

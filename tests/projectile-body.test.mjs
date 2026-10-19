@@ -66,6 +66,26 @@ function extents(prims, ox, oy, keep = () => true, thin = THIN_LINE) {
   return { tip, tail, half, radial };
 }
 
+/**
+ * Govdenin destek fonksiyonunun en kucugu (720 yon): yuvarlak siluette
+ * cizilen cokgenin ic dairesinin yaricapi (merkeze gore).
+ */
+function innerSupport(prims, ox, oy, keep = () => true, thin = THIN_LINE) {
+  let inner = Infinity;
+  for (let step = 0; step < 720; step += 1) {
+    const angle = (step / 720) * Math.PI * 2;
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    let support = -Infinity;
+    for (const prim of prims) {
+      if (!isBodyPrim(prim, thin) || !keep(prim)) continue;
+      for (const [px, py] of prim.points) support = Math.max(support, (px - ox) * c + (py - oy) * s);
+    }
+    inner = Math.min(inner, support);
+  }
+  return inner;
+}
+
 const ROUND = new Set(["orb", "ball", "ring"]);
 const IDS = [
   "warrior-1", "warrior-2", "warrior-3", "warrior-4", "warrior-6",
@@ -118,6 +138,12 @@ test("isabet sekli cizilen govdeyle ayni: her mermi, her kademe, iki sahne olceg
         assert.ok(Number.isFinite(drawn.tip), `${label}: govde cizilmedi`);
         if (ROUND.has(silhouette)) {
           assert.ok(Math.abs(drawn.radial - shape.halfWidth) <= TOLERANCE, `${label}: yaricap ${drawn.radial} / ${shape.halfWidth}`);
+          // Ic yaricap da: cizilen cokgenin her yondeki en uzak noktasi (destek)
+          // isabet dairesinden en fazla `PROJECTILE_DISC_TOLERANCE` iceride.
+          // Eskiden 8 kenarli disk (halkada 10 parca) kenar ortasinda
+          // yaricapin %7,6'si iceride kaliyordu: daire cizimden erken degiyordu.
+          const inner = innerSupport(prims, ox, oy, keep, thin);
+          assert.ok(inner >= shape.halfWidth - PROJECTILE_DISC_TOLERANCE - 1e-6, `${label}: ic yaricap ${inner} / ${shape.halfWidth}`);
           continue;
         }
         assert.ok(Math.abs(drawn.tip - shape.tip) <= TOLERANCE, `${label}: uc ${drawn.tip} / ${shape.tip}`);

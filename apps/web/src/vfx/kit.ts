@@ -180,10 +180,14 @@ export function fillDisc(g: VfxGraphics, x: number, y: number, radius: number, f
   }
 }
 
-/** Cizgi halka: boyuna gore 10-24 parcalik kapali yol. */
-export function strokeRing(g: VfxGraphics, x: number, y: number, radius: number) {
+/**
+ * Cizgi halka: boyuna gore 10-24 parcalik kapali yol. `fixedSides` verilirse
+ * o kadar parca: isabet sekli dairesi olan halka (destek atisi,
+ * `getProjectileDiscSides`) kenar ortasinda daireden iceri kacmasin.
+ */
+export function strokeRing(g: VfxGraphics, x: number, y: number, radius: number, fixedSides?: number) {
   if (!(radius > 0)) return;
-  const sides = radius < 8 ? 10 : radius < 24 ? 16 : 24;
+  const sides = fixedSides ?? (radius < 8 ? 10 : radius < 24 ? 16 : 24);
   const { cos, sin } = discTable(sides);
   g.beginPath();
   g.moveTo(x + cos[0] * radius, y + sin[0] * radius);

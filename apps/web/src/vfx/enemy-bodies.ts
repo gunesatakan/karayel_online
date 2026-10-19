@@ -2,18 +2,19 @@
  * Istemcide dusmanin gorunen govdesi: sunucunun vurdugu yonlu dis bukey
  * cokgen (`enemy-body`), istemcinin gordugu yonle.
  *
- * Yon: dusman dokusu ekranda oynatilan snapshot'larin konum farkiyla
- * donuyor (GameScene `getEnemySpriteRotation`; dururken son yon). Gelen iki
- * snapshot arasindaki konum farki, o snapshot'lar ~500 ms sonra oynatilirken
- * dokunun baktigi yon: Gosteri / Kin seciminin spot isigi ve carpmanin hangi
- * dusmana oldugu bu yonle bulunuyor. Ek tel yok: sunucu yonu gondermiyor
- * (dusman basina her snapshot'ta bir alan daha olurdu); istemci ayni
- * guncellemeyi (`updateBodyHeading`) gordugu konumlara kendi esigiyle
- * uyguluyor (`getBodyHeadingMinStep`: sunucunun esigi arti telin olu bandi).
- * Sunucu yonu gercek konumlarla tik tik olcuyor, istemci 0,1'e yuvarli
- * konumlarla snapshot snapshot: istemci sunucudan once donmuyor, ama kosede
- * ve 3-6 birim/sn'lik yavas yuruyende bir snapshot geriden gelebiliyor (bkz.
- * `getBodyHeadingMinStep`).
+ * Yon: dusman dokusu oynatilan snapshot adiminin yonuyle donuyor (yon izi
+ * kayda yaziyor, GameScene `getEnemySpriteRotation`; dururken son yon).
+ * Gelen iki snapshot arasindaki konum farki, o snapshot'lar ~500 ms sonra
+ * oynatilirken dokunun baktigi yon: Gosteri / Kin seciminin spot isigi ve
+ * carpmanin hangi dusmana oldugu bu yonle bulunuyor. Karelerde ek tel yok:
+ * sunucu yonu gondermiyor (dusman basina her snapshot'ta bir alan daha
+ * olurdu); iki yan ayni guncellemeyi (`updateBodyHeading`) ayni girdilerle
+ * yapiyor: 0,1'e yuvarli tel konumlari ve ardisik iki snapshot'in saat
+ * farkindan esik (`getSnapshotHeadingMinStep`). Sunucu govdenin yonunu
+ * yayinda olcup iki yayin arasinda tutuyor: snapshot'lari eksiksiz alan
+ * istemcinin izi sunucunun govdesiyle bire bir ayni, doku snapshot
+ * sinirlarinda (bkz. `getBodyHeadingMinStep`). Sonradan gelen istemci yonu
+ * tam statik kayittan (`hx`, `hy`) baslatiyor.
  */
 import {
   BODY_DEFAULT_HEADING_X,
@@ -22,7 +23,7 @@ import {
   TOWER_GRID_SIZE,
   createEnemyBody,
   getBodyEdgeDistance,
-  getBodyHeadingMinStep,
+  getSnapshotHeadingMinStep,
   updateBodyHeading,
   writeEnemyBodyShape,
   type BodyHeadingState,
@@ -60,32 +61,49 @@ export function createBodyScratch(): BodyScratch {
 type HeadingEntry = BodyHeadingState & { seen: number };
 
 /**
- * Dusmanlarin yonu, gelen snapshot'lardan. Snapshot araligi birkac tik;
- * istemcinin esigi (`getBodyHeadingMinStep`): sunucunun tik esigi aradaki
+ * Dusmanlarin yonu, gelen snapshot'lardan; sunucunun govdesinin yonuyle ayni
+ * kural ve girdiler (`MatchRoom.noteSnapshotHeadings`). Snapshot araligi
+ * birkac tik; esik (`getSnapshotHeadingMinStep`): yurume esigi aradaki
  * tiklerde ve telin olu bandinin tamami (adim snapshot'tan snapshot'a, iki
  * yuvarli konum). Bandin icindeki adim yonu degistirmiyor: cok yavas
  * yuruyende ve 0,1'e yuvarli konumlarin kipirtisinda yon donmuyor, duran
- * dusmanin son yonu bir iki adimlik farktan alinmiyor.
+ * dusmanin son yonu bir iki adimlik farktan alinmiyor. Ilk gorulen dusman
+ * dondurulmemis dokuyla (+y) ya da tam statik kaydin yonuyle (`hx`, `hy`)
+ * basliyor; o snapshot'ta yalnizca konumu yaziliyor (sunucu da yayinda
+ * ilk kez gorduguyle oyle).
+ *
+ * Bu snapshot'taki yon kayda da yaziliyor (`hx`, `hy`; kayit snapshot'in
+ * kendi hidratlanmis nesnesi): doku oynatmada onu okuyor
+ * (GameScene `getEnemySpriteRotation`), yani her snapshot sinirinda
+ * sunucunun govdesinin yonunde.
  */
 export class EnemyHeadingTracker implements HeadingSource {
   private readonly states = new Map<string, HeadingEntry>();
   private frame = 0;
   private lastServerTime?: number;
 
-  note(enemies: readonly { id: string; x: number; y: number }[], serverTime: number) {
+  note(enemies: readonly { id: string; x: number; y: number; hx?: number; hy?: number }[], serverTime: number) {
     this.frame += 1;
-    const elapsed = this.lastServerTime === undefined ? SERVER_TICK_MS : Math.max(SERVER_TICK_MS, serverTime - this.lastServerTime);
+    const minStep = getSnapshotHeadingMinStep(serverTime, this.lastServerTime);
     this.lastServerTime = serverTime;
-    const minStep = getBodyHeadingMinStep(elapsed, elapsed);
     for (const enemy of enemies) {
       let state = this.states.get(enemy.id);
       if (!state) {
-        state = { headingX: BODY_DEFAULT_HEADING_X, headingY: BODY_DEFAULT_HEADING_Y, fromX: enemy.x, fromY: enemy.y, seen: 0 };
+        const seeded = Number.isFinite(enemy.hx) && Number.isFinite(enemy.hy);
+        state = {
+          headingX: seeded ? enemy.hx! : BODY_DEFAULT_HEADING_X,
+          headingY: seeded ? enemy.hy! : BODY_DEFAULT_HEADING_Y,
+          fromX: enemy.x,
+          fromY: enemy.y,
+          seen: 0
+        };
         this.states.set(enemy.id, state);
       } else {
         updateBodyHeading(state, enemy.x, enemy.y, minStep);
       }
       state.seen = this.frame;
+      enemy.hx = state.headingX;
+      enemy.hy = state.headingY;
     }
     for (const [id, state] of this.states) {
       if (state.seen !== this.frame) this.states.delete(id);

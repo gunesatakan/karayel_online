@@ -20,7 +20,7 @@
  * - `ground` (secenek): yanik izleri, dusmanlarin altinda.
  * - `flashes`: pisirilmis dokulu ADD parlamalari (havuzlu).
  */
-import { BALL_BODY, CELL_BODY, COMBAT_BODY, DART_BODY, ORB_BODY, PACKET_BODY, RING_BODY, type ProjectileSnapshot } from "@karayel/shared";
+import { BALL_BODY, CELL_BODY, COMBAT_BODY, DART_BODY, ORB_BODY, PACKET_BODY, RING_BODY, getProjectileDiscSides, type ProjectileSnapshot } from "@karayel/shared";
 import { drawObsessionShot, drawUcubeShot, getAtakanShotGlowSize, getAtakanShotHue, type AtakanShotInput } from "./atakan-shots";
 import { drawCombatProjectile } from "./combat-vfx";
 import {
@@ -391,8 +391,13 @@ export class AttackVfx {
       }
       case "ball": {
         // Agir gulle: koyu govde, ince ton kenari, kucuk beyaz-sicak cekirdek.
+        // Yuvarlak siluetlerin dis cizimi isabet dairesinin kenar sayisiyla
+        // (`getProjectileDiscSides`, Ucube'nin basi gibi): 8 kenarli cokgenin
+        // kenar ortasi yaricapin %7,6'si iceride kaliyordu, daire cizimden erken
+        // degiyordu. Ic katmanlar disin icinde, eski kenar sayisinda.
+        const ball = radius * BALL_BODY.radius;
         g.fillStyle(hue, 0.85);
-        fillDisc(g, x, y, radius * BALL_BODY.radius);
+        fillDisc(g, x, y, ball, getProjectileDiscSides(ball));
         g.fillStyle(darken(hue, 0.7), 0.96);
         fillDisc(g, x, y, radius * BALL_BODY.inner);
         g.fillStyle(core, 1);
@@ -401,8 +406,12 @@ export class AttackVfx {
       }
       case "ring": {
         // Destek atisi: ince ton halkasi ve beyaz-sicak nokta.
+        // Halkanin dis kenari orta cizgiden yarim kalinlik disarida: orta
+        // cizginin cokgeni daireden en fazla payi kadar iceride kalirsa dis
+        // kenar da (`getProjectileDiscSides`).
+        const ring = radius * RING_BODY.radius;
         g.lineStyle(Math.max(RING_BODY.minWidth, radius * RING_BODY.width * weight), hue, 0.9);
-        strokeRing(g, x, y, radius * RING_BODY.radius);
+        strokeRing(g, x, y, ring, getProjectileDiscSides(ring));
         g.fillStyle(core, 1);
         fillDisc(g, x, y, Math.max(RING_BODY.minCore, radius * RING_BODY.core * weight));
         return;
@@ -410,8 +419,9 @@ export class AttackVfx {
       case "orb":
       default: {
         // Enerji gullesi: yogun ton, beyaz-sicak cekirdek; halka yok.
+        const orb = radius * ORB_BODY.radius;
         g.fillStyle(hue, 0.9);
-        fillDisc(g, x, y, radius * ORB_BODY.radius);
+        fillDisc(g, x, y, orb, getProjectileDiscSides(orb));
         g.fillStyle(core, 1);
         fillDisc(g, x, y, radius * ORB_BODY.core * weight);
       }

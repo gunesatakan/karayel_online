@@ -453,6 +453,34 @@ export function getAegisFrontFace() {
   return AEGIS_FRONT_STROKES.rim / 2;
 }
 
+/**
+ * Siperin govdesi ve uclarindaki iki direk (counter-surge `drawAegis`):
+ * govde on cizginin `bodyCells` kare gerisine kadar (yari saydam, alfa
+ * 0,5-0,55: govde degil); direk seridin iki ucunda `postCells` kare
+ * genisliginde dolu (alfa 0,92), govdenin arkasindan (`postReach x direk`
+ * geride) on cizginin `postReach x direk` onune; yanlarinda ve onunde
+ * `postRim` kalinliginda kenar cizgisi (alfa 0,9). Sunucu mermiyi
+ * direklerde de durduruyor (`getAegisPostOutline`): ikisi ayni sayilardan.
+ */
+export const AEGIS_DRAWN = { bodyCells: 0.9, postCells: 0.28, postReach: 0.3, postRim: 1.2 } as const;
+
+/**
+ * Bir diregin cizilen govdesinin dis bukey zarfi, diregin merkezine (seridin
+ * ucu, on cizgi) gore: `[yanal, ileri]` ciftleri saat yonunun tersine
+ * (yanal seridin genisligi boyunca, ileri seridin yonunde). Dolu direk ve
+ * kenar cizgileri; yan ve on cizgilerin birlesmedigi iki on kosede zarf
+ * cizimden en fazla `postRim / 4` (0,3) disarida. Arka uc govdenin
+ * arkasinda (cizim haritanin kenarinda kirpiliyorsa zarf kirpilmiyor:
+ * kirpilan kisim haritanin disinda).
+ */
+export function getAegisPostOutline(gridSize: number): number[] {
+  const half = (gridSize * AEGIS_DRAWN.postCells) / 2;
+  const rim = AEGIS_DRAWN.postRim / 2;
+  const reach = gridSize * AEGIS_DRAWN.postCells * AEGIS_DRAWN.postReach;
+  const back = -(gridSize * AEGIS_DRAWN.bodyCells + reach);
+  return [-half - rim, back, half + rim, back, half + rim, reach, half, reach + rim, -half, reach + rim, -half - rim, reach];
+}
+
 // --- Tel kodlari ---------------------------------------------------------------------
 
 /** Cesidin tel kodu (`k`): `band` 0 ve telde yazilmiyor (eski kayit = bugunku serit). */

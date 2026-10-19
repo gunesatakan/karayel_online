@@ -314,16 +314,13 @@ import {
   AIR_ENEMY_DISPLAY_SCALE,
   // Saldiri dronunun cizim olcegi sunucunun dron govdesiyle ayni sayi.
   ATAKAN_ATTACK_DRONE_BODY,
-  // Dokunun donusu sunucunun govde yonuyle ayni kuraldan (enemy-body).
-  SERVER_TICK_MS,
   // Yorunge bicaginin cizilen govdesi sunucunun bicak taramasiyla ayni oranlardan.
   ORBIT_BLADE_BODY,
   getOrbitBladeInner,
   ENEMY_TEXTURE_SIZE,
-  getBodyHeadingMinStep,
+  // Dokunun acisi sunucunun govde yonuyle ayni yonden (enemy-body).
   getBodyHeadingRotation,
   getProjectileSceneScale,
-  isBodyHeadingStep,
   getEnemyArtScale,
   getEnemyBodyScale,
   getEnemySpriteDisplaySize,
@@ -1647,8 +1644,6 @@ export class GameScene extends Phaser.Scene {
   private readonly mekaShieldFlights = new Map<number, { seenAt: number; remaining: number }>();
   /** Karenin oynatma ani (sunucu saati): catlak ve katlanma uyarilari buradan. */
   private racePlaybackServerTime = 0;
-  /** Dusman dokularinin son dondurulme karesinin oynatma saati (gosterilen sure, `renderEnemies`). */
-  private lastEnemyTurnServerTime?: number;
   /** Ozel dusman turu ve karsi atak bildirimleri: tur basina macta bir kez, serit basina bir kez. */
   private readonly specialNotices = new SpecialThreatNotices();
   /** Karsi atak seridi: dolgu dusmanlarin altinda, sert kenarlar kulelerin ustunde. */
@@ -2051,7 +2046,6 @@ export class GameScene extends Phaser.Scene {
     );
     this.zeynepReceipt.clear();
     this.enemyHeadings.clear();
-    this.lastEnemyTurnServerTime = undefined;
     this.lastProjectileContact.clear();
     this.projectileOwnership.clear();
     // Olumun yer izi (yanik, leke, toz) dusmanlarin altinda; govde, kirinti
@@ -2275,7 +2269,6 @@ export class GameScene extends Phaser.Scene {
       this.legendaryProcs = undefined;
       this.zeynepReceipt.clear();
       this.enemyHeadings.clear();
-      this.lastEnemyTurnServerTime = undefined;
       this.lastProjectileContact.clear();
       this.beamInterpolator.clear();
       this.projectileOwnership.clear();
@@ -7267,7 +7260,13 @@ export class GameScene extends Phaser.Scene {
         y: lerpPosition ? Phaser.Math.Linear(oldEnemy!.y, enemy.y, alpha) : enemy.y,
         pathDistance,
         hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp,
-        shield: oldEnemy ? Phaser.Math.Linear(oldEnemy.shield, enemy.shield, alpha) : enemy.shield
+        shield: oldEnemy ? Phaser.Math.Linear(oldEnemy.shield, enemy.shield, alpha) : enemy.shield,
+        // Iki snapshot arasinda yon onceki snapshot'in: sunucu bu araliktaki
+        // vuruslari o yonle yapiyor (`noteSnapshotHeadings` yeni yonu ancak
+        // sonraki yayinda yaziyor). Sonrakinin yonu sprite'i bir aralik erken
+        // donduruyordu.
+        hx: oldEnemy?.hx ?? enemy.hx,
+        hy: oldEnemy?.hy ?? enemy.hy
       };
     });
 
@@ -9478,19 +9477,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const slowTierLevel = slowCommand ? getZeynepCommandTierLevel(slowCommand.tier) : 0;
     const now = performance.now();
     this.removedEnemyTraces.prune(now);
-    // Dokunun donme esigi gosterilen sureyle (oynatma saati, sunucu ms): ekran
-    // 60, 144 ya da 240 Hz olsun, ayni snapshot adimina ayni esik. Esik
-    // sunucunun tik esigi arti telin olu bandi (snapshot adimi basina iki
-    // yuvarlama adimi, 0,2; karede o adimin payi): bandin icindeki adim
-    // dokuyu cevirmiyor, yavas yuruyen ve duran dusmanin yonu 0,1'e yuvarli
-    // konumlarin kipirtisindan alinmiyor ve doku sunucunun govdesinden once
-    // donmuyor. Gosterilen saat bu karede ilerlemediyse (oynatma saati
-    // kirpildi) esik sonsuz: donus yok; vurus itmesinin kayan noktasi dokuyu
-    // rastgele bir eksene cevirmiyor.
-    const displayed = this.racePlaybackServerTime;
-    const elapsed = this.lastEnemyTurnServerTime === undefined ? SERVER_TICK_MS : Math.max(0, displayed - this.lastEnemyTurnServerTime);
-    this.lastEnemyTurnServerTime = displayed;
-    const turnStep = getBodyHeadingMinStep(elapsed);
 
     for (const [id, mover] of this.enemies) {
       if (!activeIds.has(id)) {
@@ -9546,11 +9532,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           sprite.body.enable = false;
         }
         mover = this.createMover(sprite, enemy.x, enemy.y);
-        // Havuzdan gelen doku olen dusmanin acisini tasiyor: yeni dusman gelen
-        // snapshot'lardan bilinen yonuyle baslasin (yoksa dondurulmemis doku, 0).
-        // Sunucu govdeyi o yonle sinaniyor; yuruyunce ikisi birlikte donuyor.
-        const heading = this.enemyHeadings.get(enemy.id);
-        sprite.setRotation(heading ? getBodyHeadingRotation(heading.headingX, heading.headingY) : 0);
+        // Havuzdan gelen doku olen dusmanin acisini tasiyor: yeni dusman
+        // dondurulmemis dokuyla basliyor, asagida bu snapshot'in yonu yaziliyor
+        // (`getEnemySpriteRotation`).
+        sprite.setRotation(0);
         mover.shieldHalo = this.add.circle(enemy.x, enemy.y, 18, 0x38bdf8, 0.08)
           .setStrokeStyle(2, 0x60a5fa, 0.86)
           .setDepth(7.6)
@@ -9602,8 +9587,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (mover.sprite.texture.key !== texture) {
         mover.sprite.setTexture(texture);
       }
-      const previousX = mover.sprite.x - (mover.knockDx ?? 0);
-      const previousY = mover.sprite.y - (mover.knockDy ?? 0);
       // Kozmetik itme (kendi agir vurusun, 1-2 px): yalnizca govdenin cizimi,
       // ENEMY_KNOCK_MS'de yerine oturuyor. Konum, can cubugu ve yon etkilenmiyor.
       const knock = mover.knockAt === undefined ? 0 : 1 - (now - mover.knockAt) / ENEMY_KNOCK_MS;
@@ -9613,7 +9596,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Karede degismeyen derinlik yeniden yazilmiyor: her `setDepth` sahnenin
       // siralamasini kuyruga sokuyor ve bu dongu her karede her dusmanda donuyor.
       setDepthIfChanged(mover.sprite, enemy.movementKind === "air" ? 9 : 8);
-      mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, previousX, previousY, mover.sprite.rotation, turnStep));
+      mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, mover.sprite.rotation));
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
       // Sampiyon govdesi ceyrek buyuk: kalabalikta ilk bakista secilsin. Ruh
       // cekici yiginla buyuyor (+%6 / yigin): govde, halo ve cubuk birlikte.
@@ -9825,15 +9808,22 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
-   * Dokunun acisi: gosterilen konum degisimi esigi (`minStep`, gosterilen
-   * sureyle olcekli) asiyorsa o yon, yoksa onceki aci. Kural ve aci
-   * sunucunun govde yonuyle ayni yardimcilardan (`isBodyHeadingStep`,
-   * `getBodyHeadingRotation`): dokunun +y ekseni yon.
+   * Dokunun acisi: oynatilan snapshot adiminin yonu (`hx`, `hy`; yon izi
+   * `EnemyHeadingTracker` snapshot gelince kayda yaziyor, ara degerleme
+   * kaydi sonraki snapshot'tan kuruyor), dokunun +y ekseni yon
+   * (`getBodyHeadingRotation`). Sunucunun govdesi ayni yonu ayni kuralla
+   * yayinda olcuyor: doku her snapshot sinirinda govdenin yonunde, iki
+   * snapshot arasinda o adimin yonunde (yurudugu yone, adimin basinda).
+   *
+   * Eskiden doku her karede gosterilen konum farkiyla donuyordu (esik
+   * gosterilen sureyle olcekli): iki snapshot'i asan karede iki adimin
+   * karisik yonune donup, sonraki adim esigin altindaysa o yonde
+   * kalabiliyordu; karenin evresine bagliydi. Yon yoksa (eski kayit) onceki aci.
    */
-  private getEnemySpriteRotation(enemy: EnemySnapshot, previousX: number, previousY: number, previousRotation: number, minStep: number) {
-    const dx = enemy.x - previousX;
-    const dy = enemy.y - previousY;
-    return isBodyHeadingStep(dx, dy, minStep) ? getBodyHeadingRotation(dx, dy) : previousRotation;
+  private getEnemySpriteRotation(enemy: EnemySnapshot, previousRotation: number) {
+    const hx = enemy.hx;
+    const hy = enemy.hy;
+    return hx !== undefined && hy !== undefined ? getBodyHeadingRotation(hx, hy) : previousRotation;
   }
 
   private renderTowers(towers: TowerSnapshot[]) {

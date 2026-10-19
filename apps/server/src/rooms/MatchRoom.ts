@@ -102,6 +102,7 @@ import { KIN_WAVE_LINGER_DISTANCE, getAbartiRailRect, getAbartiShowcaseRangeMult
 // cokgeni, merminin sekli cizilen govdesi; istemci ayni fonksiyonlarla
 // ciziyor ve seciyor (enemy-body, enemy-display, projectile-body).
 import {
+  MEKA_SHIELD_DRAWN,
   SERVER_TICK_MS,
   SNAPSHOT_SEND_INTERVAL_MS,
   TAHT_COPY_PROJECTILE_ID,
@@ -111,17 +112,21 @@ import {
   createEnemyBody,
   createKinWaveSector,
   createPlateBody,
+  createPlateOutlineBody,
   getAegisFrontFace,
+  getAegisPostOutline,
   getAttackDroneBodyRadius,
   getBodyCentreX,
   getBodyCentreY,
   getBodyProjectionMax,
   getBodyProjectionMin,
   getMekaShieldFace,
+  getMekaShieldTickHalf,
   getProjectileBodyContact,
   getProjectileReach,
   getProjectileSceneScale,
   getProjectileShape,
+  getSnapshotHeadingMinStep,
   isBandTouchingBody,
   isBodyInTriangle,
   isBodyTouchingBandShape,
@@ -1859,6 +1864,8 @@ type MekaShieldModel = {
    * (boyu sifir) kalkan.
    */
   plate?: EnemyBody | null;
+  /** Iki uctaki cizilen kertik (`getMekaShieldTickHalf`), levhayla birlikte kuruluyor. */
+  ends?: PlateParts;
 };
 
 type SpecialSpawnOptions = {
@@ -2015,7 +2022,36 @@ type CounterSurgeModel = {
   previousFrontAlong: number;
   /** Siperin cizilen on levhasi (`getAegisPlate`): ilk sorguda kuruluyor; `null` cizilmeyen. */
   plate?: EnemyBody | null;
+  /** Iki uctaki cizilen direk (`getAegisPostOutline`), levhayla birlikte kuruluyor ve ilerliyor. */
+  posts?: PlateParts;
 };
+
+/**
+ * Engelin uc parcasi (meka kalkaninin kertigi, siperin diregi): govdesi ve
+ * engelin cizgisinden normal yonunde one (`front`) ve geriye (`back`) en
+ * uzak noktasi; parcanin merkezi engelin cizgisinde.
+ */
+type PlatePart = { body: EnemyBody; front: number; back: number };
+
+/**
+ * Engelin uc parcalari ve engelin tamaminin (ana levha dahil) cizgiden one,
+ * geriye en uzak noktasi ve uclarda parcalarin en buyuk `reach`i: engel
+ * basina bir kez, mermi basina kapi bunlarla (`getBlockerContact`).
+ */
+type PlateParts = { list: PlatePart[]; front: number; back: number; span: number; endAlong: number };
+
+/** `endAlong`: parcalarin ana levhanin merkezinden cizgi boyunca uzakligi (iki ucta simetrik). */
+function createPlateParts(list: PlatePart[], face: number, endAlong: number): PlateParts {
+  let front = face;
+  let back = face;
+  let span = 0;
+  for (const part of list) {
+    if (part.front > front) front = part.front;
+    if (part.back > back) back = part.back;
+    if (part.body.reach > span) span = part.body.reach;
+  }
+  return { list, front, back, span, endAlong };
+}
 
 /**
  * Metal Kalkan (AttackLord, yuva 1): haritada duz bir parca. Yapi degil:
@@ -2296,6 +2332,11 @@ type TowerModel = EconomyStock & {
   facing: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
+  /**
+   * Penceredeki ilk canli kaydin indeksi (`pruneTowerDamageWindow`): dusen
+   * kayitlar dizinin basindan tek tek kaydirilmiyor.
+   */
+  damageWindowHead: number;
   runModifiers: RunModifiers;
   targetedCardIds: string[];
   /** Bu kuleye takilmis magaza esyalari. Takilan esya sokulemez. */
@@ -3043,6 +3084,8 @@ export class MatchRoom extends Room<MatchState> {
   private readonly blockSupport = { x: 0, y: 0 };
   /** Levha kapisinin destek noktasi (`getPlateBlock`): tek nesne, tahsis yok. */
   private readonly plateSupport = { x: 0, y: 0 };
+  /** `getBlockerContact`in ana levhadan once degen uc parcasi (yoksa `undefined`). */
+  private plateBlockPart: EnemyBody | undefined = undefined;
   /** Oncul nisanin bulusma noktasi (`getTowerLeadAimPoint`): tek nesne, tahsis yok. */
   private readonly leadAimPoint = { x: 0, y: 0 };
   private towers = new Map<string, TowerModel>();
@@ -3863,6 +3906,12 @@ export class MatchRoom extends Room<MatchState> {
   /** Kule -> onu baglayan Sunucular (`refreshServerLinkIndex`). */
   private serverLinkIndex = new Map<string, TowerModel[]>();
   private lastSnapshotBroadcastAt = 0;
+  /**
+   * Govdelerin yonunun son olculdugu snapshot'in `serverTime`i
+   * (`noteSnapshotHeadings`): istemcinin izi bir sonraki adimin esigini ayni
+   * farktan aliyor. Hic yayin olmadiysa `undefined`.
+   */
+  private lastHeadingSnapshotTime: number | undefined = undefined;
   /** Duran tahtada en son gonderilen snapshotin icerigi ve ani. */
   private lastIdleSnapshotSignature = "";
   /**
@@ -5847,10 +5896,16 @@ export class MatchRoom extends Room<MatchState> {
       // Tabanla ayni olmayan istemci (atlanan, kopan, tam kayit isteyen) deltayi
       // degil tam kareyi aliyor; digerleri deltayi.
       const { wire, towerBaseline, enemyBaseline, extraBaselines } = this.applyWireDelta(snapshot);
-      if (this.sendSnapshotWithBackpressure(wire, snapshot)) {
+      const sent = this.sendSnapshotWithBackpressure(wire, snapshot);
+      if (sent) {
         this.commitWireBaseline(towerBaseline, enemyBaseline, extraBaselines);
         this.recordSnapshotBroadcast(now);
       }
+      // Govdelerin yonu istemcinin gordugu snapshot'larla: giden her karede
+      // (istemcisiz oda, tohumlu kayit ve testler: her yayinda). Kimseye
+      // gitmeyen kare (tek istemci geri basinctan atlandi) istemcinin izinde
+      // de yok; tekrarlanan bos tahta karesi hic yayinlanmadi (yukarida).
+      if (sent || this.clients.length === 0) this.noteSnapshotHeadings(snapshot.serverTime);
     }
     if (now - this.lastPerfBroadcastAt >= PERF_SEND_INTERVAL_MS) {
       this.broadcast("perf:snapshot", this.getLatestPerfSnapshot());
@@ -11217,11 +11272,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Merminin cizilen govdesinin bu tikte levhaya (`plate`, yari kalinligi
-   * `face`: engelin cizilen yuzu) ilk degdigi yol (dunya birimi; tikin
-   * basinda degiyorsa 0), degmiyorsa ya da mermi o levhaya gitmiyorsa -1.
+   * Merminin cizilen govdesinin bu tikte levhaya (`plate`) ilk degdigi yol
+   * (dunya birimi; tikin basinda degiyorsa 0), degmiyorsa ya da mermi
+   * engelin cizgisine gitmiyorsa -1. Engelin cizgisi ve normali ana
+   * levhanin (`line`: merkezi cizgide, yonu normal); `plate` ana levhanin
+   * kendisi ya da bir uc parcasi (meka kalkaninin kertigi, siperin diregi:
+   * merkezi cizgide). `front` / `back`: levhanin cizgiden normal yonunde
+   * one ve geriye en uzak noktasi (ana levhada ikisi de engelin yuzu).
    *
-   * Yalnizca gelen yan: merkez levhanin cizgisinin hangi yanindaysa `m` o
+   * Yalnizca gelen yan: merkez engelin cizgisinin hangi yanindaysa `m` o
    * yandan cizgiye (tam ustundeyse gidis yonunde). Mermi cizgiden
    * uzaklasiyor ya da ona paralel gidiyorsa (`u . m <= 0`) levha yok
    * sayiliyor: namlunun gerisindeki kalkan dogan mermiyi, merkezi cizgiyi
@@ -11238,15 +11297,16 @@ export class MatchRoom extends Room<MatchState> {
    * levhanin uclari ve koseleri dahil, merminin parcalari ve diski merkezin
    * `reach` gerisinde kesik.
    */
-  private getPlateBlock(plate: EnemyBody, face: number, shape: ProjectileShape, flown: number, fromX: number, fromY: number, ux: number, uy: number, travel: number) {
-    const nx = plate.headingX;
-    const ny = plate.headingY;
-    const side = (fromX - plate.x) * nx + (fromY - plate.y) * ny;
+  private getPlateBlock(plate: EnemyBody, line: EnemyBody, front: number, back: number, shape: ProjectileShape, flown: number, fromX: number, fromY: number, ux: number, uy: number, travel: number) {
+    const nx = line.headingX;
+    const ny = line.headingY;
+    const side = (fromX - line.x) * nx + (fromY - line.y) * ny;
     const rate = ux * nx + uy * ny;
     const sign = side > 0 || (side === 0 && rate < 0) ? -1 : 1;
     const closing = sign * rate;
     if (!(closing > 0)) return -1;
-    const gap = (side < 0 ? -side : side) - face;
+    // Gelen yandaki yuzun cizgiye uzakligi: ondeki mermide `front`, arkadakinde `back`.
+    const gap = sign < 0 ? side - front : -side - back;
     const lateral = ux * ny - uy * nx;
     if (gap > (travel + shape.front) * closing + shape.halfWidth * (lateral < 0 ? -lateral : lateral)) return -1;
     const support = writeProjectileSupport(shape, getProjectileReach(shape, flown), ux, uy, sign * nx, sign * ny, this.plateSupport);
@@ -11254,12 +11314,27 @@ export class MatchRoom extends Room<MatchState> {
     return getProjectileBodyContact(fromX, fromY, ux, uy, travel, shape, flown, plate);
   }
 
-  /** Meka kalkaninin cizilen levhasi (parca arti eksi `getMekaShieldFace`); ilk sorguda kuruluyor. */
+  /**
+   * Meka kalkaninin cizilen levhasi (parca arti eksi `getMekaShieldFace`) ve
+   * iki ucundaki kertik (`ends`: ucun uzerinde, cizgiye dik, iki yana
+   * `getMekaShieldTickHalf`, parca boyunca `tickWidth` kalin; yuzun 1,8,
+   * ucun 0,8 otesine tasiyor); ilk sorguda kuruluyor.
+   */
   private getMekaShieldPlate(shield: MekaShieldModel, face: number) {
     if (shield.plate === undefined) {
       const sx = shield.x2 - shield.x1;
       const sy = shield.y2 - shield.y1;
-      shield.plate = createPlateBody((shield.x1 + shield.x2) / 2, (shield.y1 + shield.y2) / 2, sx, sy, Math.sqrt(sx * sx + sy * sy) / 2, face) ?? null;
+      const plate = createPlateBody((shield.x1 + shield.x2) / 2, (shield.y1 + shield.y2) / 2, sx, sy, Math.sqrt(sx * sx + sy * sy) / 2, face) ?? null;
+      shield.plate = plate;
+      const ends: PlatePart[] = [];
+      if (plate) {
+        const tick = getMekaShieldTickHalf(getMapGridSize(this.activeMap));
+        for (let end = 0; end < 2; end += 1) {
+          const body = createPlateBody(end === 0 ? shield.x1 : shield.x2, end === 0 ? shield.y1 : shield.y2, plate.headingX, plate.headingY, tick, MEKA_SHIELD_DRAWN.tickWidth / 2);
+          if (body) ends.push({ body, front: tick, back: tick });
+        }
+      }
+      shield.ends = createPlateParts(ends, face, Math.hypot(shield.x2 - shield.x1, shield.y2 - shield.y1) / 2);
     }
     return shield.plate ?? undefined;
   }
@@ -11272,12 +11347,138 @@ export class MatchRoom extends Room<MatchState> {
    */
   private getAegisPlate(aegis: CounterSurgeModel) {
     const band = aegis.band;
-    if (aegis.plate === undefined) aegis.plate = createPlateBody(band.originX, band.originY, band.dirY, -band.dirX, band.width / 2, getAegisFrontFace()) ?? null;
+    if (aegis.plate === undefined) {
+      const plate = createPlateBody(band.originX, band.originY, band.dirY, -band.dirX, band.width / 2, getAegisFrontFace()) ?? null;
+      aegis.plate = plate;
+      // Iki direk seridin uclarinda (`getAegisPostOutline`, cercevesi levhaninki:
+      // +y seridin yonu); on cizgiden one ve geriye uzanisi zarfin kendisinden.
+      const posts: PlatePart[] = [];
+      if (plate) {
+        const outline = getAegisPostOutline(getMapGridSize(this.activeMap));
+        let front = Number.NEGATIVE_INFINITY;
+        let back = Number.NEGATIVE_INFINITY;
+        for (let k = 1; k < outline.length; k += 2) {
+          front = Math.max(front, outline[k]);
+          back = Math.max(back, -outline[k]);
+        }
+        for (let end = 0; end < 2; end += 1) {
+          const body = createPlateOutlineBody(band.originX, band.originY, band.dirY, -band.dirX, outline);
+          if (body) posts.push({ body, front, back });
+        }
+      }
+      aegis.posts = createPlateParts(posts, getAegisFrontFace(), band.width / 2);
+    }
     const plate = aegis.plate;
     if (plate === null) return undefined;
     plate.x = band.originX + band.dirX * aegis.frontAlong;
     plate.y = band.originY + band.dirY * aegis.frontAlong;
+    const posts = aegis.posts?.list;
+    if (posts) {
+      // Levhanin uzun ekseni (dirY, -dirX): direkler merkezden yarim genislik iki yanda, on cizgide.
+      const half = band.width / 2;
+      for (let end = 0; end < posts.length; end += 1) {
+        const offset = end === 0 ? -half : half;
+        posts[end].body.x = plate.x + band.dirY * offset;
+        posts[end].body.y = plate.y - band.dirX * offset;
+      }
+    }
     return plate;
+  }
+
+  /**
+   * Engelin (ana levha `line`, yuzu `face`, uc parcalari `parts`: kertik,
+   * direk) bu tikteki ilk temasi (-1 degmiyor) ve parcasi (`plateBlockPart`,
+   * ana levha kazandiysa `undefined`). Ana levhanin kapisi kendi cizgisiyle
+   * (`getPlateBlock`). Uc parcalari kendi govdeleriyle: cizgiye paralel ya da
+   * cizgiyi coktan gecmis mermi de direge/kertige carpinca duruyor (eskiden
+   * ana cizginin kapisi onlari da eliyordu, mermi opak diregin icinden
+   * geciyordu). Tek istisna parcanin icinde baslayip hem ondan hem ana
+   * cizgiden uzaklasan mermi (orada dogdu): onu arkadan durdurmuyor; ana
+   * cizgiye yaklasan, parcanin icinde baslayan mermi yerinde duruyor.
+   * Cagiran once `isBlockerInReach`e soruyor.
+   */
+  private getBlockerContact(line: EnemyBody, face: number, parts: PlateParts | undefined, shape: ProjectileShape, flown: number, fromX: number, fromY: number, ux: number, uy: number, travel: number) {
+    this.plateBlockPart = undefined;
+    const contact = this.getPlateBlock(line, line, face, face, shape, flown, fromX, fromY, ux, uy, travel);
+    if (!parts || contact === 0) return contact;
+    return this.getBlockerPartContact(line, parts, contact, shape, flown, fromX, fromY, ux, uy, travel);
+  }
+
+  /**
+   * `getBlockerContact`in uc parcalari; ayri tutuluyor ki ana levha yolu kucuk
+   * kalsin (gomulsun). Ana cizgiye yaklasan mermi parcalarda da O(1) kapili
+   * `getPlateBlock`ten geciyor (cogu mermi kapida kaliyor). Yaklasmayan mermi
+   * (cizgiye paralel ya da cizgiyi gecmis; ucun seridine
+   * yakinsa `isBlockerInReach` buraya gonderiyor) parcanin kendi govdesiyle: parcanin icinde
+   * baslayip ondan uzaklasan mermi disinda degince duruyor.
+   */
+  private getBlockerPartContact(line: EnemyBody, parts: PlateParts, contact: number, shape: ProjectileShape, flown: number, fromX: number, fromY: number, ux: number, uy: number, travel: number) {
+    const list = parts.list;
+    let best = contact;
+    const side = (fromX - line.x) * line.headingX + (fromY - line.y) * line.headingY;
+    const rate = ux * line.headingX + uy * line.headingY;
+    const closing = (side > 0 || (side === 0 && rate < 0) ? -rate : rate) > 0;
+    const reach = travel + Math.max(shape.front, shape.tail) + shape.halfWidth;
+    for (let index = 0; index < list.length; index += 1) {
+      const part = list[index];
+      let hit: number;
+      if (closing) {
+        hit = this.getPlateBlock(part.body, line, part.front, part.back, shape, flown, fromX, fromY, ux, uy, travel);
+      } else {
+        const px = part.body.x - fromX;
+        const py = part.body.y - fromY;
+        const limit = part.body.reach + reach;
+        if (px * px + py * py > limit * limit) continue;
+        hit = getProjectileBodyContact(fromX, fromY, ux, uy, travel, shape, flown, part.body);
+        if (hit === 0 && px * ux + py * uy <= 0) continue;
+      }
+      if (hit >= 0 && (best < 0 || hit < best)) {
+        best = hit;
+        this.plateBlockPart = part.body;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Engelin tamami icin O(1) kapilar (`getBlockerContact`ten once, mermi ve
+   * engel basina): yaklasiyor mu; kutu engelin en uzak yuzune varabiliyor mu;
+   * cizgi boyunca engelin boyuna (merkezden `reach`, uclarda parcanin
+   * `reach`i) varabiliyor mu (kalkanin uzantisindaki, ona hic varmayacak
+   * mermi). Cogu mermi burada kaliyor. Kucuk tutuluyor ki cagirana gomulsun:
+   * kapilar uc parcalariyla buyuyen tek fonksiyondayken 6 kalkanli olcumde
+   * mermi bolumu %8 pahalilasti, ayri kapiyla eskisi kadar (gomulmeyen
+   * cagri ondalik argumanlari yigina kutuluyor).
+   */
+  private isBlockerInReach(line: EnemyBody, face: number, parts: PlateParts | undefined, shape: ProjectileShape, fromX: number, fromY: number, ux: number, uy: number, travel: number) {
+    const nx = line.headingX;
+    const ny = line.headingY;
+    const side = (fromX - line.x) * nx + (fromY - line.y) * ny;
+    const rate = ux * nx + uy * ny;
+    const sign = side > 0 || (side === 0 && rate < 0) ? -1 : 1;
+    const closing = sign * rate;
+    if (!(closing > 0)) {
+      // Cizgiye yaklasmayan mermi yalnizca uc parcalarina (kertik, direk)
+      // carpabilir: iki ucun seridine yakin degilse hicbirine varamaz.
+      // Ayri bir cagri olarak (gomulmeyen) 6 kalkanda mermi bolumunu %8
+      // pahalilastiriyordu; burada birkac islem.
+      if (!parts) return false;
+      const limit = parts.span + travel + Math.max(shape.front, shape.tail) + shape.halfWidth;
+      if ((side < 0 ? -side : side) > limit) return false;
+      const along = (fromX - line.x) * ny - (fromY - line.y) * nx;
+      const fromEnd = (along < 0 ? -along : along) - parts.endAlong;
+      return (fromEnd < 0 ? -fromEnd : fromEnd) <= limit;
+    }
+    const front = parts ? parts.front : face;
+    const back = parts ? parts.back : face;
+    const span = parts ? parts.span : 0;
+    const gap = sign < 0 ? side - front : -side - back;
+    const lateral = ux * ny - uy * nx;
+    const across = lateral < 0 ? -lateral : lateral;
+    if (gap > (travel + shape.front) * closing + shape.halfWidth * across) return false;
+    // Cizgi boyunca (levhanin uzun ekseni (ny, -nx)): merkezin engelin boyuna uzakligi.
+    const along = (fromX - line.x) * ny - (fromY - line.y) * nx;
+    return (along < 0 ? -along : along) <= line.reach + span + travel * across + Math.max(shape.front, shape.tail) + shape.halfWidth;
   }
 
   /**
@@ -11287,8 +11488,10 @@ export class MatchRoom extends Room<MatchState> {
    * meka kalkaninda parca arti eksi kalkanin govdesi ve kenar cizgisi
    * (`getMekaShieldFace`), boyu parcanin kendisi, uclar dahil; siperde on
    * cizgi arti eksi sert kenarin yarisi (`getAegisFrontFace`), seridin
-   * genisligi boyunca. Temas `getPlateBlock`: yalnizca levhaya giden mermi,
-   * merkez gelen yandayken degiyorsa yerinde.
+   * genisligi boyunca. Uclardaki opak cizimler de levha: meka kalkaninin iki
+   * kertigi (`getMekaShieldTickHalf`), siperin iki diregi
+   * (`getAegisPostOutline`). Temas `getPlateBlock`: yalnizca engelin
+   * cizgisine giden mermi, merkez gelen yandayken degiyorsa yerinde.
    *
    * Merkezin engelin cizgisini kestigi an (eski kural; siperde ilerleyen on
    * cizgi) ust sinir: durus ondan gec degil, govdeli kural eskisinden fazla
@@ -11309,12 +11512,18 @@ export class MatchRoom extends Room<MatchState> {
     let blocker: MekaShieldModel | undefined;
     if (aegis) {
       const plate = this.getAegisPlate(aegis);
-      const contact = plate ? this.getPlateBlock(plate, getAegisFrontFace(), shape, flown, fromX, fromY, ux, uy, travel) : -1;
+      let contact = -1;
+      let contactPlate = plate;
+      const face = getAegisFrontFace();
+      if (plate && this.isBlockerInReach(plate, face, aegis.posts, shape, fromX, fromY, ux, uy, travel)) {
+        contact = this.getBlockerContact(plate, face, aegis.posts, shape, flown, fromX, fromY, ux, uy, travel);
+        contactPlate = this.plateBlockPart ?? plate;
+      }
       const crossing = getSurgeFrontCrossing(aegis.band, aegis.previousFrontAlong, aegis.frontAlong, fromX, fromY, toX, toY);
       const centre = crossing === undefined ? -1 : crossing * travel;
       if (contact >= 0 && (centre < 0 || contact <= centre)) {
         best = contact;
-        bestPlate = plate;
+        bestPlate = contactPlate;
       } else if (centre >= 0) {
         best = centre;
       }
@@ -11326,14 +11535,17 @@ export class MatchRoom extends Room<MatchState> {
         if (now < shield.landAt || now >= shield.expiresAt) continue;
         const plate = this.getMekaShieldPlate(shield, face);
         if (plate === undefined) continue;
-        const contact = this.getPlateBlock(plate, face, shape, flown, fromX, fromY, ux, uy, travel);
+        const contact = this.isBlockerInReach(plate, face, shield.ends, shape, fromX, fromY, ux, uy, travel)
+          ? this.getBlockerContact(plate, face, shield.ends, shape, flown, fromX, fromY, ux, uy, travel)
+          : -1;
+        const contactPlate = contact >= 0 ? this.plateBlockPart ?? plate : plate;
         const crossing = getSegmentCrossingT(fromX, fromY, toX, toY, shield.x1, shield.y1, shield.x2, shield.y2);
         const centre = crossing === undefined ? -1 : crossing * travel;
         const plateFirst = contact >= 0 && (centre < 0 || contact <= centre);
         const t = plateFirst ? contact : centre;
         if (t >= 0 && (best === undefined || t < best)) {
           best = t;
-          bestPlate = plateFirst ? plate : undefined;
+          bestPlate = plateFirst ? contactPlate : undefined;
           blocker = shield;
         }
       }
@@ -15906,7 +16118,8 @@ export class MatchRoom extends Room<MatchState> {
       melisMirrorCharge: 0,
       facing: Math.PI / 2,
       damageDealt: 0,
-      damageWindow: []
+      damageWindow: [],
+      damageWindowHead: 0
     };
 
     this.towers.set(tower.id, tower);
@@ -18659,9 +18872,17 @@ export class MatchRoom extends Room<MatchState> {
     return false;
   }
 
-  /** Yeni govde nesnesi bu haritanin olceginde (dogumda); sorgu payini da yukseltiyor. */
+  /**
+   * Yeni govde nesnesi bu haritanin olceginde (dogumda); sorgu payini da
+   * yukseltiyor. Yon dondurulmemis doku (+y) ve henuz olculmedi (son konum
+   * `NaN`): dusmani ilk tasiyan snapshot yalnizca konumunu yaziyor, istemcinin
+   * izi onu ilk gordugu snapshot'ta oldugu gibi (yayinlar arasinda doganda
+   * da: dogum yeri telde hic yok).
+   */
   private createEnemyBodyFor(view: EnemyBodyView, x: number, y: number) {
     const body = createEnemyBody(view, getMapGridSize(this.activeMap), x, y);
+    body.fromX = Number.NaN;
+    body.fromY = Number.NaN;
     if (body.reach > this.enemyBodyReachMax) this.enemyBodyReachMax = body.reach;
     return body;
   }
@@ -18687,7 +18908,7 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Kaydin konumu govdeye: tik icinde yer degistiren dusman (yurume, itme,
    * sicrama, geri cekilme) ayni tikin sonraki vurus hesaplarinda yeni yerinde.
-   * Yon burada degismiyor (izgarada, tik basina bir kez).
+   * Yon burada degismiyor (snapshot yayininda, `noteSnapshotHeadings`).
    */
   private syncEnemyBody(enemy: EnemyModel) {
     const body = enemy.body ?? this.assignEnemyBody(enemy);
@@ -18697,13 +18918,11 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Tikin dusman izgarasi ve govdelerin konumu ve yonu, tek dongude. Yon bir
-   * onceki tikin butun hareketinden (yurume, itme, geri yurume, sicrama):
-   * istemci dokuyu ayni konum degisimiyle ceviriyor; yalnizca yurumeyi bilen
-   * `moveVx/moveVy` hasatciyi, Melis'in olusunu ve itmeyi kacirirdi. Kaydin
-   * konumu bir kez okunuyor (kayit cok bicimli: her okuma pahali); govde
-   * nesnesine yazma ve yon guncellemesi tek bicimli, tahsis yok, yuruyende bir
-   * karekok. Saha bossa sorgu payi sifirdan (bkz. `enemyBodyReachMax`).
+   * Tikin dusman izgarasi ve govdelerin konumu, tek dongude. Yon burada
+   * degismiyor: snapshot yayininda (`noteSnapshotHeadings`), iki yayin
+   * arasinda sabit. Kaydin konumu bir kez okunuyor (kayit cok bicimli: her
+   * okuma pahali); govde nesnesine yazma tek bicimli, tahsis yok. Saha bossa
+   * sorgu payi sifirdan (bkz. `enemyBodyReachMax`).
    */
   private rebuildEnemyGrid() {
     if (this.enemies.size === 0) this.enemyBodyReachMax = 0;
@@ -18715,8 +18934,29 @@ export class MatchRoom extends Room<MatchState> {
       const y = enemy.y;
       body.x = x;
       body.y = y;
-      updateBodyHeading(body, x, y);
       grid.insertAt(enemy, x, y);
+    }
+  }
+
+  /**
+   * Govdelerin yonu, giden snapshot'in tel konumlariyla: istemcinin izinin
+   * (`EnemyHeadingTracker`) bire bir ayni guncellemesi. Konum telde oldugu
+   * gibi 0,1'e yuvarli (`roundNetworkNumber`), esik ardisik iki yayinin
+   * `serverTime` farkindan (`getSnapshotHeadingMinStep`); bos tahtanin
+   * tekrarlanan karesi yayinlanmadigi icin onda yon de olculmuyor, fark bir
+   * sonraki giden kareye kadar buyuyor (istemcide de oyle). Yon bir
+   * yayindan otekine butun hareketten (yurume, itme, geri yurume, sicrama):
+   * istemci dokuyu ayni konum degisimiyle ceviriyor. Telde ilk kez gorulen
+   * dusman (`createEnemyBodyFor`: son konum `NaN`) yalnizca konumunu
+   * yaziyor. Yayin basina dusman basina iki yuvarlama ve yuruyende bir
+   * karekok; eskiden her tik gercek konumla ayni is.
+   */
+  private noteSnapshotHeadings(serverTime: number) {
+    const minStep = getSnapshotHeadingMinStep(serverTime, this.lastHeadingSnapshotTime);
+    this.lastHeadingSnapshotTime = serverTime;
+    for (const enemy of this.enemies.values()) {
+      const body = enemy.body ?? this.assignEnemyBody(enemy);
+      updateBodyHeading(body, roundNetworkNumber(enemy.x), roundNetworkNumber(enemy.y), minStep);
     }
   }
 
@@ -18725,6 +18965,13 @@ export class MatchRoom extends Room<MatchState> {
    * (sahibin karari, 2026-10; merkezi halkanin disinda kalsa da). Sorgu
    * merkezden yaricap + sahadaki en uzak govde payi; hedeflenebilirlik ve
    * govde sinamasi sorgunun kendi dizisinde tek geciste (ikinci dizi yok).
+   *
+   * Olay basina bedel: izgara sorgusu, aday basina bir harita okumasi ve bir
+   * govde sinamasi (cokgenin kenari kadar), sonra cagiranin her kurbana
+   * `damageEnemy`si (hasar, durum, kulenin hasar penceresi:
+   * `pruneTowerDamageWindow` amorti sabit). Govdesi degen kural merkezi
+   * icerdekinden fazla kurban buluyor (olculdu: ~%38); bedel kurban sayisiyla
+   * dogrusal, kurban basina geometri eskisinden ucuz.
    */
   private getEnemiesTouchingRing(x: number, y: number, radius: number) {
     const candidates = this.enemySpatialGrid.queryCircle(x, y, radius + this.enemyBodyReachMax);
@@ -19571,15 +19818,35 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerCurrentDps(tower: TowerModel, now = this.runtime.now()) {
     this.pruneTowerDamageWindow(tower, now);
-    const damage = tower.damageWindow.reduce((total, sample) => total + sample.amount, 0);
+    // Toplam bastan sona, eski `reduce` ile ayni sirada: sonuc bire bir ayni.
+    const window = tower.damageWindow;
+    let damage = 0;
+    for (let index = tower.damageWindowHead; index < window.length; index += 1) damage += window[index].amount;
     return damage / (TOWER_DPS_WINDOW_MS / 1000);
   }
 
+  /**
+   * Pencereden (`TOWER_DPS_WINDOW_MS`) dusen kayitlar: bas indeksi ilerliyor,
+   * dizi kaydirilmiyor. Eskiden her dusen kayit bir `shift`ti (dizinin boyu
+   * kadar is): alan halkasinin her kurbani `recordTowerDamage` ile buraya
+   * geliyor, kalabalik halkada kurban basina dizinin boyu odeniyordu. Simdi
+   * olay basina sabit is (amorti): dusen kayit bir kez geciliyor; olu bas
+   * dizinin yarisini asinca bir `splice` ile atiliyor, hepsi dustuyse dizi
+   * bosaltiliyor.
+   */
   private pruneTowerDamageWindow(tower: TowerModel, now = this.runtime.now()) {
+    const window = tower.damageWindow;
     const keepAfter = now - TOWER_DPS_WINDOW_MS;
-    while (tower.damageWindow.length > 0 && tower.damageWindow[0].dealtAt < keepAfter) {
-      tower.damageWindow.shift();
+    let head = tower.damageWindowHead;
+    while (head < window.length && window[head].dealtAt < keepAfter) head += 1;
+    if (head === window.length) {
+      window.length = 0;
+      head = 0;
+    } else if (head >= 32 && head * 2 >= window.length) {
+      window.splice(0, head);
+      head = 0;
     }
+    tower.damageWindowHead = head;
   }
 
   private isEnemyInProjectileGuidance(enemy: EnemyModel, now = this.runtime.now()) {

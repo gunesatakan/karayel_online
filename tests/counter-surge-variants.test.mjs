@@ -28,6 +28,7 @@ import {
   encodeSurgeCuts,
   getAegisCrossMs,
   getAegisFrontFace,
+  AEGIS_DRAWN,
   getCounterSurgeDamageRatio,
   getProjectileSceneScale,
   getProjectileShape,
@@ -725,7 +726,11 @@ test("siper: cizilen govde on levhaya (genislik boyunca, uclar dahil) degince du
     // Levhanin ucu: Ucube'nin ekseni seridin 0,5 disinda, basi levhanin ucuna degiyor; 5 disarida degmiyor.
     const ucube = getProjectileShape("warrior-6", 1, scale);
     assert.ok(stopAt("warrior-6", span.to + 0.5, frontY + 10, 0, -1, 1000, 10) !== undefined, "levhanin ucuna degen mermi gecti");
-    assert.equal(stopAt("warrior-6", span.to + ucube.halfWidth + 0.5, frontY + 10, 0, -1, 1000, 10), undefined, "seridin disindaki mermi durdu");
+    // Uclarda direk (`getAegisPostOutline`): seridin disinda ama diregin cizilen
+    // govdesine degen mermi duruyor, onun da disindaki durmuyor.
+    const postHalf = (getMapGridSize(room.activeMap) * AEGIS_DRAWN.postCells) / 2 + AEGIS_DRAWN.postRim / 2;
+    assert.ok(stopAt("warrior-6", span.to + postHalf + ucube.halfWidth - 0.5, frontY + 10, 0, -1, 1000, 10) !== undefined, "diregin yanina degen mermi gecti");
+    assert.equal(stopAt("warrior-6", span.to + postHalf + ucube.halfWidth + 0.5, frontY + 10, 0, -1, 1000, 10), undefined, "diregin disindaki mermi durdu");
     // Gercek ucus: yandan girip on levhaya degen mermi siperde duruyor, isaret seridin genisliginde.
     room.projectiles.set("px", {
       id: "px", towerId: "t", definitionId: "warrior-6", kind: "tower", damageType: "physical", hitType: "projectile", source: "tower",

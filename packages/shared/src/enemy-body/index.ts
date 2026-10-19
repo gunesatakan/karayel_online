@@ -175,7 +175,12 @@ export type EnemyBody = {
   poly: EnemyBodyPolygon;
 };
 
-/** Yonun izi: son yon ve onu olcmek icin bir onceki konum. */
+/**
+ * Yonun izi: son yon ve onu olcmek icin bir onceki konum. Onceki konum
+ * `NaN` ise yon hic olculmedi (sunucuda telde henuz gorulmemis dusman):
+ * ilk guncelleme yalnizca konumu yaziyor, yon dondurulmemis dokuda kaliyor
+ * (istemcinin izi dusmani ilk gordugu snapshot'ta ayni sekilde).
+ */
 export type BodyHeadingState = { headingX: number; headingY: number; fromX: number; fromY: number };
 
 /**
@@ -188,7 +193,7 @@ export const SERVER_TICK_MS = 1000 / 60;
 
 /**
  * Snapshot gonderme araligi (ms): 15 kare/sn. Sunucu (`MatchRoom`) bununla
- * gonderiyor, istemcinin yon esigi bundan (`SNAPSHOT_INTERVAL_MS`).
+ * gonderiyor (gercek aralik `SNAPSHOT_INTERVAL_MS`).
  *
  * 33 ms (30 Hz) idi. Istemci zaten yarim saniyelik bir oynatma tamponu tutuyor
  * ve iki snapshot arasini aradegerliyor, yani 30 Hz'in verdigi fazladan
@@ -208,8 +213,8 @@ export const SNAPSHOT_SEND_INTERVAL_MS = 60;
 
 /**
  * Gercek snapshot araligi (ms): gonderme araligini (`SNAPSHOT_SEND_INTERVAL_MS`)
- * asan ilk tik kati, 60 ms'de 4 tik (66,67 ms). Istemcinin yon esigi bunu
- * okuyor.
+ * asan ilk tik kati, 60 ms'de 4 tik (66,67 ms). Yonun esigi ardisik iki
+ * snapshot'in saat farkindan (`getSnapshotHeadingMinStep`): bu aralikta 0,4.
  */
 export const SNAPSHOT_INTERVAL_MS = Math.ceil(SNAPSHOT_SEND_INTERVAL_MS / SERVER_TICK_MS - 1e-9) * SERVER_TICK_MS;
 
@@ -218,20 +223,14 @@ export const WIRE_POSITION_QUANTUM = 0.1;
 
 /**
  * Yon guncellemesinin yurume esigi (dunya birimi, |dx| + |dy|) sunucunun bir
- * tikinde: bunun altindaki kipirti (dururken, cok yavasken) yonu
- * degistirmiyor; son yon korunuyor.
+ * tiki basina: bunun altindaki kipirti (dururken, cok yavasken) yonu
+ * degistirmiyor; son yon korunuyor. Esik adimin suresiyle buyuyor
+ * (`getBodyHeadingMinStep`).
  */
 export const BODY_HEADING_MIN_STEP = 0.05;
 
 /**
- * Sunucunun bir tikteki esigi: yalnizca yurume esigi. Sunucu gercek
- * konumlarla olcuyor; telin yuvarlamasi istemcinin payi
- * (`BODY_HEADING_WIRE_DEAD_BAND`), sunucunun esigine eklenmiyor.
- */
-export const BODY_HEADING_TICK_STEP = BODY_HEADING_MIN_STEP;
-
-/**
- * Istemcinin olu bandi (snapshot adimi basina, |dx| + |dy|): teldeki konum
+ * Telin olu bandi (snapshot adimi basina, |dx| + |dy|): teldeki konum
  * eksen basina 0,1'e yuvarli (`WIRE_POSITION_QUANTUM`), iki yuvarli konumun
  * farki gercek farktan eksen basina en fazla bir adim, toplamda iki adim
  * sapiyor. Bu bandin icindeki adim yonu degistirmiyor (son yon korunuyor):
@@ -245,35 +244,57 @@ export const BODY_DEFAULT_HEADING_X = 0;
 export const BODY_DEFAULT_HEADING_Y = 1;
 
 /**
- * Istemcinin donme esigi, gecen `elapsedMs` (sunucu saati) icin: sunucunun
- * tik esigi o kadar tikte, arti telin olu bandi (`BODY_HEADING_WIRE_DEAD_BAND`).
- * `stepMs` adimin icinde oldugu snapshot araligi: snapshot'tan snapshot'a
- * adimda (`EnemyHeadingTracker`) adimin kendisi, bandin tamami; karede
- * (doku, iki snapshot arasi dogrusal oynatma) karenin payi kadari, cunku
- * oynatilan iki konumun yuvarlama hatasi da o payda. Istemci kareleri hangi
- * hizda cizerse cizsin (60, 144, 240 Hz) ayni snapshot adimina ayni esik.
+ * Donme esigi, gecen `elapsedMs` (sunucu saati) suren bir snapshot adimi
+ * icin: yurume esigi o kadar tikte, arti telin olu bandinin tamami
+ * (`BODY_HEADING_WIRE_DEAD_BAND`: adimin iki ucu da 0,1'e yuvarli).
  *
- * Neden ayri esik (sunucununkine bant eklenmeden): yuvarli adim
- * `0,05 k + 0,2`yi (k tik) asiyorsa gercek adim `0,05 k`yi asiyor, o
- * tiklerin en az birinde sunucu da dondu. Istemci sunucu donmeden donmuyor.
- * Kalan fark kurala ozgu, kapatilamiyor: (1) |dx| + |dy| hizi tik basina
- * 0,05 ile 0,1 arasinda (3-6 birim/sn) yuruyeni sunucu ceviriyor, istemci
- * yuvarlamaya gore cevirmeyebiliyor ya da bir snapshot sonra ceviriyor;
- * (2) istemcinin yonu snapshot adiminin yuvarli yonu, sunucununki son tikin
- * gercek yonu: kosede ve egride bir snapshot boyu, ayrica yuvarlamanin
- * acisi (kosucuda ~3, piyadede ~5 derece; esige yakin yavas yuruyende
- * onlarca derece) ayrisiyor; (3) istemci donusu snapshot gelince goruyor.
- * Gecen sure yoksa (oynatma saati durdu) donus yok.
+ * Sunucu yonu kendi gercek konumlariyla tik tik olcmuyor: snapshot
+ * yayininda, istemcinin gordugu girdilerle (0,1'e yuvarli tel konumlari, bu
+ * esik, ardisik iki yayinin `serverTime` farki: `getSnapshotHeadingMinStep`)
+ * istemcinin iziyle (`EnemyHeadingTracker`) ayni guncellemeyi yapiyor ve iki
+ * yayin arasinda yonu tutuyor; doku oynatilan snapshot adiminin bu yonunu
+ * ciziyor. Eskiden sunucu gercek konumla tik basina 0,05 esigiyle donuyordu,
+ * doku her karede gosterilen konum farkiyla: |dx| + |dy| hizi tik basina
+ * 0,05 ile 0,1 arasinda (3-6 birim/sn, Zeynep'in %59-94 yavaslatmasi
+ * altindaki yuruyus) sunucu govdeyi ceviriyor, istemcinin yuvarli adimi
+ * esigi asmiyor, doku ve iz yavas yuruyus suresince eski yonde kaliyordu
+ * (90 derecede govdenin kenari 2-9 birim kayiyordu). Simdi snapshot'lari
+ * eksiksiz alan istemcinin izi sunucunun govdesiyle bire bir ayni, doku her
+ * snapshot sinirinda. Kalan fark yalnizca snapshot kaciran istemcide (geri
+ * basinc atlamasi, kopup gelme): onun adimi iki yayini birden asiyor;
+ * sonraki ilk donus adiminda yeniden ayni (sonradan gelen istemcinin yon
+ * tohumu: `createStaticEnemySnapshot`). Gecen sure yoksa donus yok.
  */
-export function getBodyHeadingMinStep(elapsedMs: number, stepMs = SNAPSHOT_INTERVAL_MS) {
+export function getBodyHeadingMinStep(elapsedMs: number) {
   if (!(elapsedMs > 0)) return Number.POSITIVE_INFINITY;
-  const share = stepMs > elapsedMs ? elapsedMs / stepMs : 1;
-  return BODY_HEADING_MIN_STEP * (elapsedMs / SERVER_TICK_MS) + BODY_HEADING_WIRE_DEAD_BAND * share;
+  return BODY_HEADING_MIN_STEP * (elapsedMs / SERVER_TICK_MS) + BODY_HEADING_WIRE_DEAD_BAND;
 }
 
-/** Adim yonu degistiriyor mu: istemcinin ve sunucunun ortak kurali. */
+/**
+ * Snapshot'tan snapshot'a adimin esigi: bu snapshot'in `serverTime`i ve bir
+ * oncekinin (`undefined`: ilk snapshot, bir tik sayiliyor; saat geri
+ * gittiyse de en az bir tik). Sunucunun govdesi (yayinda) ve istemcinin izi
+ * (`EnemyHeadingTracker`, gelen snapshot'ta) ayni fonksiyonla: ikisinin
+ * yonu bire bir ayni kalsin.
+ */
+export function getSnapshotHeadingMinStep(serverTime: number, previousServerTime: number | undefined) {
+  const elapsed = previousServerTime === undefined ? SERVER_TICK_MS : Math.max(SERVER_TICK_MS, serverTime - previousServerTime);
+  return getBodyHeadingMinStep(elapsed);
+}
+
+/**
+ * Esige esit sayilan pay (dunya birimi). Yuvarli tel konumlarinin farki
+ * 0,1'in kati, snapshot adiminin esigi tam 0,4: 0,4'luk adim (4,6 birim/sn
+ * kosucu, 6 birim/sn yuruyen) kayan noktanin gurultusuyle (82,4 - 82 =
+ * 0,4000000000000057) kimi snapshot'ta esigi asiyor, kimi snapshot'ta
+ * asmiyordu: yon yuvarlamanin kipirtisina gore donuyordu. Esitlik (ve payin
+ * icindeki fark) hep "donmuyor"; iki yan ayni kuralla.
+ */
+export const BODY_HEADING_STEP_EPSILON = 1e-9;
+
+/** Adim yonu degistiriyor mu: istemcinin izinin ve sunucunun govdesinin ortak kurali. */
 export function isBodyHeadingStep(dx: number, dy: number, minStep: number) {
-  return Math.abs(dx) + Math.abs(dy) > minStep;
+  return Math.abs(dx) + Math.abs(dy) > minStep + BODY_HEADING_STEP_EPSILON;
 }
 
 /** Dokunun donusu (radyan) bu yon icin: +y ekseni yon, yani atan2 - 90 derece. */
@@ -325,11 +346,21 @@ export function createEnemyBody(view: EnemyBodyView, cellSize: number, x: number
  * `undefined` (cizilmeyen levha atis kesmiyor).
  */
 export function createPlateBody(cx: number, cy: number, tx: number, ty: number, halfLength: number, halfThickness: number): EnemyBody | undefined {
-  if (!(halfLength > 0) || !(halfThickness > 0) || !(tx * tx + ty * ty > 0)) return undefined;
+  if (!(halfLength > 0) || !(halfThickness > 0)) return undefined;
+  return createPlateOutlineBody(cx, cy, tx, ty, [-halfLength, -halfThickness, halfLength, -halfThickness, halfLength, halfThickness, -halfLength, halfThickness]);
+}
+
+/**
+ * Levhanin genel bicimi: dis bukey cizilen parca (siperin direkleri),
+ * `outline` levhanin cercevesinde `[t, normal]` ciftleri, saat yonunun
+ * tersine. Merkez `cx, cy` cercevenin kokeni. Yonu yoksa `undefined`.
+ */
+export function createPlateOutlineBody(cx: number, cy: number, tx: number, ty: number, outline: EnemyBodyOutline): EnemyBody | undefined {
+  if (!(tx * tx + ty * ty > 0)) return undefined;
   const inverse = 1 / Math.sqrt(tx * tx + ty * ty);
   const ax = tx * inverse;
   const ay = ty * inverse;
-  const poly = createEnemyBodyPolygon([-halfLength, -halfThickness, halfLength, -halfThickness, halfLength, halfThickness, -halfLength, halfThickness]);
+  const poly = createEnemyBodyPolygon(outline);
   return {
     x: cx,
     y: cy,
@@ -344,14 +375,15 @@ export function createPlateBody(cx: number, cy: number, tx: number, ty: number, 
 }
 
 /**
- * Yonu konum degisiminden gunceller: istemcinin kuralinin aynisi (son
- * konumdan bu konuma `minStep`ten buyuk adim varsa yon o adim, yoksa son yon
- * korunuyor). Her cagrida "son konum" yaziliyor. Yurume, itme, geri yurume
- * (Melis'in olusu) hepsi ayni: istemci hepsinde dokuyu ceviriyor. Tahsis
- * yok; adim varsa bir karekok. Varsayilan esik sunucunun tikininki;
- * istemci kendi esigini veriyor (`getBodyHeadingMinStep`).
+ * Yonu konum degisiminden gunceller: istemcinin ve sunucunun ortak kurali
+ * (son konumdan bu konuma `minStep`ten buyuk adim varsa yon o adim, yoksa
+ * son yon korunuyor). Her cagrida "son konum" yaziliyor; son konum `NaN`
+ * ise (hic olculmedi) adim yok, yalnizca konum yaziliyor. Yurume, itme,
+ * geri yurume (Melis'in olusu) hepsi ayni: istemci hepsinde dokuyu
+ * ceviriyor. Tahsis yok; adim varsa bir karekok. Esik adimin suresinden
+ * (`getSnapshotHeadingMinStep`).
  */
-export function updateBodyHeading(state: BodyHeadingState, x: number, y: number, minStep = BODY_HEADING_TICK_STEP) {
+export function updateBodyHeading(state: BodyHeadingState, x: number, y: number, minStep: number) {
   const dx = x - state.fromX;
   const dy = y - state.fromY;
   state.fromX = x;
@@ -1805,17 +1837,44 @@ function loadPartPolygon(table: ProjectilePartTable, part: number) {
 }
 
 /**
+ * Alani bundan kucuk parca (isaretli alanin iki kati, dunya biriminin
+ * karesi) duz: kesimin cizgisine yatmis. Ornegin dogan Ucube'de (`reach`
+ * 0) damlanin `x >= 0` kesigi x = 0 cizgisinde 3 koseli, alansiz bir
+ * cokgen. Gercek parcalarin en incesi (Hiza'nin govde cizgisi) bunun
+ * milyarlarca kati.
+ */
+const PART_FLAT_AREA = 1e-9;
+
+/** `PART_POLYGON`in ilk `count` kosesinin isaretli alaninin iki kati (saat yonunun tersi arti). */
+function getPartPolygonArea2(count: number) {
+  let area = 0;
+  for (let i = 0; i < count; i += 1) {
+    const j = i + 1 === count ? 0 : i + 1;
+    area += PART_POLYGON[2 * i] * PART_POLYGON[2 * j + 1] - PART_POLYGON[2 * j] * PART_POLYGON[2 * i + 1];
+  }
+  return area;
+}
+
+/**
  * Parcanin (`PIECE`) merminin bir dis bukey parcasina (`PART_POLYGON`)
  * gore adayi: kesisiyorsa kesisim araligi (uzaklik 0, eksene en yakini),
  * kesismiyorsa parcanin parcaya en yakin noktasi (uclar cokgenin
  * kenarlarina, cokgenin koseleri parcaya). Kesin.
+ *
+ * Kirpma (Cyrus-Beck) yalnizca alani olan parcada (`PART_FLAT_AREA`). Duz
+ * parcada her kenarin payi sifir: parcanin cizginin ustundeki ucu, yanal
+ * uzakligi ne olursa olsun, "kesisiyor" (uzaklik 0) cikiyordu. Dusmanin
+ * kenarlari dilime kirpilinca kesimin cizgisinde basladigi icin temas
+ * noktasi kayan noktanin yuvarlamasina gore govdenin obur yanina (15
+ * birim uzaga) dusebiliyordu. Duz parca kesimin cizgisinde yatiyor: dilime
+ * kirpilmis kenar ona ancak ucundan degebiliyor, en yakin cift kesin.
  */
 function considerPieceAgainstPolygon(count: number) {
   const ax = PIECE[0];
   const ay = PIECE[1];
   const dx = PIECE[2] - ax;
   const dy = PIECE[3] - ay;
-  if (count >= 3) {
+  if (count >= 3 && getPartPolygonArea2(count) > PART_FLAT_AREA) {
     // Cyrus-Beck: kenarlarin sol yani (saat yonunun tersi) ic.
     let t0 = 0;
     let t1 = 1;
