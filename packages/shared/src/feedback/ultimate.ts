@@ -111,18 +111,23 @@ export function getUltimateColumnSpan(originX: number, gridSize: number, column:
 /**
  * Atis aninda en kalabalik sutunun yakalayacagi dusman sayisi.
  *
- * `xs` vurulabilecek dusmanlarin x'i (bagisik olan disarida). Sutun basina
- * dusman sayisini sunucunun sol <= x < sag kuraliyla sayiyor; harita disindaki
- * dusman hicbir sutuna girmiyor. Ulti basina bir kez, sutun x dusman kadar.
+ * `xs` vurulabilecek dusmanlarin x'i (bagisik olan disarida); `halfWidths`
+ * verilirse her dusmanin govdesinin x boyunca yari genisligi (sunucu govdesi
+ * sutuna degeni vuruyor: `x + yari >= sol` ve `x - yari < sag`), verilmezse
+ * merkez (sol <= x < sag). Harita disindaki dusman hicbir sutuna girmiyor.
+ * Ulti basina bir kez, sutun x dusman kadar.
  */
-export function getBestUltimateColumnHits(xs: Iterable<number>, originX: number, gridSize: number, cols: number) {
-  const points = [...xs].filter((x) => Number.isFinite(x));
+export function getBestUltimateColumnHits(xs: Iterable<number>, originX: number, gridSize: number, cols: number, halfWidths?: readonly number[]) {
+  const points = [...xs];
   let best = 0;
   for (let column = 0; column < cols; column += 1) {
     const { left, right } = getUltimateColumnSpan(originX, gridSize, column);
     let count = 0;
-    for (const x of points) {
-      if (x >= left && x < right) count += 1;
+    for (let index = 0; index < points.length; index += 1) {
+      const x = points[index];
+      if (!Number.isFinite(x)) continue;
+      const half = halfWidths?.[index] ?? 0;
+      if (x + half >= left && x - half < right) count += 1;
     }
     best = Math.max(best, count);
   }

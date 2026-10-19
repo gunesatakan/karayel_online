@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TOWER_GRID_SIZE } from "../packages/shared/dist/index.js";
-import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { createRoom, findBuildableSpot, syncEnemyBodies } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
 
@@ -33,6 +33,8 @@ function dusman(room, tower, aci, uzaklik) {
     hp: 1_000_000, maxHp: 1_000_000, shield: 0, maxShield: 0, armor: 0,
     damageResistances: {}, hitTypeResistances: {}, statusResistances: {}
   });
+  // Govde yeni konumda (uretimde tikin basinda): agiz govdeye gore kesiliyor.
+  syncEnemyBodies(room);
   return enemy;
 }
 

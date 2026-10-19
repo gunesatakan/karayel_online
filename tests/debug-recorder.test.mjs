@@ -495,9 +495,12 @@ test("uretim yolundan bot maci kaydi birebir yeniden oynaniyor (solo, iki dalga)
     assert.equal(fingerprintHash(replay.room.getDebugFingerprint()), recording.finalFingerprint.h);
 
     // Parmak izi duyarli: tek bir mesaji degistirmek ayrilmayi yakaliyor.
+    // Degistirilen ilk kurulum: botun son kurulumlari dolu hucreye her tik
+    // yeniden denenen (reddedilen) istekler olabiliyor, onlari tasimak oyunu
+    // degistirmiyor; ilk kule her zaman kuruluyor.
     const placements = recording.events.filter((event) => event.e === "msg" && event.y === "placeTower");
     assert.ok(placements.length > 0);
-    const tampered = assembleRecording(recording.lines.map((line) => (line === placements.at(-1) ? { ...line, m: { ...line.m, x: line.m.x + 64 } } : line)));
+    const tampered = assembleRecording(recording.lines.map((line) => (line === placements[0] ? { ...line, m: { ...line.m, x: line.m.x + 64 } } : line)));
     const diverged = await replayRecording(tampered, { stopOnDivergence: true });
     assert.ok(diverged.mismatches.length > 0, "degistirilmis kayit ayni izi verdi");
   } finally {

@@ -6,6 +6,13 @@
  * kirilmasin diye var. Gercek bir sahne, doku ya da WebGL saglamiyor.
  */
 const Phaser = {
+  // Sahne siniflari (PreloaderScene) paketlenebilsin diye: dokularin cizimi
+  // sahte `make.graphics` ile olculuyor, sahnenin kendisi calismiyor.
+  Scene: class Scene {
+    constructor(config) {
+      this.config = config;
+    }
+  },
   Math: {
     Clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
     Linear: (from, to, t) => from + (to - from) * t,

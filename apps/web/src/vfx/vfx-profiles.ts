@@ -21,38 +21,23 @@
  * Siluet kademeyle buyumuyor (12-16 birim); kalinlik ve cekirdek buyuyor.
  * Renk ve siluet LOD'da hic kesilmiyor.
  */
-import type { TowerDefinition } from "@karayel/shared";
+import {
+  PROJECTILE_SILHOUETTE_SIZE,
+  PROJECTILE_TIER_WEIGHT,
+  getProjectileProfileId,
+  getProjectileSilhouette,
+  getProjectileThickness,
+  type ProjectileSilhouette,
+  type TowerDefinition
+} from "@karayel/shared";
 import { fromHsl, groundHue, liftToWhite, toHsl, whiteHot, type VfxTier } from "./kit";
 
-/** Merminin govdesi nasil ciziliyor. Ses (hit-sounds) bunu okuyor: degerler sabit. */
-export type VfxSilhouette =
-  /** Sivri ok ucu; tek hedefe mermi. */
-  | "dart"
-  /** Yogun enerji gullesi; alan hasari. */
-  | "orb"
-  /** Agir, koyu kenarli gulle. */
-  | "ball"
-  /** Ince halkali destek atisi. */
-  | "ring"
-  /** Kulenin kendi cizilmis dokusu (Melis). */
-  | "sprite"
-  /** combat-vfx'in hareketli govdesi (Takipci). */
-  | "combat"
-  /** Ucan goz: badem mercek ve yarik gozbebegi; kademeyle iris ve odak halkalari (Obsesyon, atakan-shots). */
-  | "gaze"
-  /** Veri paketi: koseli agir govde (Sunucu). */
-  | "packet"
-  /** Altigen kabuk: kapatma alaninin kucuk hali (Izolasyon). */
-  | "cell"
-  /** Plazma yuku: kapsul, kademeyle yildirim topu ve simsek kuyrugu (Ucube, atakan-shots). */
-  | "arc"
-  /**
-   * Zeynep'in mizragi: ince uzun govde ve sivri uc; Taht'ta kuyrugunda
-   * dizilimin isareti (uc kertik, uyelerin renginde).
-   */
-  | "lance"
-  /** Mermi yok; isin, dalga ya da yorunge. */
-  | "none";
+/**
+ * Merminin govdesi nasil ciziliyor. Ses (hit-sounds) bunu okuyor: degerler
+ * sabit. Siluet, boyu ve kalinligi paylasilan pakette (`projectile-body`):
+ * sunucunun isabet sekli cizilen govdeden.
+ */
+export type VfxSilhouette = ProjectileSilhouette;
 
 /** Carpmanin dili; mekanigi tasiyan kisim. Ses de okuyor: degerler sabit. */
 export type VfxImpactStyle =
@@ -218,8 +203,8 @@ export type VfxProfile = {
 
 /** Kademe basina cekirdek sicakligi: 1 sicak, 2 daha beyaz, 3 beyaz-sicak. */
 export const TIER_HEAT = [0.5, 0.7, 0.88] as const;
-/** Kademe basina govde agirligi. */
-export const TIER_WEIGHT = [1, 1.3, 1.6] as const;
+/** Kademe basina govde agirligi (paylasilan: govdenin eni bununla). */
+export const TIER_WEIGHT = PROJECTILE_TIER_WEIGHT;
 /** Kademe basina tonun beyaza cekilmesi (kenar biraz isiniyor; ton ayni). */
 /** En fazla 0.2: ton acikligi 0.7nin altinda kaliyor (pastel bant yok). */
 const TIER_EDGE_LIFT = [0, 0.1, 0.2] as const;
@@ -248,20 +233,8 @@ export function hueDistance(a: number, b: number) {
 /* Kademe tarifleri                                                     */
 /* ------------------------------------------------------------------ */
 
-const SILHOUETTE_SIZE: Record<VfxSilhouette, number> = {
-  dart: 14,
-  orb: 13,
-  ball: 15,
-  ring: 13,
-  sprite: 16,
-  combat: 14,
-  gaze: 14,
-  packet: 14,
-  cell: 13,
-  arc: 14,
-  lance: 15,
-  none: 12
-};
+/** Siluetin boyu: paylasilan pakette (isabet sekli ayni sayidan). */
+const SILHOUETTE_SIZE = PROJECTILE_SILHOUETTE_SIZE;
 
 /** Carpma dilinden madde: kinetik (kirinti, kivilcim, duman) ya da enerji (catirti, isi). */
 const IMPACT_MATTER: Record<VfxImpactStyle, VfxMatter> = {
@@ -328,7 +301,8 @@ function makeTiers(
 type ProfileSeed = {
   character: string;
   delivery: VfxDelivery;
-  silhouette: VfxSilhouette;
+  /** Yoksa paylasilan siluet (`getProjectileSilhouette`); ultiler kendi silueti. */
+  silhouette?: VfxSilhouette;
   impact: VfxImpactStyle;
   base: number;
   /** Kimlik tonu elle (Debug Lazer'in rampasi gibi); yoksa tabandan yere indirilmis. */
@@ -336,8 +310,6 @@ type ProfileSeed = {
   heavy?: boolean;
   aoe?: boolean;
   matter?: VfxMatter;
-  /** Govde kalinligi carpani; yoksa 1. */
-  thickness?: number;
   signature?: VfxMechanic;
   court?: VfxCourtMechanic;
 };
@@ -347,44 +319,44 @@ type ProfileSeed = {
  * gercek kimligi saldirisinin tonunda. Ton bu renklerden, yere indirilmis.
  */
 const PROFILE_SEEDS: Record<string, ProfileSeed> = {
-  "warrior-1": { character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "brackets", base: 0x4dffbd, signature: "mark-reticle" },
-  "warrior-2": { character: "warrior", delivery: "ballistic", silhouette: "packet", impact: "uplink", base: 0x58d9ff, heavy: true, aoe: true, signature: "uplink-column" },
-  "warrior-3": { character: "warrior", delivery: "homing", silhouette: "cell", impact: "contain", base: 0x7fe5e8, signature: "containment" },
-  "warrior-4": { character: "warrior", delivery: "ballistic", silhouette: "gaze", impact: "collapse", base: 0xcb79ff, signature: "tether" },
+  "warrior-1": { character: "warrior", delivery: "ballistic", impact: "brackets", base: 0x4dffbd, signature: "mark-reticle" },
+  "warrior-2": { character: "warrior", delivery: "ballistic", impact: "uplink", base: 0x58d9ff, heavy: true, aoe: true, signature: "uplink-column" },
+  "warrior-3": { character: "warrior", delivery: "homing", impact: "contain", base: 0x7fe5e8, signature: "containment" },
+  "warrior-4": { character: "warrior", delivery: "ballistic", impact: "collapse", base: 0xcb79ff, signature: "tether" },
   // Lazerin rampasi sunucudaki DEBUG_LASER_TIER_COLORS: kirmizi, mavi, beyaz.
   // Isin kendi cizimini koruyor (dokunulmadi); rampa yalnizca kule halkasi ve galeri icin.
-  "warrior-5": { character: "warrior", delivery: "laser", silhouette: "none", impact: "fragments", base: 0xef4444, ramp: [0xef4444, 0x60a5fa, 0xe0f2fe] },
-  // Ucube 2x2 kule: mermisi de iki kat kalin (boyu ayni).
-  "warrior-6": { character: "warrior", delivery: "ballistic", silhouette: "arc", impact: "bolt", base: 0xadf765, thickness: 2, signature: "stack-gauge" },
+  "warrior-5": { character: "warrior", delivery: "laser", impact: "fragments", base: 0xef4444, ramp: [0xef4444, 0x60a5fa, 0xe0f2fe] },
+  // Ucube 2x2 kule: mermisi iki kat kalin (boyu ayni); kalinlik paylasilan pakette.
+  "warrior-6": { character: "warrior", delivery: "ballistic", impact: "bolt", base: 0xadf765, signature: "stack-gauge" },
 
   // Zeynep: kizil, mor ve eflatun kenar tonu; govdenin enerjisi beyaz-sicak.
-  "zeynep-1": { character: "zeynep", delivery: "ballistic", silhouette: "lance", impact: "decree", base: 0xec4899, court: "pierce-line" },
-  "zeynep-2": { character: "zeynep", delivery: "showcase", silhouette: "none", impact: "fragments", base: 0xf9a8d4, court: "spotlight" },
-  "zeynep-3": { character: "zeynep", delivery: "synthesis", silhouette: "lance", impact: "decree", base: 0xf0abfc, court: "formation-seal" },
-  "zeynep-6": { character: "zeynep", delivery: "kin", silhouette: "none", impact: "ripple", base: 0xdc466d, court: "brand" },
+  "zeynep-1": { character: "zeynep", delivery: "ballistic", impact: "decree", base: 0xec4899, court: "pierce-line" },
+  "zeynep-2": { character: "zeynep", delivery: "showcase", impact: "fragments", base: 0xf9a8d4, court: "spotlight" },
+  "zeynep-3": { character: "zeynep", delivery: "synthesis", impact: "decree", base: 0xf0abfc, court: "formation-seal" },
+  "zeynep-6": { character: "zeynep", delivery: "kin", impact: "ripple", base: 0xdc466d, court: "brand" },
   // Abarti ates etmiyor (saldiri sayilmiyor); profili gecis nabzinin tonu icin.
-  "zeynep-8": { character: "zeynep", delivery: "rail", silhouette: "none", impact: "ripple", base: 0x7c3aed, court: "crossing-pulse" },
+  "zeynep-8": { character: "zeynep", delivery: "rail", impact: "ripple", base: 0x7c3aed, court: "crossing-pulse" },
 
-  "archer-1": { character: "archer", delivery: "ballistic", silhouette: "sprite", impact: "brackets", base: 0x8b5cf6 },
-  "archer-2": { character: "archer", delivery: "ballistic", silhouette: "sprite", impact: "shatter", base: 0xdb2777 },
-  "archer-3": { character: "archer", delivery: "curse", silhouette: "none", impact: "curse", base: 0x7f1dff, aoe: true },
-  "archer-4": { character: "archer", delivery: "underworld", silhouette: "none", impact: "curse", base: 0x14b8a6 },
-  "archer-5": { character: "archer", delivery: "ballistic", silhouette: "sprite", impact: "shatter", base: 0xe879f9 },
-  "archer-6": { character: "archer", delivery: "whisper", silhouette: "sprite", impact: "ripple", base: 0x14b8a6, aoe: true },
+  "archer-1": { character: "archer", delivery: "ballistic", impact: "brackets", base: 0x8b5cf6 },
+  "archer-2": { character: "archer", delivery: "ballistic", impact: "shatter", base: 0xdb2777 },
+  "archer-3": { character: "archer", delivery: "curse", impact: "curse", base: 0x7f1dff, aoe: true },
+  "archer-4": { character: "archer", delivery: "underworld", impact: "curse", base: 0x14b8a6 },
+  "archer-5": { character: "archer", delivery: "ballistic", impact: "shatter", base: 0xe879f9 },
+  "archer-6": { character: "archer", delivery: "whisper", impact: "ripple", base: 0x14b8a6, aoe: true },
 
-  "onur-1": { character: "onur", delivery: "orbit", silhouette: "none", impact: "slash", base: 0x14b8a6 },
-  "onur-2": { character: "onur", delivery: "ballistic", silhouette: "dart", impact: "fragments", base: 0x14b8a6, heavy: true },
-  "onur-3": { character: "onur", delivery: "ballistic", silhouette: "dart", impact: "fragments", base: 0x2dd4bf },
-  "onur-4": { character: "onur", delivery: "ballistic", silhouette: "dart", impact: "brackets", base: 0x14b8a6 },
-  "onur-5": { character: "onur", delivery: "ballistic", silhouette: "dart", impact: "fragments", base: 0x0d9488 },
-  "onur-6": { character: "onur", delivery: "ballistic", silhouette: "dart", impact: "slash", base: 0x5eead4 }
+  "onur-1": { character: "onur", delivery: "orbit", impact: "slash", base: 0x14b8a6 },
+  "onur-2": { character: "onur", delivery: "ballistic", impact: "fragments", base: 0x14b8a6, heavy: true },
+  "onur-3": { character: "onur", delivery: "ballistic", impact: "fragments", base: 0x2dd4bf },
+  "onur-4": { character: "onur", delivery: "ballistic", impact: "brackets", base: 0x14b8a6 },
+  "onur-5": { character: "onur", delivery: "ballistic", impact: "fragments", base: 0x0d9488 },
+  "onur-6": { character: "onur", delivery: "ballistic", impact: "slash", base: 0x5eead4 }
 };
 
-/** Taslak karakterlerin sinif silueti: kulenin kendi tonu, kendi sekli. */
-const STUB_CLASS: Record<string, { silhouette: VfxSilhouette; impact: VfxImpactStyle }> = {
-  mage: { silhouette: "orb", impact: "splash" },
-  healer: { silhouette: "ring", impact: "ripple" },
-  tank: { silhouette: "ball", impact: "fragments" }
+/** Taslak karakterlerin carpma dili (siluetleri paylasilan pakette: orb, ring, ball). */
+const STUB_CLASS: Record<string, { impact: VfxImpactStyle }> = {
+  mage: { impact: "splash" },
+  healer: { impact: "ripple" },
+  tank: { impact: "fragments" }
 };
 
 /** Galeri ve kapsam testi icin: saldiran kule mi. Destek, duvar, depo ve kaynak degil. */
@@ -403,13 +375,10 @@ const cache = new Map<string, VfxProfile>();
  * Sunucu ozel atislara son ek veriyor: "archer-6-whisper",
  * "zeynep-3-kin-projectile", "archer-3-curse-burst". Profil kulenin.
  */
-export function getProfileDefinitionId(definitionId: string | undefined) {
-  if (!definitionId) return "";
-  const match = /^(warrior|zeynep|archer|mage|healer|tank|onur)-\d+/.exec(definitionId);
-  return match ? match[0] : definitionId;
-}
+export const getProfileDefinitionId = getProjectileProfileId;
 
 function buildProfile(id: string, seed: ProfileSeed): VfxProfile {
+  const silhouette = seed.silhouette ?? getProjectileSilhouette(id);
   const hue = seed.ramp ? seed.ramp[0] : groundHue(seed.base);
   const ramp = seed.ramp ?? deriveHeatRamp(hue);
   const matter = seed.matter ?? IMPACT_MATTER[seed.impact];
@@ -419,7 +388,7 @@ function buildProfile(id: string, seed: ProfileSeed): VfxProfile {
     id,
     character: seed.character,
     delivery: seed.delivery,
-    silhouette: seed.silhouette,
+    silhouette,
     impact: seed.impact,
     matter,
     base: seed.base,
@@ -427,7 +396,7 @@ function buildProfile(id: string, seed: ProfileSeed): VfxProfile {
     ramp,
     heavy,
     aoe,
-    tiers: makeTiers(ramp, hue, seed.silhouette, matter, heavy, aoe, seed.thickness ?? 1),
+    tiers: makeTiers(ramp, hue, silhouette, matter, heavy, aoe, getProjectileThickness(id)),
     ...(seed.signature ? { signature: { mechanic: seed.signature } } : {}),
     ...(seed.court ? { court: { mechanic: seed.court } } : {})
   };
@@ -452,7 +421,6 @@ export function getVfxProfile(definitionId: string | undefined, fallbackColor = 
       seed = {
         character: stub[1],
         delivery: "ballistic",
-        silhouette: klass.silhouette,
         impact: klass.impact,
         // Ayni karakterin alti kulesi ayni rengi tasiyor; ton kuleden kuleye
         // biraz kayiyor ki galeride ayirt edilsin (aile ayni).
@@ -461,7 +429,7 @@ export function getVfxProfile(definitionId: string | undefined, fallbackColor = 
         aoe: stub[1] === "mage"
       };
     } else {
-      seed = { character: "unknown", delivery: "ballistic", silhouette: "dart", impact: "fragments", base: fallbackColor };
+      seed = { character: "unknown", delivery: "ballistic", impact: "fragments", base: fallbackColor };
       // Bilinmeyen kimlik onbellege girmiyor: renk cagirandan geliyor.
       return buildProfile(id, seed);
     }

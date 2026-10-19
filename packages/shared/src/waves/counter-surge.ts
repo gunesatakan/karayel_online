@@ -436,6 +436,23 @@ export function getAegisCrossMs(lengthWorld: number, gruntSpeedPerSecond: number
   return (lengthWorld / gruntSpeedPerSecond) * 1000;
 }
 
+/**
+ * Siperin on cizgileri (counter-surge `drawAegis`): on cizgide `rim`
+ * kalinliginda soguk kenar, onunde `edgeOffset` uzakta `edge` kalinliginda
+ * ince cizgi. Sunucu mermiyi cizilen yuzde durduruyor (`getAegisFrontFace`):
+ * ikisi ayni sayilardan.
+ */
+export const AEGIS_FRONT_STROKES = { rim: 2.4, edgeOffset: 1.5, edge: 1 } as const;
+
+/**
+ * On cizgiden cizilen yuze (dunya birimi): sert kenarin (alfa 0,95) yarisi,
+ * iki yanda. Onundeki ince cizgi (alfa 0,55) soluk bir parilti, govde degil
+ * (mermilerin olcumundeki esik: alfa >= 0,6).
+ */
+export function getAegisFrontFace() {
+  return AEGIS_FRONT_STROKES.rim / 2;
+}
+
 // --- Tel kodlari ---------------------------------------------------------------------
 
 /** Cesidin tel kodu (`k`): `band` 0 ve telde yazilmiyor (eski kayit = bugunku serit). */

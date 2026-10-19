@@ -30,28 +30,39 @@
  */
 import {
   GAME_SPEED_MULTIPLIER,
-  KIN_WAVE_BAND_DEPTH,
   applyStatusResistance,
   collectZeynepSynthesisGroup,
   enemyCombatDefinitions,
   getAbartiRailRect,
   getAbartiShowcaseRangeMultiplier,
-  getEnemyTypeCollisionRadius,
+  createKinWaveSector,
+  getKinWaveBandAhead,
+  getKinWaveBandBehind,
+  getProjectileLanceMode,
+  getProjectileSceneScale,
   getSegmentRectEntry,
+  LANCE_SHOT_BODY,
+  TAHT_COPY_PROJECTILE_ID,
+  TOWER_GRID_SIZE,
   getTowerSlowDurationMs,
   isAbartiArmorBreakProjectile,
+  isBodyInKinShowcase,
+  isBodyTouchingKinWave,
   isTargetInsideAttackShape,
   isValidZeynepFormationGroup,
   towerCatalog,
+  writeKinWaveSector,
   type AbartiRailRect,
   type AttackShapeQuery,
   type BeamSnapshot,
   type EnemySnapshot,
+  type ProjectileLanceMode,
   type SynergyStructure,
   type TowerDefinition,
   type TowerSnapshot
 } from "@karayel/shared";
 import { PRESSURE_WAVE_GAIN, gainColor, getTierEdge } from "./combat-vfx";
+import { createBodyScratch, writeSnapshotEnemyBody, type HeadingSource } from "./enemy-bodies";
 import { getMarkReticleHalf } from "./atakan-signatures";
 import { TEAMMATE_EXTRA_ALPHA, clamp01, darken, drawSlug, fillDisc, fnvHash, groundHue, whiteHot, type VfxGraphics, type VfxTier } from "./kit";
 import { VfxLod } from "./lod";
@@ -85,8 +96,12 @@ export const KIN_PUSH_BRAND_MS = 520;
 export const BRAND_PIP_SIZE = 3;
 export const BRAND_PIP_GAP = 2;
 
-/** Taht'in kopyaladigi Hiza mermisi: sunucu "zeynep-1" gonderiyor, istemci ayirt ediyor. */
-export const TAHT_COPY_ID = "zeynep-3-copy";
+/**
+ * Taht'in kopyaladigi Hiza mermisi: sunucu "zeynep-1" gonderiyor, istemci
+ * ayirt ediyor. Kimlik paylasilan pakette: sunucu govdeyi (isabet seklini)
+ * dogumda ayni kimlikten aliyor.
+ */
+export const TAHT_COPY_ID = TAHT_COPY_PROJECTILE_ID;
 
 /* ------------------------------------------------------------------ */
 /* Renkler                                                              */
@@ -114,17 +129,10 @@ export function getZeynepMemberColor(definitionId: string) {
   }
 }
 
-/** Mizragin kipi: Hiza'nin kendi atisi ya da Taht'in uc mizragi. */
-export type LanceMode = "hiza" | "dual" | "kin" | "copy";
+/** Mizragin kipi: Hiza'nin kendi atisi ya da Taht'in uc mizragi (paylasilan: kip govdenin boyunu belirliyor). */
+export type LanceMode = ProjectileLanceMode;
 
-export function getLanceMode(definitionId: string | undefined): LanceMode {
-  switch (definitionId) {
-    case "zeynep-3": return "dual";
-    case "zeynep-3-kin-projectile": return "kin";
-    case TAHT_COPY_ID: return "copy";
-    default: return "hiza";
-  }
-}
+export const getLanceMode = getProjectileLanceMode;
 
 /**
  * Mizragin govde tonu: kip kendi tonunda. Eskiden Kin, cift ve kopya kipi
@@ -252,25 +260,30 @@ export function drawZeynepLance(g: VfxGraphics, x: number, y: number, angle: num
   const nx = -uy;
   const ny = ux;
 
-  drawSlug(g, x, y, ux, uy, r * 2, Math.max(1, r * 0.2 * weight), color, heat);
-  const tip = r * 1.05;
-  const half = r * 0.3 * weight;
+  // Dis hatlarin carpanlari paylasilan pakette (`LANCE_SHOT_BODY`): sunucunun isabet sekli ayni sayilardan.
+  const body = LANCE_SHOT_BODY;
+  drawSlug(g, x, y, ux, uy, r * body.shaft, Math.max(body.minShaftWidth, r * body.shaftWidth * weight), color, heat);
+  const tip = r * body.tip;
+  const half = r * body.headHalf * weight;
+  const back = r * body.headBack;
   g.fillStyle(whiteHot(color, heat), 0.97);
-  g.fillTriangle(x + ux * tip, y + uy * tip, x - ux * r * 0.15 + nx * half, y - uy * r * 0.15 + ny * half, x - ux * r * 0.15 - nx * half, y - uy * r * 0.15 - ny * half);
+  g.fillTriangle(x + ux * tip, y + uy * tip, x - ux * back + nx * half, y - uy * back + ny * half, x - ux * back - nx * half, y - uy * back - ny * half);
   if (dual && tier >= 2) drawDualLanceCore(g, x, y, ux, uy, nx, ny, r, weight, tier, color, options);
 
   const sigil = LANCE_SIGILS[mode];
   if (!sigil) return;
   // Dizilimin kertikleri: kuyrugun arkasinda iki uye yan yana, Taht onde.
-  const sx = x - ux * r * 2.7;
-  const sy = y - uy * r * 2.7;
-  const pip = Math.max(1.4, r * 0.18);
+  const sx = x - ux * r * body.sigilBack;
+  const sy = y - uy * r * body.sigilBack;
+  const side = r * body.sigilSide;
+  const pip = Math.max(body.minPip, r * body.pip);
+  const lead = pip * body.leadPip;
   g.fillStyle(sigil[0], 0.95);
-  g.fillRect(sx + nx * r * 0.45 - pip / 2, sy + ny * r * 0.45 - pip / 2, pip, pip);
+  g.fillRect(sx + nx * side - pip / 2, sy + ny * side - pip / 2, pip, pip);
   g.fillStyle(sigil[1], 0.95);
-  g.fillRect(sx - nx * r * 0.45 - pip / 2, sy - ny * r * 0.45 - pip / 2, pip, pip);
+  g.fillRect(sx - nx * side - pip / 2, sy - ny * side - pip / 2, pip, pip);
   g.fillStyle(sigil[2], 0.95);
-  g.fillRect(sx + ux * r * 0.5 - pip * 0.65, sy + uy * r * 0.5 - pip * 0.65, pip * 1.3, pip * 1.3);
+  g.fillRect(sx + ux * r * body.sigilLead - lead / 2, sy + uy * r * body.sigilLead - lead / 2, lead, lead);
 }
 
 /**
@@ -279,15 +292,18 @@ export function drawZeynepLance(g: VfxGraphics, x: number, y: number, angle: num
  * yaninda titresen ince altin kilif. Parlama yok.
  */
 function drawDualLanceCore(g: VfxGraphics, x: number, y: number, ux: number, uy: number, nx: number, ny: number, r: number, weight: number, tier: VfxTier, color: number, options: LanceDrawOptions) {
+  const body = LANCE_SHOT_BODY;
   const coreColor = tier >= 3 ? TAHT_DUAL_LANCE_GOLD : whiteHot(color, 0.55);
-  g.lineStyle(Math.max(0.8, r * 0.09 * weight), coreColor, 0.95);
-  g.lineBetween(x - ux * r * 0.9, y - uy * r * 0.9, x + ux * r * 0.8, y + uy * r * 0.8);
+  g.lineStyle(Math.max(body.minCoreWidth, r * body.coreWidth * weight), coreColor, 0.95);
+  g.lineBetween(x - ux * r * body.coreBack, y - uy * r * body.coreBack, x + ux * r * body.coreFront, y + uy * r * body.coreFront);
   if (tier < 3) return;
   const pulse = options.still || options.now === undefined ? 0.6 : 0.5 + Math.sin(options.now / 70) * 0.25;
-  const side = Math.max(1.2, r * 0.3 * weight);
-  g.lineStyle(Math.max(0.7, r * 0.06), TAHT_DUAL_LANCE_GOLD, clamp01(pulse));
-  g.lineBetween(x - ux * r * 1.1 + nx * side, y - uy * r * 1.1 + ny * side, x + ux * r * 0.6 + nx * side, y + uy * r * 0.6 + ny * side);
-  g.lineBetween(x - ux * r * 1.1 - nx * side, y - uy * r * 1.1 - ny * side, x + ux * r * 0.6 - nx * side, y + uy * r * 0.6 - ny * side);
+  const side = Math.max(body.minSheathSide, r * body.sheathSide * weight);
+  const back = r * body.sheathBack;
+  const front = r * body.sheathFront;
+  g.lineStyle(Math.max(body.minSheathWidth, r * body.sheathWidth), TAHT_DUAL_LANCE_GOLD, clamp01(pulse));
+  g.lineBetween(x - ux * back + nx * side, y - uy * back + ny * side, x + ux * front + nx * side, y + uy * front + ny * side);
+  g.lineBetween(x - ux * back - nx * side, y - uy * back - ny * side, x + ux * front - nx * side, y + uy * front - ny * side);
 }
 
 /* ------------------------------------------------------------------ */
@@ -871,8 +887,26 @@ export class ZeynepSignatureVfx {
 
 export type ReceiptTower = Pick<TowerSnapshot, "id" | "definitionId" | "x" | "y" | "level"> &
   Partial<Pick<TowerSnapshot, "ownerId" | "characterId" | "orientation" | "range">>;
+/**
+ * Secimin okudugu dusman alanlari. Govdeyi belirleyenler (irk, tur, ozel,
+ * sampiyon, hareket, ruh cekici yigini `ds`) telde zaten var: govde
+ * sunucuyla ayni fonksiyondan (`writeEnemyBodyShape`), yonu istemcinin
+ * gordugu (`EnemyHeadingTracker`).
+ */
 export type ReceiptEnemy = Pick<EnemySnapshot, "id" | "x" | "y"> &
-  Partial<Pick<EnemySnapshot, "type" | "movementKind" | "isDominated" | "isUndead" | "isWhisperTurned">>;
+  Partial<Pick<EnemySnapshot, "race" | "type" | "special" | "champion" | "movementKind" | "ds" | "isDominated" | "isUndead" | "isWhisperTurned">>;
+
+const RECEIPT_BODY = createBodyScratch();
+
+/**
+ * Sunucunun vurdugu govde (gorunen govdenin yonlu dis bukey cokgeni),
+ * istemcinin gordugu yonle; yon yoksa dondurulmemis doku. Tek kazima
+ * nesnesi (sekil sorgusunun hedefi, govdesi `body`): bir sonraki cagriya
+ * kadar gecerli.
+ */
+export function getReceiptEnemyBody(enemy: ReceiptEnemy, gridSize = TOWER_GRID_SIZE, headings?: HeadingSource) {
+  return writeSnapshotEnemyBody(RECEIPT_BODY, enemy, headings?.get(enemy.id), gridSize);
+}
 
 /**
  * Kule bu dusmani hedefleyebilir mi: sunucunun `canTowerTargetEnemy`si
@@ -900,84 +934,70 @@ export type ReceiptContext = {
    * icin oyunda 1 / GAME_SPEED_MULTIPLIER. Galerinin mermileri gercek saatte: 1.
    */
   timeScale?: number;
+  /** Dusmanlarin ekranda baktigi yon (gelen snapshot'lardan); yoksa dondurulmemis doku. */
+  headings?: HeadingSource;
 };
 
 /** Gosteri hattinin dusman secimi: sunucunun sorgusuyla ayni (`line`, genislik isinin yarisi). */
 const LINE_QUERY: AttackShapeQuery = { shape: "line", x: 0, y: 0, aimX: 0, aimY: 0, length: 0, width: 0, canHitAir: true };
-const SHAPE_TARGET = { id: "", x: 0, y: 0, radius: 0, movementKind: undefined as EnemySnapshot["movementKind"] | undefined };
 
-/** Gosteri / yanik hattinda mi: sunucunun `line` sorgusu, dusmanin carpisma yaricapiyla. */
-export function isOnShowcaseLine(beam: Pick<BeamSnapshot, "x1" | "y1" | "x2" | "y2" | "width">, enemy: ReceiptEnemy) {
+/** Gosteri / yanik hattinda mi: sunucunun `line` sorgusu, dusmanin gorunen govdesiyle (yonlu cokgen). */
+export function isOnShowcaseLine(beam: Pick<BeamSnapshot, "x1" | "y1" | "x2" | "y2" | "width">, enemy: ReceiptEnemy, gridSize = TOWER_GRID_SIZE, headings?: HeadingSource) {
   LINE_QUERY.x = beam.x1;
   LINE_QUERY.y = beam.y1;
   LINE_QUERY.aimX = beam.x2;
   LINE_QUERY.aimY = beam.y2;
   LINE_QUERY.length = Math.hypot(beam.x2 - beam.x1, beam.y2 - beam.y1);
   LINE_QUERY.width = beam.width / 2;
-  SHAPE_TARGET.id = enemy.id;
-  SHAPE_TARGET.x = enemy.x;
-  SHAPE_TARGET.y = enemy.y;
-  SHAPE_TARGET.radius = getEnemyTypeCollisionRadius(enemy.type);
-  SHAPE_TARGET.movementKind = enemy.movementKind;
-  return isTargetInsideAttackShape(LINE_QUERY, SHAPE_TARGET);
+  return isTargetInsideAttackShape(LINE_QUERY, getReceiptEnemyBody(enemy, gridSize, headings));
 }
 
 /**
- * Kin gosterisinin konisinde mi: sunucunun `isPointInsideCone`u (merkez,
- * menzil isinin boyu). Yari aci isinin genisliginden: sunucu genisligi
- * `tan(yari) * boy * 2` yaziyor.
+ * Kin gosterisi gorunen govdeye degiyor mu: cizildigi gibi (beam-renderer
+ * `drawKinShowcaseLight`) tepe isinin basi, uzak kenar isinin ucunda duz,
+ * koseleri genisligin yarisi kadar yanda. Sunucunun hedef secimi
+ * (`findBestKinShowcaseCone`) ayni fonksiyonu isinin ayni (teldeki)
+ * sayilariyla cagiriyor.
  */
-export function isInKinShowcaseCone(beam: Pick<BeamSnapshot, "x1" | "y1" | "x2" | "y2" | "width">, enemy: ReceiptEnemy) {
-  const dx = beam.x2 - beam.x1;
-  const dy = beam.y2 - beam.y1;
-  const range = Math.hypot(dx, dy);
-  if (range < 1) return false;
-  const ex = enemy.x - beam.x1;
-  const ey = enemy.y - beam.y1;
-  const distance = Math.hypot(ex, ey);
-  if (distance > range) return false;
-  const half = Math.atan2(beam.width / 2, range);
-  return Math.abs(normalizeAngle(Math.atan2(ey, ex) - Math.atan2(dy, dx))) <= half;
+export function isInKinShowcaseCone(beam: Pick<BeamSnapshot, "x1" | "y1" | "x2" | "y2" | "width">, enemy: ReceiptEnemy, gridSize = TOWER_GRID_SIZE, headings?: HeadingSource) {
+  return isBodyInKinShowcase(getReceiptEnemyBody(enemy, gridSize, headings).body, beam.x1, beam.y1, beam.x2, beam.y2, beam.width);
 }
 
+/** Kin dalgasinin cizilen yayi (`writeKinWaveSector`): cagri basina yaziliyor, tek nesne. */
+const KIN_WAVE_SECTOR = createKinWaveSector();
+
 /**
- * Kin dalgasinin bandindaki dusmanin kuleye uzakligi; bantta degilse -1.
+ * Kin dalgasinin bandindaki dusmanin kuleye uzakligi (>= 0); bantta degilse -1.
  *
- * Sunucu: izdusum [on - bant, on + yaricap] icinde ve koninin icinde (merkez
- * yaricap icindeyse her zaman). On kenar isinin gorunen boyu (`x2,y2`), yari
- * aci genislikten (`tan(yari) * boy * 2`).
+ * Dalga cizildigi yerde vuruyor (combat-vfx `drawPressureWave`): kuleden on
+ * kenara (isinin gorunen boyu) yaricapli yay, yari aci genislikten, cizilen
+ * kalinligi kadar (`getKinWaveBandBehind` / `getKinWaveBandAhead`, isinin
+ * kademesi ve sahnenin mermi olcegiyle); govdesi o banda degen. Sunucunun
+ * vurusu (`applyKinWaveHits`) ayni fonksiyonlari isinin ayni (teldeki)
+ * sayilariyla cagiriyor. Uzaklik dokunun merkezinin dalga eksenindeki
+ * izdusumu (yavaslatmanin gucu, sunucu gibi); kulenin hizasinin gerisindeki
+ * merkez (yaya yandan ya da kulenin ustunden degen govde) 0: degme ile
+ * uzaklik ayri, sunucu da orani 0'a kirpiyor. Eskiden eksi uzaklik "bantta
+ * degil" sayiliyor, sunucunun vurdugu dusman damgalanmiyordu.
+ *
+ * Bir tiklik kayma: sunucu tikin basindaki (yurumeden onceki) konumlarla
+ * vuruyor, snapshot o tikin yuruyusunden sonraki konumlari tasiyor ve ~4
+ * tikte bir geliyor: yuruyen dusmanda damga ayni snapshot'ta ya da bir
+ * snapshot once / sonra (bkz. sunucu `applyKinWaveHits`).
  */
-export function getKinWaveHitDistance(beam: Pick<BeamSnapshot, "x1" | "y1" | "x2" | "y2" | "width">, enemy: ReceiptEnemy, bandDepth: number) {
-  const dx = beam.x2 - beam.x1;
-  const dy = beam.y2 - beam.y1;
-  const front = Math.hypot(dx, dy);
-  if (front < 1) return -1;
-  const ux = dx / front;
-  const uy = dy / front;
-  const ex = enemy.x - beam.x1;
-  const ey = enemy.y - beam.y1;
-  const radius = getEnemyTypeCollisionRadius(enemy.type);
-  const projection = ex * ux + ey * uy;
-  if (projection < Math.max(0, front - bandDepth) || projection > front + radius) return -1;
-  const distance = Math.hypot(ex, ey);
-  if (distance > radius) {
-    const half = Math.atan2(beam.width / 2, front);
-    if (Math.abs(normalizeAngle(Math.atan2(ey, ex) - Math.atan2(uy, ux))) > half) return -1;
-  }
-  return projection;
+export function getKinWaveHitDistance(beam: Pick<BeamSnapshot, "x1" | "y1" | "x2" | "y2" | "width" | "tier">, enemy: ReceiptEnemy, gridSize = TOWER_GRID_SIZE, headings?: HeadingSource) {
+  const sector = KIN_WAVE_SECTOR;
+  const scale = getProjectileSceneScale(gridSize);
+  if (!writeKinWaveSector(sector, beam.x1, beam.y1, beam.x2, beam.y2, beam.width, getKinWaveBandBehind(scale), getKinWaveBandAhead(beam.tier ?? 1, scale))) return -1;
+  if (!isBodyTouchingKinWave(getReceiptEnemyBody(enemy, gridSize, headings).body, sector)) return -1;
+  const front = Math.hypot(beam.x2 - beam.x1, beam.y2 - beam.y1);
+  return Math.max(0, ((enemy.x - beam.x1) * (beam.x2 - beam.x1) + (enemy.y - beam.y1) * (beam.y2 - beam.y1)) / front);
 }
 
 /** Kin yavaslatmasinin gucu (1-3): kuleye uzaklik / menzil ucte bir dilimlerle. */
 export function getKinBrandStrength(distance: number, range: number) {
   const ratio = clamp01(distance / Math.max(1, range));
   return ratio < 1 / 3 ? 1 : ratio < 2 / 3 ? 2 : 3;
-}
-
-function normalizeAngle(angle: number) {
-  let value = angle;
-  while (value > Math.PI) value -= Math.PI * 2;
-  while (value < -Math.PI) value += Math.PI * 2;
-  return value;
 }
 
 /** Spot isigi alan isinlar ve secimleri. */
@@ -1089,7 +1109,7 @@ export class ZeynepReceiptTracker {
       if (fresh && spot) {
         for (const enemy of enemies) {
           if (!isCourtTargetable(enemy)) continue;
-          const hit = spot === "line" ? isOnShowcaseLine(beam, enemy) : isInKinShowcaseCone(beam, enemy);
+          const hit = spot === "line" ? isOnShowcaseLine(beam, enemy, context.gridSize, context.headings) : isInKinShowcaseCone(beam, enemy, context.gridSize, context.headings);
           if (hit) this.sink({ kind: "spotlight", key: enemy.id, x: enemy.x, y: enemy.y, color: beam.color, tier: beam.tier, own }, 0);
         }
       }
@@ -1164,12 +1184,11 @@ export class ZeynepReceiptTracker {
     const range = abartiLevel > 0 ? baseRange * getAbartiShowcaseRangeMultiplier(abartiLevel) : baseRange;
     // Sunucu: (yavaslatma + (sv - 1) * 80) oyun ms, dusmanin direnciyle, gercek saatte / oyun hizi.
     const slowMs = definition ? getTowerSlowDurationMs(definition) + ((origin?.level ?? 1) - 1) * 80 : 1150;
-    const band = KIN_WAVE_BAND_DEPTH * context.worldScale;
     for (const enemy of enemies) {
       // Dalga basina dusman bir kez (sunucu `hitEnemyIds`; itme dalgasinda ise
       // damga yalnizca ilk temasta, itme suruyor ama damga yenilenmiyor).
       if (state.branded.has(enemy.id) || !isCourtTargetable(enemy)) continue;
-      const distance = getKinWaveHitDistance(beam, enemy, band);
+      const distance = getKinWaveHitDistance(beam, enemy, context.gridSize, context.headings);
       if (distance < 0) continue;
       state.branded.add(enemy.id);
       const durationMs = push ? KIN_PUSH_BRAND_MS : applyStatusResistance(slowMs, getSlowResistance(enemy.type)) / GAME_SPEED_MULTIPLIER;

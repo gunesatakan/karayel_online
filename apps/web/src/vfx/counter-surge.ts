@@ -1,5 +1,6 @@
 import type Phaser from "phaser";
 import {
+  AEGIS_FRONT_STROKES,
   COUNTER_SURGE_KIND_TABLE,
   decodeCounterSurgeKind,
   decodeCounterSurgeTravel,
@@ -788,10 +789,11 @@ function drawAegis(
   // Arka kenar koyu, on kenar soguk ve sert: yakan bir serit degil, duran bir duvar.
   edge.lineStyle(2, style.deep, 0.9);
   bandLine(edge, band, 0, Math.max(sMin, back), band.width, Math.max(sMin, back));
-  edge.lineStyle(2.4, style.rim, 0.95);
+  // On cizgilerin kalinligi paylasilan pakette (`AEGIS_FRONT_STROKES`): sunucu mermiyi cizilen yuzde durduruyor.
+  edge.lineStyle(AEGIS_FRONT_STROKES.rim, style.rim, 0.95);
   bandLine(edge, band, 0, front, band.width, front);
-  edge.lineStyle(1, style.edge, 0.55);
-  bandLine(edge, band, 0, front + 1.5, band.width, front + 1.5);
+  edge.lineStyle(AEGIS_FRONT_STROKES.edge, style.edge, 0.55);
+  bandLine(edge, band, 0, front + AEGIS_FRONT_STROKES.edgeOffset, band.width, front + AEGIS_FRONT_STROKES.edgeOffset);
   // Uclarda iki direk.
   const post = gridSize * 0.28;
   for (let end = 0; end < 2; end += 1) {

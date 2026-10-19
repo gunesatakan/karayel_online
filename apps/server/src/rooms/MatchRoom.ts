@@ -97,7 +97,47 @@ import {
 // Kule paneli: secili kulenin savasta okunan sayilari (`sendTowerStats`).
 import { closeTowerStatValue, getTowerBaseLevelFireIntervalMs, getTowerBaseLevelRange, groupTowerStatSources, roundTowerStat, towerFiresProjectiles, towerNeverAttacks, type TowerEffectWire, type TowerStatSource, type TowerStatsWire } from "@karayel/shared";
 // Zeynep atislarinin geometrisi paylasilan pakette: istemcinin imzalari ayni kurali cagiriyor.
-import { KIN_WAVE_BAND_DEPTH, getAbartiRailRect, getAbartiShowcaseRangeMultiplier, getEnemyTypeCollisionRadius, isAbartiArmorBreakProjectile } from "@karayel/shared";
+import { KIN_WAVE_LINGER_DISTANCE, getAbartiRailRect, getAbartiShowcaseRangeMultiplier, getKinWaveBandAhead, getKinWaveBandBehind, isAbartiArmorBreakProjectile } from "@karayel/shared";
+// Gorunen govde = isabet: dusmanin govdesi cizilen dokunun yonlu dis bukey
+// cokgeni, merminin sekli cizilen govdesi; istemci ayni fonksiyonlarla
+// ciziyor ve seciyor (enemy-body, enemy-display, projectile-body).
+import {
+  SERVER_TICK_MS,
+  SNAPSHOT_SEND_INTERVAL_MS,
+  TAHT_COPY_PROJECTILE_ID,
+  createBodyBand,
+  createBodySector,
+  createBodyTriangle,
+  createEnemyBody,
+  createKinWaveSector,
+  createPlateBody,
+  getAegisFrontFace,
+  getAttackDroneBodyRadius,
+  getBodyCentreX,
+  getBodyCentreY,
+  getBodyProjectionMax,
+  getBodyProjectionMin,
+  getMekaShieldFace,
+  getProjectileBodyContact,
+  getProjectileReach,
+  getProjectileSceneScale,
+  getProjectileShape,
+  isBandTouchingBody,
+  isBodyInTriangle,
+  isBodyTouchingBandShape,
+  isBodyTouchingKinWave,
+  isBodyTouchingSweepShape,
+  isPointInBody,
+  updateBodyHeading,
+  writeEnemyBodyShape,
+  writeKinShowcaseTriangle,
+  writeKinWaveSector,
+  writeProjectileBodyContactPoint,
+  writeProjectileSupport,
+  type EnemyBody,
+  type EnemyBodyView,
+  type ProjectileShape
+} from "@karayel/shared";
 import {
   ComboStampThrottle,
   DEBUG_SWEEP_STAMP_MIN_KILLS,
@@ -167,7 +207,6 @@ import {
   dispatchTowerTriggers,
   evaluateTowerAuras,
   getTowerAuraLevelMultiplier,
-  isTargetInsideAttackShape,
   selectAttackShapeTargets,
   selectTowerTarget,
   SpatialGrid,
@@ -226,6 +265,7 @@ import {
   getOrbitBladeLength,
   getOrbitRotationSpeedForInterval,
   getOrbitTargetHitCooldownMs,
+  getOrbitBladeInner,
   selectOrbitSweepContacts,
   resolveOnurGamblerShot,
   appendLegacyMultiplier,
@@ -386,8 +426,6 @@ import {
   type ChampionDownMessage,
   calculateDamageTaken,
   findPathToNearestNexus,
-  findFirstLinearCollision,
-  getBallisticCollisionRadius,
   getBallisticMovementSpeed,
   getMapMetrics,
   getMapOrigin,
@@ -957,23 +995,10 @@ const TOWER_DEFINITIONS_BY_ID = new Map(
   Object.values(towerCatalog).flat().map((definition) => [definition.id, definition])
 );
 /**
- * Snapshot araligi: 15 kare/sn.
- *
- * 33 ms (30 Hz) idi. Istemci zaten yarim saniyelik bir oynatma tamponu tutuyor
- * ve iki snapshot arasini aradegerliyor, yani 30 Hz'in verdigi fazladan
- * puruzsuzlugu kimse gormuyordu -- karsiliginda her istemciye giden bant bir
- * kat buyuktu.
- *
- * Deger **60**, 66,67 degil. Aralik tik sinirlarinda kontrol ediliyor ve
- * sunucu 60 Hz kosuyor, yani gercek hiz her zaman bir tik katina yuvarlaniyor:
- * 50 ms uc tike (20 kare/sn), 60 ms dort tike (15 kare/sn), 66,67 ms ise bes
- * tike duserek 12 kare/sn veriyor. Istenen sayiyi yazmak istenen sayiyi
- * vermiyor; kat secmek gerekiyor.
- *
- * Bu, zayif baglantidaki oyuncu icin dogrudan kazanc: gonderilen her bayt onun
- * kuyruguna giriyor ve kuyruktaki her bayt kendi girdisinin gecikmesi demek.
+ * Snapshot araligi (15 kare/sn, neden 60: paylasilan pakette): istemcinin yon
+ * esigi ayni sayidan, testler buradan okuyor.
  */
-export const SNAPSHOT_SEND_INTERVAL_MS = 60;
+export { SNAPSHOT_SEND_INTERVAL_MS };
 /**
  * Bir istemcinin cikis kuyrugu bu kadari asarsa ona snapshot gonderilmez.
  *
@@ -1556,6 +1581,18 @@ type EnemyModel = {
   shield: number;
   maxShield: number;
   movementKind: MovementKind;
+  /**
+   * Gorunen govde (`EnemyBody`): istemcinin cizdigi dokunun dis bukey
+   * cokgeni, cizilen boyu ve yonu, kendi konum kopyasiyla. Dusman basina tek
+   * nesne, dogumda (iki dogum yeri: `spawnEnemy`, Oluler Bagi'nin nisancisi);
+   * olcusu ruh cekici buyudugunde ayni nesneye yeniden yaziliyor. Butun vurus
+   * hesaplari bunu okuyor, kaydin kendisini degil: kayit mac icinde onlarca
+   * bicim aliyor (sonradan eklenen alanlar), govde nesnesi hep ayni bicimde.
+   * Konumu izgara her tik kurulurken (yonuyle birlikte) ve dusman tik icinde
+   * yer degistirdiginde (`syncEnemyBody`) kaydin konumundan yaziliyor.
+   * Elle kurulan (test) dusmanda ilk izgarada kuruluyor.
+   */
+  body: EnemyBody;
   damageResistances: Partial<Record<DamageType, number>>;
   hitTypeResistances: Partial<Record<HitType, number>>;
   statusResistances: Partial<Record<StatusEffectId, number>>;
@@ -1816,6 +1853,12 @@ type MekaShieldModel = {
   y2: number;
   landAt: number;
   expiresAt: number;
+  /**
+   * Cizilen levha (`createPlateBody`): ucan mermi govdesiyle buna degince
+   * duruyor. Ilk sorguda kuruluyor (`getMekaShieldPlate`); `null` cizilmeyen
+   * (boyu sifir) kalkan.
+   */
+  plate?: EnemyBody | null;
 };
 
 type SpecialSpawnOptions = {
@@ -1970,6 +2013,8 @@ type CounterSurgeModel = {
   /** On cizginin bu ve onceki tikteki yolu (dunya birimi): siperin atis kapisi okuyor. */
   frontAlong: number;
   previousFrontAlong: number;
+  /** Siperin cizilen on levhasi (`getAegisPlate`): ilk sorguda kuruluyor; `null` cizilmeyen. */
+  plate?: EnemyBody | null;
 };
 
 /**
@@ -2519,6 +2564,12 @@ type DebugLaserTwinRoute = {
 /** `getDebugLaserTwinBeamIds` sirasiyla: `-b` sola, `-c` saga supuren kiris. */
 type DebugLaserTwinSweep = { routes: [DebugLaserTwinRoute, DebugLaserTwinRoute] };
 
+/**
+ * Mermi taramasinin cikisi (bkz. `findProjectileContact`): yon, temastaki
+ * ilerleme (`along`, dunya birimi) ve temas noktasi (govdenin kenari).
+ */
+type ProjectileContactScratch = { x: number; y: number; ux: number; uy: number; along: number };
+
 type ProjectileModel = {
   id: string;
   towerId: string;
@@ -2539,6 +2590,21 @@ type ProjectileModel = {
   pierceLimit: number;
   armorBreakAmount: number;
   piercedEnemyIds: string[];
+  /**
+   * Cizilen govdenin isabet sekli (`getProjectileShape`) ve kademesi, atis
+   * aninda bir kez: istemci mermiyi atis anindaki kademeyle ciziyor; kule
+   * sonra seviye atlasa ya da satilsa da ucan merminin sekli ve telin
+   * kademesi ayni (`getProjectileTier`). Elle kurulan (test) mermide yok;
+   * ilk carpisma taramasi kimlikten yaziyor.
+   */
+  shape?: ProjectileShape;
+  tier?: TowerTier;
+  /**
+   * Atistan beri uculan yol (dunya birimi; tik basina bir toplama). Cizilen
+   * kuyruk ancak bu kadar vuruyor: namlunun arkasindan hic gecmemis kuyruk
+   * kulenin arkasindaki dusmana degmiyor.
+   */
+  flown?: number;
   /**
    * Onur kulesinin atista zarladigi sans carpani. Mermi ucarken kule yeniden
    * zar atabiliyor; jackpot damgasi (`j`) bu mermiyi atan zardan okunmali.
@@ -2670,7 +2736,8 @@ type KinWaveModel = {
   distance: number;
   range: number;
   speed: number;
-  bandDepth: number;
+  /** Menzile varinca dalganin daha ne kadar (yol) menzilde durdugu (`KIN_WAVE_LINGER_DISTANCE`). */
+  lingerDistance: number;
   slowMs: number;
   pushbackDistance: number;
   abartiLevel: number;
@@ -2787,6 +2854,26 @@ type ZeynepSynthesisComposition = {
   synthesisTowerCount: number;
   copySourceTower?: TowerModel;
 };
+
+/**
+ * Dusman izgarasi: dogrudan `rebuild` (eski cagri yerleri, elle kurulan
+ * test odalari) govdelerin konumunu da kaydin konumundan yaziyor; govde
+ * vurus hesaplarinda kaydin degil kendi konum kopyasinin okunuyor. Uretimin
+ * tik basi kurulumu `rebuildEnemyGrid` (yonleri de orada).
+ */
+class EnemyBodyGrid extends SpatialGrid<EnemyModel> {
+  constructor(cellSize: number, private readonly sync: (enemy: EnemyModel) => void) {
+    super(cellSize);
+  }
+
+  override rebuild(items: Iterable<EnemyModel>) {
+    this.clear();
+    for (const enemy of items) {
+      this.sync(enemy);
+      this.insertAt(enemy, enemy.x, enemy.y);
+    }
+  }
+}
 
 export class MatchRoom extends Room<MatchState> {
   /**
@@ -2930,7 +3017,34 @@ export class MatchRoom extends Room<MatchState> {
   maxClients = Math.min(MAX_COOP_PLAYERS, MatchRoom.playableCharacterIds.length);
   autoDispose = false;
   private enemies = new Map<string, EnemyModel>();
-  private readonly enemySpatialGrid = new SpatialGrid<EnemyModel>(128);
+  private readonly enemySpatialGrid = new EnemyBodyGrid(128, (enemy) => this.syncEnemyBody(enemy));
+  /**
+   * Sahadaki govdelerin dokunun merkezinden en uzak noktasinin ust siniri
+   * (`bodyReach`, dunya birimi): uzamsal sorgularin payi (merkezi sorgu
+   * yaricapinin disinda kalan govde kenari). Dogan ve buyuyen dusman onu
+   * yukseltiyor (O(1)); saha bosalinca sifirlaniyor. Dalga icinde dusmuyor:
+   * en buyugu olse de pay biraz genis kalir, dogru kalir. Sabit bir pay en
+   * buyuk govdeye (havadaki tam yigin ruh cekici brute, ~30) gore secilmek
+   * zorunda kalirdi; tipik dalgada 10-15, sorgu daha az aday donduruyor.
+   */
+  private enemyBodyReachMax = 0;
+  /** Kin dalgasinin cizilen yayi (`writeKinWaveSector`): dalga basina her tik yaziliyor, tek nesne. */
+  private readonly kinWaveSector = createKinWaveSector();
+  /** Kin gosterisinin ucgeni (`writeKinShowcaseTriangle`): yon basina yaziliyor, tek nesne. */
+  private readonly kinShowcaseTriangle = createBodyTriangle();
+  /** Yanik zeminin ve ayna isininin bandi (`isBodyTouchingBandShape`): cagri basina yaziliyor, birer nesne. */
+  private readonly burnZoneBand = createBodyBand();
+  private readonly rayBand = createBodyBand();
+  /** Debug Laser supurmesinin dilimi (`isBodyTouchingSweepShape`): cagri basina yaziliyor, tek nesne. */
+  private readonly areaSector = createBodySector();
+  /** Carpisma taramasinin temas yazdigi tek nesne: tik basina mermi x aday kadar cagri, tahsis yok. */
+  private readonly projectileContact: ProjectileContactScratch = { x: 0, y: 0, ux: 1, uy: 0, along: 0 };
+  /** Siperde duran merminin govdesinin levhaya degen noktasi, merkezden fark (`getProjectileBlockCrossing`). */
+  private readonly blockSupport = { x: 0, y: 0 };
+  /** Levha kapisinin destek noktasi (`getPlateBlock`): tek nesne, tahsis yok. */
+  private readonly plateSupport = { x: 0, y: 0 };
+  /** Oncul nisanin bulusma noktasi (`getTowerLeadAimPoint`): tek nesne, tahsis yok. */
+  private readonly leadAimPoint = { x: 0, y: 0 };
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
   private drones = new Map<string, DroneModel>();
@@ -3886,7 +4000,9 @@ export class MatchRoom extends Room<MatchState> {
     this.planWaveSpawns(this.wave);
     this.abandonCheckEnabled = true;
     this.abandonedSince = this.runtime.now();
-    this.setSimulationInterval((deltaTime) => this.update(deltaTime));
+    // Tik paylasilan pakette (`SERVER_TICK_MS`, Colyseus'un varsayilaniyla ayni):
+    // istemci yon esigini ve carpmanin anini ayni sayidan hesapliyor.
+    this.setSimulationInterval((deltaTime) => this.update(deltaTime), SERVER_TICK_MS);
 
     // Her kayit `onMessage` uzerinden geciyor ve orada sarmalaniyor: govde
     // `MESSAGE_RULES`e gore duzeltiliyor, hiz siniri ve asama soruluyor,
@@ -5645,7 +5761,7 @@ export class MatchRoom extends Room<MatchState> {
     timings.spawnMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
-    this.enemySpatialGrid.rebuild(this.enemies.values());
+    this.rebuildEnemyGrid();
     this.resetAuraSlows();
     this.updateTowers(gameDeltaTime);
     this.updateSympathy();
@@ -6040,10 +6156,19 @@ export class MatchRoom extends Room<MatchState> {
     return tier === 1 ? undefined : tier;
   }
 
+  /**
+   * Merminin telde yazilan kademesi: atis anindaki (`ProjectileModel.tier`).
+   * Kule ucus sirasinda seviye atlasa ya da satilsa da istemci mermiyi
+   * sunucunun vurdugu govdeyle ciziyor. Kademesi yazilmamis (elle kurulan)
+   * mermide kulesinden.
+   */
   private getProjectileTier(projectile: ProjectileModel) {
-    const tower = projectile.towerId ? this.towers.get(projectile.towerId) : undefined;
-    if (!tower) return undefined;
-    const tier = getTowerTier(tower.level);
+    let tier = projectile.tier;
+    if (tier === undefined) {
+      const tower = projectile.towerId ? this.towers.get(projectile.towerId) : undefined;
+      if (!tower) return undefined;
+      tier = getTowerTier(tower.level);
+    }
     return tier === 1 ? undefined : tier;
   }
 
@@ -6677,6 +6802,9 @@ export class MatchRoom extends Room<MatchState> {
     const pathId = 0;
     const start = special?.start ?? this.pickNormalSpawnPoint(pattern, slot);
     const id = `e${this.nextEnemyId++}`;
+    const movementKind: MovementKind = isFlyingEnemy ? "air" : definition.movementKind;
+    // Gorunen govde: dusman basina tek nesne, dogumda; yon dondurulmemis doku (+y), istemcideki gibi.
+    const body = this.createEnemyBodyFor({ race, type, special: special?.kind, champion: Boolean(champion), movementKind }, start.x, start.y);
 
     this.enemies.set(id, {
       id,
@@ -6693,7 +6821,8 @@ export class MatchRoom extends Room<MatchState> {
       healthRegenPerSecond: definition.healthRegenPerSecond * waveScale * championMultiplier,
       shield: maxShield,
       maxShield,
-      movementKind: isFlyingEnemy ? "air" : definition.movementKind,
+      movementKind,
+      body,
       damageResistances: getEnemyDamageResistances(definition, race),
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
@@ -6836,7 +6965,8 @@ export class MatchRoom extends Room<MatchState> {
   /** Kilitlenen kulenin cevresine verdigi hasar. */
   private applyOverheatBurst(tower: TowerModel, now: number) {
     const radius = this.getTowerRange(tower);
-    for (const enemy of this.getEnemiesNear(tower.x, tower.y, radius)) {
+    // Alan hasari: govdesi halkaya degen (sahibin karari, 2026-10).
+    for (const enemy of this.getEnemiesTouchingRing(tower.x, tower.y, radius)) {
       this.damageEnemy(enemy, OVERHEAT_BURST_DAMAGE, 0, "unlock:overheat-burst", tower.ownerId, "fire", 0, tower.level, tower.id, "impact");
     }
     void now;
@@ -6949,8 +7079,8 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.heatLocked && tower.temperature <= this.getTowerHeatReleaseThreshold(tower)) tower.heatLocked = false;
     const radius = this.getTowerRange(tower) * HEAT_SHOCK_RANGE_FRACTION;
     const damage = this.getTowerDamage(tower) * multiplier;
-    for (const enemy of this.getEnemiesNear(tower.x, tower.y, radius)) {
-      if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) > radius * radius) continue;
+    // Halka govdeye degiyorsa vuruyor; merkezin halkada olmasi gerekmiyor.
+    for (const enemy of this.getEnemiesTouchingRing(tower.x, tower.y, radius)) {
       this.damageEnemy(enemy, damage, 0, "item:termal-sok", tower.ownerId, tower.definition.damageType ?? "physical", 0, tower.level, tower.id, "impact");
     }
   }
@@ -7651,7 +7781,10 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.temperature >= this.getTowerHeatLockThreshold(tower)) tower.heatLocked = true;
 
     const bladeLength = this.getOrbitBladeLengthForTower(tower);
-    const candidates = this.getEnemiesNear(tower.x, tower.y, bladeLength + this.scaleWorldDistance(32));
+    const bladeWidth = this.scaleWorldDistance(attack.width ?? 1);
+    // Bicagin ucu ve eni kadar, sahadaki en uzak govde payiyla: govdesi
+    // bicaga degen ama merkezi disarida kalan dusman da aday.
+    const candidates = this.getEnemiesNear(tower.x, tower.y, bladeLength + bladeWidth / 2 + this.enemyBodyReachMax);
     const sweepQuery = {
       x: tower.x,
       y: tower.y,
@@ -7659,14 +7792,14 @@ export class MatchRoom extends Room<MatchState> {
       nextAngle: tower.bladeAngle,
       bladeCount: attack.bladeCount ?? 1,
       bladeLength,
-      bladeWidth: this.scaleWorldDistance(attack.width ?? 1),
+      bladeWidth,
+      bladeInner: getOrbitBladeInner(getMapGridSize(this.activeMap)),
       canHitAir: this.canTowerHitAir(tower)
     };
-    const contactCandidates = candidates.map((enemy) => ({
-      ...enemy,
-      radius: getEnemyCollisionRadius(enemy)
-    }));
-    const contacts = selectOrbitSweepContacts(sweepQuery, contactCandidates);
+    // Adaylar dusman kayitlarinin kendisi (yonlu govde): bicagin cizilen
+    // govdesinin bu tikte taradigi alan gorunen govdeye degiyor mu. Eskiden
+    // ~100 alanli kayit her tik her aday icin kopyalaniyordu.
+    const contacts = selectOrbitSweepContacts(sweepQuery, candidates);
     const hitCooldownMs = getOrbitTargetHitCooldownMs(attack.bladeCount ?? 1, effectiveRotationSpeed);
     for (const contact of contacts) {
       const lastHitAt = tower.orbitLastHitAt.get(contact.target.id) ?? Number.NEGATIVE_INFINITY;
@@ -7745,15 +7878,21 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Oncul nisanin nisan noktasi (`leadTargeting`, 0-1).
+   * Hedefin, mermi ona varana kadar gidecegi nokta (bulusma noktasi).
    *
-   * Hedefin bu tikteki yuruyus hiziyla (`moveVx/moveVy`) mermiyle
-   * bulusacagi nokta, pay kadar: `|D + V t| = s t` denkleminin en kucuk
-   * pozitif koku (D hedefe uzaklik, V hedefin hizi, s merminin hizi). Hedef
-   * mermiden hizli kaciyorsa kok yok; o zaman duz ucus suresi. Pay 1'de duz
-   * cizgide yuruyen hedef tam tutturuluyor; kosede donen hedef yine
-   * iskalanabilir. Mermi namlu yonunde ucmayan kulede ya da yurumeyen
-   * hedefte nokta hedefin kendisi.
+   * Hedefin bu tikteki yuruyus hiziyla (`moveVx/moveVy`) duz cizgide.
+   * Mermi kulenin merkezinden degil namlu agzindan cikiyor: agiz merkezden
+   * `m` ileride ve nisan dogrusunun ustunde, yani bulusma
+   * `|D + V t| = m + s t` (D hedefe uzaklik, V hedefin hizi, s merminin
+   * hizi); en kucuk pozitif kok. Eskiden merkezden cozuluyordu (m = 0):
+   * hizli dusmanda nokta `V m / s` kadar oteye kayiyordu (Ucube'nin 33
+   * birimlik namlusunda kosucuya ~10 birim; mermi govdenin onunden
+   * geciyordu). Hedef mermiden hizli kaciyorsa kok yok; o zaman duz ucus
+   * suresi. Kosede donen hedef yine iskalanabilir. Yurumeyen hedefte nokta
+   * hedefin kendisi.
+   *
+   * Tahsis yok (kok dizisi kurulmuyor, nokta tek bir nesneye yaziliyor);
+   * donen nokta bir sonraki cagriya kadar gecerli.
    */
   private getTowerLeadAimPoint(tower: TowerModel, target: { x: number; y: number; id?: string }) {
     const enemy = target.id ? this.enemies.get(target.id) : undefined;
@@ -7764,21 +7903,32 @@ export class MatchRoom extends Room<MatchState> {
     const vy = enemy.moveVy ?? 0;
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
+    const range = Math.hypot(dx, dy);
+    // Agiz hedefin on yuzunu gecmiyor (`getTowerProjectileMuzzle`, ayni kirpma):
+    // Ucube'nin 33 birimlik namlusu yakin hedefte geri cekiliyor.
+    const muzzle = range > 0 ? this.getTowerMuzzleClearance(tower, dx / range, dy / range, enemy, this.getProjectileShapeFor(tower.definition.id, tower)) : 0;
     const a = vx * vx + vy * vy - speed * speed;
-    const b = 2 * (dx * vx + dy * vy);
-    const c = dx * dx + dy * dy;
-    let flight = Math.sqrt(c) / speed;
+    const b = 2 * (dx * vx + dy * vy - muzzle * speed);
+    const c = range * range - muzzle * muzzle;
+    let flight = (range - muzzle) / speed;
     if (Math.abs(a) < 1e-9) {
       if (b < 0) flight = -c / b;
     } else {
       const discriminant = b * b - 4 * a * c;
       if (discriminant >= 0) {
         const root = Math.sqrt(discriminant);
-        const roots = [(-b - root) / (2 * a), (-b + root) / (2 * a)].filter((t) => t > 0);
-        if (roots.length > 0) flight = Math.min(...roots);
+        const first = (-b - root) / (2 * a);
+        const second = (-b + root) / (2 * a);
+        const low = Math.min(first, second);
+        const high = Math.max(first, second);
+        const smallest = low > 0 ? low : high > 0 ? high : -1;
+        if (smallest > 0) flight = smallest;
       }
     }
-    return { x: target.x + vx * flight, y: target.y + vy * flight };
+    const point = this.leadAimPoint;
+    point.x = target.x + vx * flight;
+    point.y = target.y + vy * flight;
+    return point;
   }
 
   /**
@@ -7822,7 +7972,9 @@ export class MatchRoom extends Room<MatchState> {
     const hitType = tower.definition.hitType ?? "projectile";
     const speed = this.getTowerBallisticSpeed(tower);
     const id = `p${this.nextProjectileId++}`;
-    const muzzle = this.getTowerMuzzlePoint(tower, launchAngle, target, getEnemyCollisionRadius(target) + getBallisticCollisionRadius(hitType));
+    const shape = this.getProjectileShapeFor(tower.definition.id, tower);
+    // Agiz hedefin on yuzunu gecmiyor: agizdaki cizilen govde gorunen govdeye degmeden once.
+    const muzzle = this.getTowerProjectileMuzzle(tower, launchAngle, target, shape);
     // Taret Motoru (`retargetDamage`): hedef degistikten sonraki ilk mermi.
     // Ilk atis da sayiliyor: kule yeni bir hedefe donmus.
     const retarget = getModifierAdd(this.getTowerRunModifiers(tower), "retargetDamage");
@@ -7866,27 +8018,80 @@ export class MatchRoom extends Room<MatchState> {
       pierceLimit: (this.getTowerEngine(tower)?.attack.pierceCount ?? 1) + this.getWorkerPierceBonus(tower),
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
       piercedEnemyIds: [],
+      shape,
+      tier: getTowerTier(tower.level),
+      flown: 0,
       luck: tower.characterId === "onur" ? tower.lastLuckMultiplier : undefined
     });
     this.broadcastProjectileSpawn(this.projectiles.get(id)!);
   }
 
   /**
-   * Merminin (ya da isinin) ciktigi nokta: tanimda namlu agzi varsa kulenin
-   * baktigi yonde o kadar ileride, yoksa merkez. Buyuk kulede (Ucube 2x2)
-   * merkezden cikan mermi topun ortasindan dogmus gibi gorunuyordu.
-   *
-   * Agiz hedefin on yuzunu (`clearance` kadar oncesini) gecmiyor: kulenin
-   * ustundeki hava dusmani namludan yakinda olabilir, mermi onun arkasinda
-   * dogarsa carpisma taramasi onu hic gormezdi.
+   * Merminin isabet sekli: istemcinin cizdigi govde (kimlik, atis anindaki
+   * kademe, sahnenin olcegi). Onbellekli paylasilan nesne; mermi basina tahsis yok.
    */
-  private getTowerMuzzlePoint(tower: TowerModel, angle: number, target: { x: number; y: number }, clearance = 0) {
-    const offset = this.getTowerEngine(tower)?.attack.muzzleOffset ?? 0;
-    if (offset <= 0) return { x: tower.x, y: tower.y };
-    const muzzle = this.scaleWorldDistance(TOWER_GRID_SIZE * this.getTowerPlacementSpan(tower.definition.id) / 2 * offset);
-    const targetFront = Math.hypot(target.x - tower.x, target.y - tower.y) - clearance;
-    const distance = Math.max(0, Math.min(muzzle, targetFront));
+  private getProjectileShapeFor(bodyId: string, tower: TowerModel | undefined) {
+    return getProjectileShape(bodyId, tower ? getTowerTier(tower.level) : 1, getProjectileSceneScale(getMapGridSize(this.activeMap)));
+  }
+
+  /**
+   * Elle kurulan (test) merminin sekli, kademesi ve uculan yolu: kimliginden,
+   * kulesinin kademesinde; bir kez yaziliyor (uretimde dogumda yazili).
+   */
+  private resolveProjectileShape(projectile: ProjectileModel) {
+    const tower = this.towers.get(projectile.towerId);
+    projectile.tier ??= tower ? getTowerTier(tower.level) : 1;
+    projectile.flown ??= 0;
+    const shape = getProjectileShape(projectile.definitionId, projectile.tier, getProjectileSceneScale(getMapGridSize(this.activeMap)));
+    projectile.shape = shape;
+    return shape;
+  }
+
+  /**
+   * Isinin cizildigi baslangic (Debug Lazer'in normal isini): tanimda namlu
+   * agzi varsa kulenin baktigi yonde o kadar ileride, yoksa merkez; isinin
+   * ucunu (`target`) gecmiyor. Yalnizca cizim: isinin hasari kule
+   * merkezinden. Mermiler kendi agzindan doguyor (`getTowerProjectileMuzzle`:
+   * agzi hedefin gorunen govdesine gore geri cekiyor).
+   */
+  private getTowerMuzzlePoint(tower: TowerModel, angle: number, target: { x: number; y: number }) {
+    const muzzle = this.getTowerMuzzleDistance(tower);
+    if (muzzle <= 0) return { x: tower.x, y: tower.y };
+    const distance = Math.max(0, Math.min(muzzle, Math.hypot(target.x - tower.x, target.y - tower.y)));
     return { x: tower.x + Math.cos(angle) * distance, y: tower.y + Math.sin(angle) * distance };
+  }
+
+  /**
+   * Merminin dogdugu nokta: namlu agzi, ama agizdaki merminin cizilen govdesi
+   * hedefin gorunen govdesine girmeden once (`getTowerMuzzleClearance`).
+   */
+  private getTowerProjectileMuzzle(tower: TowerModel, angle: number, target: EnemyModel, shape: ProjectileShape) {
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const distance = this.getTowerMuzzleClearance(tower, ux, uy, target, shape);
+    return { x: tower.x + ux * distance, y: tower.y + uy * distance };
+  }
+
+  /**
+   * Namlu agzinin bu yonde (birim `u`) ne kadar ileride olabilecegi: dogan
+   * merminin cizilen govdesi (dogarken kendi merkezinin gerisi kesik, ucus 0)
+   * kulenin merkezinden namluya giderken hedefin gorunen govdesine ilk
+   * degdigi yol. Kulenin ustundeki hava dusmani namludan yakinda olabilir;
+   * mermi onun icinde ya da arkasinda dogarsa tarama onu gormezdi. Kulenin
+   * merkezinde zaten degiyorsa agiz kulenin merkezinde; yon govdeyi
+   * iskaliyorsa (ya da govde tumuyle kulenin arkasindaysa) tam namlu.
+   */
+  private getTowerMuzzleClearance(tower: TowerModel, ux: number, uy: number, target: EnemyModel, shape: ProjectileShape) {
+    const muzzle = this.getTowerMuzzleDistance(tower);
+    if (muzzle <= 0) return 0;
+    const contact = getProjectileBodyContact(tower.x, tower.y, ux, uy, muzzle, shape, 0, target.body);
+    return contact >= 0 ? contact : muzzle;
+  }
+
+  /** Namlu agzinin kulenin merkezinden uzakligi (dunya birimi); agzi olmayan kulede 0. */
+  private getTowerMuzzleDistance(tower: TowerModel) {
+    const offset = this.getTowerEngine(tower)?.attack.muzzleOffset ?? 0;
+    return offset > 0 ? this.scaleWorldDistance(TOWER_GRID_SIZE * this.getTowerPlacementSpan(tower.definition.id) / 2 * offset) : 0;
   }
 
   private spawnSpecialProjectile(sourceTower: TowerModel, definitionId: string, target: EnemyModel, damage: number, speed: number, aoeRadius: number, slowMs: number) {
@@ -7919,6 +8124,9 @@ export class MatchRoom extends Room<MatchState> {
       pierceLimit: 1,
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(sourceTower), "armorBreak"),
       piercedEnemyIds: [],
+      shape: this.getProjectileShapeFor(definitionId, sourceTower),
+      tier: getTowerTier(sourceTower.level),
+      flown: 0,
       luck: sourceTower.characterId === "onur" ? sourceTower.lastLuckMultiplier : undefined
     });
     this.broadcastProjectileSpawn(this.projectiles.get(id)!);
@@ -8328,7 +8536,7 @@ export class MatchRoom extends Room<MatchState> {
       range: baseRange * rangeMultiplier,
       speed: this.scaleWorldSpeed(getBallisticMovementSpeed(KIN_WAVE_SPEED + tower.level * 4, "wave"))
         * this.getTowerProjectileSpeedMultiplier(tower),
-      bandDepth: this.scaleWorldDistance(KIN_WAVE_BAND_DEPTH),
+      lingerDistance: this.scaleWorldDistance(KIN_WAVE_LINGER_DISTANCE),
       slowMs: getTowerSlowDurationMs(tower.definition) > 0
         ? getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 80
         : 0,
@@ -8355,39 +8563,52 @@ export class MatchRoom extends Room<MatchState> {
       } else {
         wave.distance += wave.speed * seconds;
       }
-      this.applyKinWaveHits(tower, wave, seconds);
-      this.setKinWaveBeam(wave);
+      // Once isin (cizilen dalga), sonra vurus: dalga cizildigi yerde vuruyor.
+      const beam = this.setKinWaveBeam(wave);
+      this.applyKinWaveHits(tower, wave, beam, seconds);
 
-      if (wave.distance >= wave.range + wave.bandDepth && wave.tipHoldSeconds <= 0) {
+      if (wave.distance >= wave.range + wave.lingerDistance && wave.tipHoldSeconds <= 0) {
         this.kinWaves.delete(id);
         this.beams.delete(`kin-wave-${id}`);
       }
     }
   }
 
-  private applyKinWaveHits(tower: TowerModel, wave: KinWaveModel, seconds: number) {
+  /**
+   * Dalganin vurdugu dusmanlar: dalga cizildigi yerde vuruyor (combat-vfx
+   * `drawPressureWave`): kuleden on kenara kadar yaricapli yay, yari acisi
+   * isinin genisliginden, cizilen kalinligi kadar (sahibin karari: on
+   * cizginin yarisi onde, arkadaki dolu yaylar geride, ~10 birim;
+   * `getKinWaveBandBehind` / `getKinWaveBandAhead`, isinin kademesi ve
+   * sahnenin mermi olcegiyle). Govdesi o banda degen vuruluyor
+   * (`isBodyTouchingKinWave`). Geometri istemcinin aldigi isinin
+   * sayilarindan (teldeki yuvarlamayla, `setKinWaveBeam`): istemcinin damgasi
+   * (`getKinWaveHitDistance`) ayni fonksiyonu ayni sayilarla cagiriyor.
+   *
+   * Bir tiklik kayma: vurus, oteki vuruslar gibi tikin basindaki konumlarla
+   * (dusmanlar bu tikte yurumeden once, `updateEnemies`ten once); snapshot
+   * ise o tikin yuruyusunden sonraki konumlari tasiyor ve ~4 tikte bir
+   * geliyor. Istemci damgayi gelen snapshot'in konumlariyla seciyor: yuruyen
+   * dusmanda damga ayni snapshot'ta ya da bir snapshot erken / gec olabilir
+   * (oyun kuralini istemcinin goruntusune gore degistirmemek icin kabul).
+   *
+   * Eskiden bant duz bir on kenardi (merkezin dalga yonundeki izdusumu) ve
+   * yari aci menzilde olculuyordu: yayin yanlarinda dusman cizilen yaydan
+   * once vuruluyordu. Taht'in Kin dalgasi kulenin "beam" sekline (eksen
+   * cizgisi) bakiyordu, 90 derecelik yayi hic vurmuyordu.
+   */
+  private applyKinWaveHits(tower: TowerModel, wave: KinWaveModel, beam: BeamModel, seconds: number) {
     const isPushWave = wave.pushbackDistance > 0;
+    const sector = this.kinWaveSector;
+    const scale = getProjectileSceneScale(getMapGridSize(this.activeMap));
+    if (!writeKinWaveSector(sector, beam.x1, beam.y1, beam.x2, beam.y2, beam.width, getKinWaveBandBehind(scale), getKinWaveBandAhead(beam.tier ?? 1, scale))) return;
     for (const enemy of this.enemies.values()) {
       this.perfCounters.aoeChecks += 1;
       if ((!isPushWave && wave.hitEnemyIds.includes(enemy.id)) || !this.canTowerTargetEnemy(tower, enemy)) {
         continue;
       }
 
-      const projection = getProjectionOnAngle(enemy.x, enemy.y, wave.x, wave.y, wave.angle);
-      if (projection < Math.max(0, wave.distance - wave.bandDepth) || projection > wave.distance + getEnemyCollisionRadius(enemy)) {
-        continue;
-      }
-
-      if (!isTargetInsideAttackShape({
-        shape: tower.definition.engine?.attack.shape ?? "cone",
-        x: wave.x,
-        y: wave.y,
-        aimX: wave.x + Math.cos(wave.angle) * wave.range,
-        aimY: wave.y + Math.sin(wave.angle) * wave.range,
-        length: wave.range,
-        angle: wave.halfAngle * 2 * 180 / Math.PI,
-        canHitAir: this.canTowerHitAir(tower)
-      }, { ...enemy, radius: getEnemyCollisionRadius(enemy) })) {
+      if (!isBodyTouchingKinWave(enemy.body, sector)) {
         continue;
       }
 
@@ -8397,7 +8618,8 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       wave.hitEnemyIds.push(enemy.id);
-      this.applyKinSlow(enemy, tower, projection, wave.range, wave.slowMs);
+      // Yavaslatmanin gucu kuleye uzakliktan (dokunun merkezi, eskisi gibi).
+      this.applyKinSlow(enemy, tower, getProjectionOnAngle(enemy.x, enemy.y, wave.x, wave.y, wave.angle), wave.range, wave.slowMs);
     }
   }
 
@@ -8914,39 +9136,47 @@ export class MatchRoom extends Room<MatchState> {
     return result.effects;
   }
 
-  private selectEnemiesForAttackShape(query: AttackShapeQuery, enemies: EnemyModel[], includeCollisionRadius = true) {
-    const byId = new Map(enemies.map((enemy) => [enemy.id, enemy]));
-    return selectAttackShapeTargets(query, enemies.map((enemy) => ({
-      id: enemy.id,
-      x: enemy.x,
-      y: enemy.y,
-      radius: includeCollisionRadius ? getEnemyCollisionRadius(enemy) : 0,
-      movementKind: enemy.movementKind
-    }))).map((target) => byId.get(target.id)).filter((enemy): enemy is EnemyModel => Boolean(enemy));
+  /**
+   * Sekil sorgusu dusman kayitlarinin kendisiyle: kayit govde nesnesini
+   * tasiyor (`body`), sekil gorunen govdeyle sinaniyor. Alan halkasi
+   * da: govdesi halkaya degen vuruluyor, merkezi disarida kalsa da (sahibin
+   * karari, 2026-10; eskiden alan hasari merkez sinamasiydi). Eskiden her
+   * dusman icin ara nesne ve kimlik haritasi kuruluyordu.
+   */
+  private selectEnemiesForAttackShape(query: AttackShapeQuery, enemies: EnemyModel[]) {
+    return selectAttackShapeTargets(query, enemies);
   }
 
   private getKinDistanceRatio(distanceFromTower: number, range: number) {
     return this.clamp(distanceFromTower / Math.max(1, range), 0, 1);
   }
 
+  /**
+   * Dalganin isini: on kenar gorunen boyda (menzilde duruyor), genislik yari
+   * acidan (en az 8). Uclar ve genislik teldeki yuvarlamayla yaziliyor (tel
+   * ayni sayilari yeniden yuvarliyor, degismiyor): vurus da bu sayilardan,
+   * istemcinin gordugu dalga ile sunucunun vurdugu ayni.
+   */
   private setKinWaveBeam(wave: KinWaveModel) {
     const visibleDistance = Math.min(wave.distance, wave.range);
     const x2 = wave.x + Math.cos(wave.angle) * visibleDistance;
     const y2 = wave.y + Math.sin(wave.angle) * visibleDistance;
     const baseColor = wave.sourceDefinitionId === "zeynep-3-kin-wave" ? 0xdc2626 : 0x7f1d1d;
-    this.beams.set(`kin-wave-${wave.id}`, {
-      id: `kin-wave-${wave.id}`,
+    const id = `kin-wave-${wave.id}`;
+    this.beams.set(id, {
+      id,
       definitionId: wave.sourceDefinitionId,
       tier: this.getBeamTier(wave.towerId),
-      x1: wave.x,
-      y1: wave.y,
-      x2,
-      y2,
-      width: Math.max(8, Math.tan(wave.halfAngle) * visibleDistance * 2),
+      x1: roundNetworkNumber(wave.x),
+      y1: roundNetworkNumber(wave.y),
+      x2: roundNetworkNumber(x2),
+      y2: roundNetworkNumber(y2),
+      width: roundNetworkNumber(Math.max(8, Math.tan(wave.halfAngle) * visibleDistance * 2)),
       color: wave.abartiLevel > 0 ? this.getAbartiDarkenedBeamColor(baseColor, wave.abartiLevel) : baseColor,
       overdrive: false,
       ttlMs: 120
     });
+    return this.beams.get(id)!;
   }
 
   private fireZeynepSynthesisKinProjectile(tower: TowerModel, target: EnemyModel) {
@@ -8956,7 +9186,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private fireZeynepSynthesisKinShowcase(tower: TowerModel, target: EnemyModel) {
-    const result = this.findBestKinShowcaseCone(tower, target);
+    const result = this.findBestKinShowcaseCone(tower);
     if (!result) {
       return;
     }
@@ -8976,55 +9206,65 @@ export class MatchRoom extends Room<MatchState> {
       id: beamId,
       definitionId: "zeynep-3-kin-showcase",
       tier: this.getBeamTier(tower.id),
-      x1: tower.x,
-      y1: tower.y,
-      x2: result.endX,
-      y2: result.endY,
-      width: Math.max(12, Math.tan(this.getTowerConeAngleRadians(tower) / 2) * Math.hypot(result.endX - tower.x, result.endY - tower.y) * 2),
+      x1: result.x1,
+      y1: result.y1,
+      x2: result.x2,
+      y2: result.y2,
+      width: result.width,
       color: result.abartiLevel > 0 ? this.getAbartiDarkenedBeamColor(0xef4444, result.abartiLevel) : 0xef4444,
       overdrive: false,
       ttlMs: 260
     });
   }
 
-  private findBestKinShowcaseCone(tower: TowerModel, fallbackTarget: EnemyModel) {
-    const enemies = this.getEnemiesNear(tower.x, tower.y, this.getTowerRange(tower) * 1.5).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
-    if (enemies.length === 0) {
+  /**
+   * Gosterinin en kalabalik konisi. Yonler eskisi gibi: merkezi 1,5 menzil
+   * icindeki hedeflenebilir dusmanlarin yonleri. Koni cizildigi gibi vuruyor
+   * (beam-renderer `drawKinShowcaseLight`): tepe kule, uzak kenar menzilde
+   * duz, koseleri yari genislik kadar yanda; govdesi o ucgene degen dusman
+   * hedef (ucgen bir kez `writeKinShowcaseTriangle` ile yaziliyor, aday
+   * basina `isBodyInTriangle`; istemcinin `isBodyInKinShowcase`i ayni iki
+   * adim). Eskiden dairesel dilimdi: cizilen ucgenin koselerindeki dusman
+   * vurulmuyordu. Ucgenin sayilari isinin teldeki sayilari (yuvarlanmis):
+   * istemcinin spot isigi (`isInKinShowcaseCone`) ayni sayilarla. Hedef
+   * havuzu ucgenin en uzak kosesine kadar (Abarti en fazla iki kat), govde
+   * payiyla.
+   */
+  private findBestKinShowcaseCone(tower: TowerModel) {
+    const range = this.getTowerRange(tower);
+    const half = this.getTowerConeAngleRadians(tower) / 2;
+    const longest = range * getAbartiShowcaseRangeMultiplier(10);
+    const poolRadius = Math.max(range * 1.5, Math.hypot(longest, Math.max(6, Math.tan(half) * longest)) + this.enemyBodyReachMax);
+    const pool = this.getEnemiesNear(tower.x, tower.y, poolRadius).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
+    const directionLimitSq = (range * 1.5) ** 2;
+    const directions = pool.filter((enemy) => distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= directionLimitSq);
+    if (directions.length === 0) {
       return undefined;
     }
 
-    const range = this.getTowerRange(tower);
-    let best: { endX: number; endY: number; targets: EnemyModel[]; score: number; abartiLevel: number } | undefined;
-    for (const enemy of enemies.length > 0 ? enemies : [fallbackTarget]) {
+    const x1 = roundNetworkNumber(tower.x);
+    const y1 = roundNetworkNumber(tower.y);
+    let best: { x1: number; y1: number; x2: number; y2: number; width: number; targets: EnemyModel[]; score: number; abartiLevel: number } | undefined;
+    for (const enemy of directions) {
       const angle = Math.atan2(enemy.y - tower.y, enemy.x - tower.x);
       const baseEndX = tower.x + Math.cos(angle) * range;
       const baseEndY = tower.y + Math.sin(angle) * range;
       const abartiLevel = this.getAbartiPassThroughLevel(tower.ownerId, tower.x, tower.y, baseEndX, baseEndY);
       const finalRange = range * (abartiLevel > 0 ? getAbartiShowcaseRangeMultiplier(abartiLevel) : 1);
-      const targets = enemies.filter((candidate) => this.isPointInsideCone(candidate.x, candidate.y, tower.x, tower.y, angle, this.getTowerConeAngleRadians(tower) / 2, finalRange));
+      const x2 = roundNetworkNumber(tower.x + Math.cos(angle) * finalRange);
+      const y2 = roundNetworkNumber(tower.y + Math.sin(angle) * finalRange);
+      const width = roundNetworkNumber(Math.max(12, Math.tan(half) * finalRange * 2));
+      // Ucgen yon basina bir kez (`writeKinShowcaseTriangle`); aday basina yalnizca govde.
+      const triangle = this.kinShowcaseTriangle;
+      if (!writeKinShowcaseTriangle(triangle, x1, y1, x2, y2, width)) continue;
+      const targets = pool.filter((candidate) => isBodyInTriangle(candidate.body, triangle));
       const score = targets.length * 100000 + targets.reduce((total, candidate) => total + candidate.pathDistance, 0);
       if (!best || score > best.score) {
-        best = {
-          endX: tower.x + Math.cos(angle) * finalRange,
-          endY: tower.y + Math.sin(angle) * finalRange,
-          targets,
-          score,
-          abartiLevel
-        };
+        best = { x1, y1, x2, y2, width, targets, score, abartiLevel };
       }
     }
 
     return best;
-  }
-
-  private isPointInsideCone(x: number, y: number, originX: number, originY: number, angle: number, halfAngle: number, range: number) {
-    const dx = x - originX;
-    const dy = y - originY;
-    const distance = Math.hypot(dx, dy);
-    if (distance > range) {
-      return false;
-    }
-    return Math.abs(normalizeAngle(Math.atan2(dy, dx) - angle)) <= halfAngle;
   }
 
   private fireZeynepSynthesisCopiedProjectile(tower: TowerModel, target: EnemyModel, copySourceTower: TowerModel) {
@@ -9199,6 +9439,13 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    const beamRadius = this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BEAM_RADIUS);
+    const band = this.rayBand;
+    band.x1 = x1;
+    band.y1 = y1;
+    band.x2 = x2;
+    band.y2 = y2;
+    band.halfWidth = beamRadius;
     for (const enemy of this.enemies.values()) {
       this.perfCounters.aoeChecks += 1;
       if (ray.hitEnemyIds.includes(enemy.id) || !this.canTowerTargetEnemy(tower, enemy)) {
@@ -9209,8 +9456,8 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const hitRadius = this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BEAM_RADIUS) + getEnemyCollisionRadius(enemy);
-      if (distanceToSegmentSq(enemy.x, enemy.y, x1, y1, x2, y2) > hitRadius * hitRadius) {
+      // Isinin gorunen parcasi (bant) gorunen govdeye degiyor mu.
+      if (!isBodyTouchingBandShape(enemy.body, band)) {
         continue;
       }
 
@@ -9272,6 +9519,11 @@ export class MatchRoom extends Room<MatchState> {
       pierceLimit,
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
       piercedEnemyIds: [],
+      // Taht'in kopyaladigi Hiza mermisi oyun kuralinda "zeynep-1"; istemci onu
+      // kopya mizragi olarak ciziyor, govde de o.
+      shape: this.getProjectileShapeFor(definitionId === "zeynep-1" && tower.definition.id === "zeynep-3" ? TAHT_COPY_PROJECTILE_ID : definitionId, tower),
+      tier: getTowerTier(tower.level),
+      flown: 0,
       luck: tower.characterId === "onur" ? tower.lastLuckMultiplier : undefined
     });
     this.broadcastProjectileSpawn(this.projectiles.get(id)!);
@@ -9419,10 +9671,17 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       zone.nextTickAt += scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_TICK_MS);
+      // Bant zon basina bir kez: aday basina yalnizca govde (cift sayilar kutulanmiyor).
+      // Hasar dongunun icinde: bant yalnizca bu donguye ait (baska bir yol yazmasin).
+      const band = this.burnZoneBand;
+      band.x1 = zone.x1;
+      band.y1 = zone.y1;
+      band.x2 = zone.x2;
+      band.y2 = zone.y2;
+      band.halfWidth = zone.radius;
       for (const enemy of this.enemies.values()) {
         this.perfCounters.aoeChecks += 1;
-        const hitRadius = zone.radius + getEnemyCollisionRadius(enemy);
-        if (distanceToSegmentSq(enemy.x, enemy.y, zone.x1, zone.y1, zone.x2, zone.y2) <= hitRadius * hitRadius) {
+        if (isBodyTouchingBandShape(enemy.body, band)) {
           this.damageEnemy(enemy, zone.damage, 0, "zeynep-3-burn", zone.ownerId, zone.damageType, 0, 1, zone.towerId, "aura");
         }
       }
@@ -9532,16 +9791,37 @@ export class MatchRoom extends Room<MatchState> {
     this.damageDebugLaserSweepHits(tower, hit);
   }
 
-  /** Supuren bir kirisin `from`dan `to`ya taradigi yaydaki dusmanlar. */
+  /**
+   * Supuren bir kirisin `from`dan `to`ya taradigi yaydaki dusmanlar: kirisin
+   * taradigi dilim (kiris yaricapi kadar sisirilmis) gorunen govdeye degiyor
+   * mu. Dilim kulenin merkezinden dunyanin en uzak kosesine kadar (kiris
+   * dunyanin kenarina gidiyor). Yonler cagri basina bir kez.
+   */
   private collectDebugLaserArcHits(tower: TowerModel, from: number, to: number, hit: Set<EnemyModel>) {
-    const end = getRayAngleToWorldEdge(tower.x, tower.y, to, this.getActiveWorldBounds());
+    const bounds = this.getActiveWorldBounds();
+    const reach = Math.hypot(Math.max(tower.x - bounds.left, bounds.right - tower.x), Math.max(tower.y - bounds.top, bounds.bottom - tower.y));
     const beamRadius = this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS);
     const canHitAir = this.canTowerHitAir(tower);
+    const swept = getSignedShortestAngleDelta(from, to);
+    const start = swept >= 0 ? from : to;
+    const sweep = Math.abs(swept);
+    // Dilim cagri basina bir kez (`createBodySector`): aday basina yalnizca govde.
+    const sector = this.areaSector;
+    sector.x = tower.x;
+    sector.y = tower.y;
+    sector.startX = Math.cos(start);
+    sector.startY = Math.sin(start);
+    sector.endX = Math.cos(start + sweep);
+    sector.endY = Math.sin(start + sweep);
+    sector.sweep = sweep;
+    sector.inner = 0;
+    sector.outer = reach;
+    sector.inflate = beamRadius;
     for (const enemy of this.enemies.values()) {
       if (hit.has(enemy) || (!canHitAir && enemy.movementKind === "air")) continue;
       // Siper dalgasi: donen kiris siperin ardini taramiyor.
       if (this.isEnemyBehindAegis(tower, enemy)) continue;
-      if (didDebugLaserSweepHitEnemy(tower, enemy, from, to, end.x, end.y, beamRadius)) {
+      if (isBodyTouchingSweepShape(enemy.body, sector)) {
         hit.add(enemy);
       }
     }
@@ -9729,86 +10009,53 @@ export class MatchRoom extends Room<MatchState> {
     return angles;
   }
   private updateProjectiles(seconds: number) {
+    const contact = this.projectileContact;
     for (const [id, projectile] of this.projectiles) {
       const previousX = projectile.x;
       const previousY = projectile.y;
+      const shape = projectile.shape ?? this.resolveProjectileShape(projectile);
 
-      if (usesLinearBallistics(projectile.hitType)) {
+      if (usesLinearBallistics(projectile.hitType) || (projectile.piercedEnemyIds.length > 0 && projectile.piercedEnemyIds.length < projectile.pierceLimit)) {
+        // Duz mermi; delip gecen gudumlu mermi de ilk temastan sonra duz gidiyor.
+        const linear = usesLinearBallistics(projectile.hitType);
         projectile.x += projectile.vx * seconds;
         projectile.y += projectile.vy * seconds;
         this.updateProjectileAbartiModifier(projectile, previousX, previousY);
-        const sourceTower = this.towers.get(projectile.towerId);
         const segmentLength = Math.hypot(projectile.x - previousX, projectile.y - previousY);
-        // Siper dalgasi: mermi on cizgiyi kesiyorsa carpisma yalnizca siperin onunde aranir.
-        const aegisT = this.lineBlockersActive ? this.getAegisProjectileCrossing(previousX, previousY, projectile.x, projectile.y) : undefined;
-        const reachX = aegisT === undefined ? projectile.x : previousX + (projectile.x - previousX) * aegisT;
-        const reachY = aegisT === undefined ? projectile.y : previousY + (projectile.y - previousY) * aegisT;
-        const collisionCandidates = this.getEnemiesNear(
-          (previousX + projectile.x) / 2,
-          (previousY + projectile.y) / 2,
-          segmentLength / 2 + this.scaleWorldDistance(48)
-        );
-        const collision = findFirstLinearCollision(
-          { x: previousX, y: previousY },
-          { x: reachX, y: reachY },
-          collisionCandidates
-            .filter((enemy) => !sourceTower || this.canTowerTargetEnemy(sourceTower, enemy))
-            .filter((enemy) => !sourceTower || distanceSq(sourceTower.x, sourceTower.y, enemy.x, enemy.y) >= this.getTowerMinimumRange(sourceTower) ** 2)
-            .map((enemy) => ({ id: enemy.id, x: enemy.x, y: enemy.y, radius: getEnemyCollisionRadius(enemy) })),
-          getBallisticCollisionRadius(projectile.hitType),
-          new Set(projectile.piercedEnemyIds)
-        );
-        if (collision) {
-          // Carpisma govdesi yalnizca geometri tasir. Hasar canli dusman
-          // nesnesine uygulanmali; govdenin kendisine yazilan can ve kalkan
-          // degisiklikleri kaybolur.
-          const hitEnemy = this.enemies.get(collision.body.id);
-          projectile.x = previousX + (reachX - previousX) * collision.progress;
-          projectile.y = previousY + (reachY - previousY) * collision.progress;
-          if (hitEnemy) {
-            this.applyProjectileHit(projectile, hitEnemy);
-          }
-          projectile.piercedEnemyIds.push(collision.body.id);
-          if (projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
+        const ux = segmentLength > 0 ? (projectile.x - previousX) / segmentLength : 1;
+        const uy = segmentLength > 0 ? (projectile.y - previousY) / segmentLength : 0;
+        // Siper dalgasi ve meka kalkani: cizilen uc cizgiyi kesiyorsa carpisma yalnizca siperin onunde aranir.
+        const blockedAt = this.getProjectileBlockCrossing(projectile, shape, previousX, previousY, ux, uy, segmentLength);
+        if (!linear && blockedAt !== undefined) {
+          this.stopProjectileAtAegis(id, projectile, previousX, previousY, ux, uy, blockedAt);
+          continue;
+        }
+        if (!linear && this.isProjectileOutOfBounds(projectile)) {
+          this.removeProjectile(id, projectile);
+          continue;
+        }
+        const travel = blockedAt ?? segmentLength;
+        const hitEnemy = this.findProjectileContact(projectile, shape, previousX, previousY, travel, contact);
+        if (hitEnemy) {
+          // Mermi cizilen govdesinin gorunen govdeye degdigi yerde; temas o kenarda.
+          projectile.x = previousX + contact.ux * contact.along;
+          projectile.y = previousY + contact.uy * contact.along;
+          projectile.flown = (projectile.flown ?? 0) + contact.along;
+          this.applyProjectileHit(projectile, hitEnemy, contact.x, contact.y);
+          projectile.piercedEnemyIds.push(hitEnemy.id);
+          if (!linear || projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
             this.removeProjectile(id, projectile);
           }
           continue;
         }
-        if (aegisT !== undefined) {
-          this.stopProjectileAtAegis(id, projectile, previousX, previousY, aegisT);
+        projectile.flown = (projectile.flown ?? 0) + travel;
+        if (blockedAt !== undefined) {
+          this.stopProjectileAtAegis(id, projectile, previousX, previousY, ux, uy, blockedAt);
           continue;
         }
         if (this.isProjectileOutOfBounds(projectile)) {
           this.removeProjectile(id, projectile);
         }
-        continue;
-      }
-
-      if (projectile.piercedEnemyIds.length > 0 && projectile.piercedEnemyIds.length < projectile.pierceLimit) {
-        projectile.x += projectile.vx * seconds;
-        projectile.y += projectile.vy * seconds;
-        this.updateProjectileAbartiModifier(projectile, previousX, previousY);
-
-        if (this.lineBlockersActive) {
-          const aegisT = this.getAegisProjectileCrossing(previousX, previousY, projectile.x, projectile.y);
-          if (aegisT !== undefined) {
-            this.stopProjectileAtAegis(id, projectile, previousX, previousY, aegisT);
-            continue;
-          }
-        }
-
-        if (this.isProjectileOutOfBounds(projectile)) {
-          this.removeProjectile(id, projectile);
-          continue;
-        }
-
-        const pierceTarget = this.findPierceLineTarget(projectile, previousX, previousY);
-        if (!pierceTarget) {
-          continue;
-        }
-
-        this.applyProjectileHit(projectile, pierceTarget);
-        this.removeProjectile(id, projectile);
         continue;
       }
 
@@ -9819,51 +10066,113 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      // Gudumlu mermi hedefine (dokunun merkezine) donuyor ve bu tikte o yonde
+      // gidiyor: cizilen govdesi gorunen govdeye degdigi yerde duruyor; merkeze
+      // atlamiyor. Yalnizca kendi hedefi sinaniyor. Yon gercek uzaklikla birim:
+      // eskiden `max(1, uzaklik)` hedefin bir birim yakininda yonu kisaltiyor,
+      // tam merkezinde (0, 0) yapiyordu; yonsuz mermi govdenin icinde takili
+      // kaliyordu. Merkezin tam ustundeyse son ucus yonu (o da yoksa +x).
       const dx = target.x - projectile.x;
       const dy = target.y - projectile.y;
-      const distance = Math.max(1, Math.hypot(dx, dy));
+      const distance = Math.hypot(dx, dy);
       const speed = Math.max(1, Math.hypot(projectile.vx, projectile.vy));
       const travel = speed * seconds;
-      const hitRadius = getEnemyCollisionRadius(target) + 4;
-
-      projectile.vx = (dx / distance) * speed;
-      projectile.vy = (dy / distance) * speed;
-
-      if (distance <= travel + hitRadius) {
-        projectile.x = target.x;
-        projectile.y = target.y;
-      } else {
-        projectile.x += projectile.vx * seconds;
-        projectile.y += projectile.vy * seconds;
+      const headingSpeed = Math.hypot(projectile.vx, projectile.vy);
+      const ux = distance > 0 ? dx / distance : headingSpeed > 0 ? projectile.vx / headingSpeed : 1;
+      const uy = distance > 0 ? dy / distance : headingSpeed > 0 ? projectile.vy / headingSpeed : 0;
+      projectile.vx = ux * speed;
+      projectile.vy = uy * speed;
+      const flown = projectile.flown ?? 0;
+      const reached = getProjectileBodyContact(previousX, previousY, ux, uy, travel, shape, flown, target.body);
+      const advance = reached >= 0 ? reached : travel;
+      const blockedAt = this.getProjectileBlockCrossing(projectile, shape, previousX, previousY, ux, uy, advance);
+      if (blockedAt !== undefined) {
+        projectile.x = previousX + ux * blockedAt;
+        projectile.y = previousY + uy * blockedAt;
+        this.updateProjectileAbartiModifier(projectile, previousX, previousY);
+        this.stopProjectileAtAegis(id, projectile, previousX, previousY, ux, uy, blockedAt);
+        continue;
       }
+      projectile.x = previousX + ux * advance;
+      projectile.y = previousY + uy * advance;
+      projectile.flown = (projectile.flown ?? 0) + advance;
       this.updateProjectileAbartiModifier(projectile, previousX, previousY);
-
-      if (this.lineBlockersActive) {
-        const aegisT = this.getAegisProjectileCrossing(previousX, previousY, projectile.x, projectile.y);
-        if (aegisT !== undefined) {
-          this.stopProjectileAtAegis(id, projectile, previousX, previousY, aegisT);
-          continue;
-        }
-      }
 
       if (this.isProjectileOutOfBounds(projectile)) {
         this.removeProjectile(id, projectile);
         continue;
       }
 
-      if (distance > travel + hitRadius && !didProjectileHitTarget(projectile, target, previousX, previousY)) {
+      if (reached < 0) {
         continue;
       }
 
-      projectile.x = target.x;
-      projectile.y = target.y;
-      this.applyProjectileHit(projectile, target);
+      writeProjectileBodyContactPoint(previousX, previousY, ux, uy, reached, shape, flown, target.body, contact);
+      this.applyProjectileHit(projectile, target, contact.x, contact.y);
       projectile.piercedEnemyIds.push(target.id);
 
       if (projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
         this.removeProjectile(id, projectile);
       }
     }
+  }
+
+  /**
+   * Duz giden merminin bu tikte cizilen govdesiyle ilk degdigi dusman.
+   *
+   * Sekil cizilen govde (`projectile.shape`: cizicinin dis bukey parcalari ve
+   * disk), dusman gorunen
+   * govdesi (yonlu dis bukey cokgen). Cizilen kenar govdeye degdiginde
+   * vurus, oncesinde degil; geriye ancak ucmus oldugu ve cizildigi kadar
+   * (`flown`, `getProjectileReach`). Bulunursa `out`a yon, temastaki ilerleme
+   * (`along`) ve temas noktasi (govdenin kenari) yaziliyor.
+   *
+   * Aday sorgusu seridin cevresinde: yaricap seridin yarisi + en + sahadaki en
+   * uzak govde payi. Tik icinde itilen dusman izgarada yeni hucresinde
+   * (`tryDisplaceEnemy`), sorgunun ekstra paya ihtiyaci yok. Adaylar once
+   * geometriyle eleniyor (`getProjectileBodyContact`: seridin disindaki govde
+   * donusumsuz), hedef kurallari yalnizca degen dusmana soruluyor; ara dizi,
+   * `Set` ve nesne kurulmuyor. Esitlikte (pratikte tikin basinda zaten degen
+   * birden cok govde, ilerleme 0) ucus yonunde en ondeki govde: ucun degdigi.
+   */
+  private findProjectileContact(projectile: ProjectileModel, shape: ProjectileShape, fromX: number, fromY: number, travel: number, out: ProjectileContactScratch) {
+    const speed = Math.sqrt(projectile.vx * projectile.vx + projectile.vy * projectile.vy);
+    const ux = speed > 0 ? projectile.vx / speed : 1;
+    const uy = speed > 0 ? projectile.vy / speed : 0;
+    const flown = projectile.flown ?? 0;
+    // Sekil merkezin `reach` gerisinden en on noktasina (`front`), yanlara `halfWidth`.
+    const near = -getProjectileReach(shape, flown);
+    const far = travel + shape.front;
+    const offset = (near + far) / 2;
+    const reach = (far - near) / 2 + shape.halfWidth + this.enemyBodyReachMax;
+    const sourceTower = this.towers.get(projectile.towerId);
+    let minimumRangeSq = -1;
+    let best: EnemyModel | undefined;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestAlong = Number.NEGATIVE_INFINITY;
+    for (const enemy of this.enemySpatialGrid.queryCircle(fromX + ux * offset, fromY + uy * offset, reach)) {
+      const body = enemy.body;
+      const distance = getProjectileBodyContact(fromX, fromY, ux, uy, travel, shape, flown, body);
+      if (distance < 0 || distance > bestDistance) continue;
+      const along = distance === 0 ? (getBodyCentreX(body) - fromX) * ux + (getBodyCentreY(body) - fromY) * uy : 0;
+      if (distance === bestDistance && along <= bestAlong) continue;
+      // Hedeflenemeyen (yer alti, faz), izgarada kalmis olu kayit ve delinmis dusman aday degil.
+      if (this.enemies.get(enemy.id) !== enemy || enemy.untargetable || projectile.piercedEnemyIds.includes(enemy.id)) continue;
+      if (sourceTower) {
+        if (!this.canTowerTargetEnemy(sourceTower, enemy)) continue;
+        if (minimumRangeSq < 0) minimumRangeSq = this.getTowerMinimumRange(sourceTower) ** 2;
+        if (distanceSq(sourceTower.x, sourceTower.y, body.x, body.y) < minimumRangeSq) continue;
+      }
+      best = enemy;
+      bestDistance = distance;
+      bestAlong = along;
+    }
+    if (!best) return undefined;
+    out.ux = ux;
+    out.uy = uy;
+    out.along = bestDistance;
+    writeProjectileBodyContactPoint(fromX, fromY, ux, uy, bestDistance, shape, flown, best.body, out);
+    return best;
   }
 
   private isProjectileOutOfBounds(projectile: ProjectileModel) {
@@ -9874,21 +10183,6 @@ export class MatchRoom extends Room<MatchState> {
       projectile.y < bounds.top - 30 ||
       projectile.y > bounds.bottom + 30
     );
-  }
-
-  private findPierceLineTarget(projectile: ProjectileModel, previousX: number, previousY: number) {
-    return this.selectEnemiesForAttackShape({
-      shape: "line",
-      x: previousX,
-      y: previousY,
-      aimX: projectile.x,
-      aimY: projectile.y,
-      length: Math.hypot(projectile.x - previousX, projectile.y - previousY),
-      width: 4,
-      pierceCount: 1,
-      canHitAir: true,
-      alreadyHitIds: projectile.piercedEnemyIds
-    }, Array.from(this.enemies.values()))[0];
   }
 
   private updateProjectileAbartiModifier(projectile: ProjectileModel, previousX: number, previousY: number) {
@@ -9909,12 +10203,17 @@ export class MatchRoom extends Room<MatchState> {
     projectile.armorBreakAmount = Math.max(projectile.armorBreakAmount, getAbartiArmorBreak(abartiLevel));
   }
 
-  private applyProjectileHit(projectile: ProjectileModel, target: EnemyModel) {
+  /**
+   * Temas: `contactX/Y` cizilen kenarin gorunen govdeye degdigi nokta (yoksa
+   * merminin konumu). Carpma cizimi ve alan hasarinin merkezi orada: halka
+   * oyuncunun gordugu vurusun yerinde.
+   */
+  private applyProjectileHit(projectile: ProjectileModel, target: EnemyModel, contactX = projectile.x, contactY = projectile.y) {
     this.broadcast("projectile:contact", {
       id: projectile.id,
       definitionId: projectile.definitionId,
-      x: roundNetworkNumber(projectile.x),
-      y: roundNetworkNumber(projectile.y),
+      x: roundNetworkNumber(contactX),
+      y: roundNetworkNumber(contactY),
       angle: Math.atan2(projectile.vy, projectile.vx),
       tier: this.getProjectileTier(projectile),
       // Alan hasarinin gercek yaricapi: istemci patlamayi o boyda ciziyor
@@ -9929,15 +10228,19 @@ export class MatchRoom extends Room<MatchState> {
       this.applyArmorBreak(target, projectile.armorBreakAmount, projectileTower);
     }
     if (projectile.aoeRadius > 0) {
+      // Alan temas noktasinda: istemci halkayi orada, gercek yaricapta ciziyor
+      // (eskiden halka mermide, alan hedefin merkezindeydi). Govdesi halkaya
+      // degen her dusman vuruluyor (sahibin karari); dogrudan degilen her zaman.
       const areaTargets = this.selectEnemiesForAttackShape({
         shape: "circle",
-        x: projectile.x,
-        y: projectile.y,
-        aimX: target.x,
-        aimY: target.y,
+        x: contactX,
+        y: contactY,
+        aimX: contactX,
+        aimY: contactY,
         radius: projectile.aoeRadius,
         canHitAir: true
-      }, Array.from(this.enemies.values()), false);
+      }, Array.from(this.enemies.values()));
+      if (!areaTargets.includes(target)) areaTargets.push(target);
       for (const enemy of areaTargets) {
         this.perfCounters.aoeChecks += 1;
         const killed = this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType, projectile.luck);
@@ -10034,8 +10337,10 @@ export class MatchRoom extends Room<MatchState> {
         drone.x += drone.vx * seconds;
         drone.y += drone.vy * seconds;
 
-        const hitRadius = this.scaleWorldDistance(18);
-        if (distanceSq(drone.x, drone.y, target.x, target.y) <= hitRadius * hitRadius) {
+        // Dron hedefine bakan bir govde: cizilen govdesi (2/3 boyda doku) gorunen
+        // govdeye degdiginde vuruyor (dronun diski govdeye degiyor); eskiden her
+        // dusmana merkezden 18 birimdi.
+        if (isPointInBody(target.body, drone.x, drone.y, getAttackDroneBodyRadius(getMapGridSize(this.activeMap)))) {
           const report = this.findDroneUltimateReport(id);
           if (report) {
             this.strikeForUltimate(report, target, drone.damage, 0, ATAKAN_ULTIMATE_DRONE_SOURCE_ID, drone.ownerId);
@@ -10230,6 +10535,7 @@ export class MatchRoom extends Room<MatchState> {
       if (route.reachedBottom) {
         if (this.melisGothicNightmareUntil > now) {
           enemy.y = Math.min(enemy.y, TOWER_BUILD_BOTTOM - 1);
+          this.syncEnemyBody(enemy);
           if (enemy.special?.drainId) this.stopEnergyDrain(enemy.special);
         } else {
           this.runEnemyEscapeTriggers(enemy, now);
@@ -10291,6 +10597,9 @@ export class MatchRoom extends Room<MatchState> {
         } else {
           enemy.x += dx / distance * movement;
           enemy.y += dy / distance * movement;
+          // Govde yeni yerinde: bu tikin yuruyusten sonraki vuruslari (olum
+          // patlamalari, efsanevi etkiler, ultiler) onu cizildigi yerde bulsun.
+          this.syncEnemyBody(enemy);
           enemy.pathDistance += movement;
           if (seconds > 0) {
             enemy.moveVx = dx / distance * movement / seconds;
@@ -10386,6 +10695,7 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       enemy.x += dx / distance * step; enemy.y += dy / distance * step; enemy.pathDistance += step;
+      this.syncEnemyBody(enemy);
     }
   }
 
@@ -10906,11 +11216,150 @@ export class MatchRoom extends Room<MatchState> {
     return aegisT;
   }
 
-  /** Mermi siperde (ya da meka kalkaninda) duruyor: kesisme noktasinda kalkiyor, hasar ve alan yok. */
-  private stopProjectileAtAegis(id: string, projectile: ProjectileModel, previousX: number, previousY: number, t: number) {
-    projectile.x = previousX + (projectile.x - previousX) * t;
-    projectile.y = previousY + (projectile.y - previousY) * t;
-    this.noteLineBlock(projectile.x, projectile.y);
+  /**
+   * Merminin cizilen govdesinin bu tikte levhaya (`plate`, yari kalinligi
+   * `face`: engelin cizilen yuzu) ilk degdigi yol (dunya birimi; tikin
+   * basinda degiyorsa 0), degmiyorsa ya da mermi o levhaya gitmiyorsa -1.
+   *
+   * Yalnizca gelen yan: merkez levhanin cizgisinin hangi yanindaysa `m` o
+   * yandan cizgiye (tam ustundeyse gidis yonunde). Mermi cizgiden
+   * uzaklasiyor ya da ona paralel gidiyorsa (`u . m <= 0`) levha yok
+   * sayiliyor: namlunun gerisindeki kalkan dogan mermiyi, merkezi cizgiyi
+   * coktan gecmis mermiyi de (kalkan sonradan indi) arkadan durdurmuyor.
+   * Merkez hala gelen yandayken govde levhaya zaten degiyorsa (kalkan tam
+   * o tikte indi, siper ustune geldi, mermi levhanin icinde dogdu) temas 0:
+   * mermi yerinde duruyor.
+   *
+   * Kapilar once (engel basina, cogu mermi burada kaliyor): yaklasiyor mu
+   * (O(1)); govdenin kutusu (`[-reach, front]` x `halfWidth`) tikin sonunda
+   * cizilen yuze varabiliyor mu (O(1)); govdenin `m` yonundeki en ileri
+   * noktasi (`writeProjectileSupport`, kesik) varabiliyor mu. Kalan mermide
+   * kesin temas dusman govdesiyle ayni hesap (`getProjectileBodyContact`):
+   * levhanin uclari ve koseleri dahil, merminin parcalari ve diski merkezin
+   * `reach` gerisinde kesik.
+   */
+  private getPlateBlock(plate: EnemyBody, face: number, shape: ProjectileShape, flown: number, fromX: number, fromY: number, ux: number, uy: number, travel: number) {
+    const nx = plate.headingX;
+    const ny = plate.headingY;
+    const side = (fromX - plate.x) * nx + (fromY - plate.y) * ny;
+    const rate = ux * nx + uy * ny;
+    const sign = side > 0 || (side === 0 && rate < 0) ? -1 : 1;
+    const closing = sign * rate;
+    if (!(closing > 0)) return -1;
+    const gap = (side < 0 ? -side : side) - face;
+    const lateral = ux * ny - uy * nx;
+    if (gap > (travel + shape.front) * closing + shape.halfWidth * (lateral < 0 ? -lateral : lateral)) return -1;
+    const support = writeProjectileSupport(shape, getProjectileReach(shape, flown), ux, uy, sign * nx, sign * ny, this.plateSupport);
+    if (gap > travel * closing + sign * (support.x * nx + support.y * ny)) return -1;
+    return getProjectileBodyContact(fromX, fromY, ux, uy, travel, shape, flown, plate);
+  }
+
+  /** Meka kalkaninin cizilen levhasi (parca arti eksi `getMekaShieldFace`); ilk sorguda kuruluyor. */
+  private getMekaShieldPlate(shield: MekaShieldModel, face: number) {
+    if (shield.plate === undefined) {
+      const sx = shield.x2 - shield.x1;
+      const sy = shield.y2 - shield.y1;
+      shield.plate = createPlateBody((shield.x1 + shield.x2) / 2, (shield.y1 + shield.y2) / 2, sx, sy, Math.sqrt(sx * sx + sy * sy) / 2, face) ?? null;
+    }
+    return shield.plate ?? undefined;
+  }
+
+  /**
+   * Siperin cizilen on levhasi (on cizgi arti eksi `getAegisFrontFace`,
+   * seridin genisligi boyunca), on cizginin bu tikteki yerinde: dusmanlar
+   * gibi tikin basindaki konumunda. Ilk sorguda kuruluyor, sonra yalnizca
+   * merkezi yaziliyor.
+   */
+  private getAegisPlate(aegis: CounterSurgeModel) {
+    const band = aegis.band;
+    if (aegis.plate === undefined) aegis.plate = createPlateBody(band.originX, band.originY, band.dirY, -band.dirX, band.width / 2, getAegisFrontFace()) ?? null;
+    const plate = aegis.plate;
+    if (plate === null) return undefined;
+    plate.x = band.originX + band.dirX * aegis.frontAlong;
+    plate.y = band.originY + band.dirY * aegis.frontAlong;
+    return plate;
+  }
+
+  /**
+   * Ucan merminin cizilen govdesi bu tikte bir siperin ya da meka kalkaninin
+   * cizilen levhasina degiyor mu; degiyorsa merkezin o ana kadar gidecegi
+   * yol (dunya birimi), degmiyorsa `undefined`. Levha engelin cizilen yuzu:
+   * meka kalkaninda parca arti eksi kalkanin govdesi ve kenar cizgisi
+   * (`getMekaShieldFace`), boyu parcanin kendisi, uclar dahil; siperde on
+   * cizgi arti eksi sert kenarin yarisi (`getAegisFrontFace`), seridin
+   * genisligi boyunca. Temas `getPlateBlock`: yalnizca levhaya giden mermi,
+   * merkez gelen yandayken degiyorsa yerinde.
+   *
+   * Merkezin engelin cizgisini kestigi an (eski kural; siperde ilerleyen on
+   * cizgi) ust sinir: durus ondan gec degil, govdeli kural eskisinden fazla
+   * mermi gecirmiyor. Inen kalkan sayaci (`activeMekaShieldCount`) dusman
+   * tikinde guncelleniyor, mermilerden sonra: kapi kalkanin kendi inis
+   * aniyla, bir tik gecikmeden. Iki engel birden kesiliyorsa once gelen
+   * (esitlikte siper); kaynagi `lastLineBlocker`, durus isaretinin merkezden
+   * farki `blockSupport` (levhanin kenarindaki temas noktasi).
+   */
+  private getProjectileBlockCrossing(projectile: ProjectileModel, shape: ProjectileShape, fromX: number, fromY: number, ux: number, uy: number, travel: number) {
+    const aegis = this.activeAegis;
+    if (aegis === undefined && this.mekaShields.length === 0) return undefined;
+    const flown = projectile.flown ?? 0;
+    const toX = fromX + ux * travel;
+    const toY = fromY + uy * travel;
+    let best: number | undefined;
+    let bestPlate: EnemyBody | undefined;
+    let blocker: MekaShieldModel | undefined;
+    if (aegis) {
+      const plate = this.getAegisPlate(aegis);
+      const contact = plate ? this.getPlateBlock(plate, getAegisFrontFace(), shape, flown, fromX, fromY, ux, uy, travel) : -1;
+      const crossing = getSurgeFrontCrossing(aegis.band, aegis.previousFrontAlong, aegis.frontAlong, fromX, fromY, toX, toY);
+      const centre = crossing === undefined ? -1 : crossing * travel;
+      if (contact >= 0 && (centre < 0 || contact <= centre)) {
+        best = contact;
+        bestPlate = plate;
+      } else if (centre >= 0) {
+        best = centre;
+      }
+    }
+    if (this.mekaShields.length > 0) {
+      const now = this.runtime.now();
+      const face = getMekaShieldFace(getMapGridSize(this.activeMap));
+      for (const shield of this.mekaShields) {
+        if (now < shield.landAt || now >= shield.expiresAt) continue;
+        const plate = this.getMekaShieldPlate(shield, face);
+        if (plate === undefined) continue;
+        const contact = this.getPlateBlock(plate, face, shape, flown, fromX, fromY, ux, uy, travel);
+        const crossing = getSegmentCrossingT(fromX, fromY, toX, toY, shield.x1, shield.y1, shield.x2, shield.y2);
+        const centre = crossing === undefined ? -1 : crossing * travel;
+        const plateFirst = contact >= 0 && (centre < 0 || contact <= centre);
+        const t = plateFirst ? contact : centre;
+        if (t >= 0 && (best === undefined || t < best)) {
+          best = t;
+          bestPlate = plateFirst ? plate : undefined;
+          blocker = shield;
+        }
+      }
+    }
+    this.lastLineBlocker = blocker;
+    this.blockSupport.x = 0;
+    this.blockSupport.y = 0;
+    if (best !== undefined && bestPlate !== undefined) {
+      // Durus isareti govdenin levhaya degdigi yerde (isabet basina bir kez).
+      writeProjectileBodyContactPoint(fromX, fromY, ux, uy, best, shape, flown, bestPlate, this.blockSupport);
+      this.blockSupport.x -= fromX + ux * best;
+      this.blockSupport.y -= fromY + uy * best;
+    }
+    return best;
+  }
+
+  /**
+   * Mermi siperde (ya da meka kalkaninda) duruyor: merkez `travel` kadar
+   * ilerlemis, govdesi engelin cizilen levhasina degiyor (degdigi nokta
+   * `blockSupport`, levhanin kenarinda); hasar ve alan yok. Durus isareti o
+   * noktada (istemci engelin boyunca yerini okuyor).
+   */
+  private stopProjectileAtAegis(id: string, projectile: ProjectileModel, fromX: number, fromY: number, ux: number, uy: number, travel: number) {
+    projectile.x = fromX + ux * travel;
+    projectile.y = fromY + uy * travel;
+    this.noteLineBlock(projectile.x + this.blockSupport.x, projectile.y + this.blockSupport.y);
     this.removeProjectile(id, projectile);
   }
 
@@ -11053,6 +11502,7 @@ export class MatchRoom extends Room<MatchState> {
     enemy.pathDistance += Math.hypot(x - enemy.x, y - enemy.y);
     enemy.x = x;
     enemy.y = y;
+    this.syncEnemyBody(enemy);
     return true;
   }
 
@@ -11087,6 +11537,7 @@ export class MatchRoom extends Room<MatchState> {
     enemy.pathDistance += Math.hypot(point.x - enemy.x, point.y - enemy.y);
     enemy.x = point.x;
     enemy.y = point.y;
+    this.syncEnemyBody(enemy);
     state.emergeCol = cell.col;
     state.emergeRow = cell.row;
     state.burrowPhase = 2;
@@ -11142,6 +11593,7 @@ export class MatchRoom extends Room<MatchState> {
     enemy.pathDistance += Math.hypot(point.x - enemy.x, point.y - enemy.y);
     enemy.x = point.x;
     enemy.y = point.y;
+    this.syncEnemyBody(enemy);
     this.resetEnemyNavigation(enemy);
   }
 
@@ -11312,6 +11764,8 @@ export class MatchRoom extends Room<MatchState> {
       drawer.hp += maxHp - drawer.maxHp;
       drawer.maxHp = maxHp;
       drawer.speed = state.baseSpeed * multipliers.speed;
+      // Govde %6 buyudu (istemci yigini `ds` ile ciziyor): isabet de onunla.
+      this.assignEnemyBody(drawer);
       const message: RaceSoulDrawMessage = { x: roundNetworkNumber(dead.x), y: roundNetworkNumber(dead.y), to: drawer.id, n: state.stacks };
       this.broadcast("race:soul", message);
     }
@@ -11418,6 +11872,7 @@ export class MatchRoom extends Room<MatchState> {
       }
       enemy.x = targetX;
       enemy.y = targetY;
+      this.syncEnemyBody(enemy);
       enemy.shieldTouched = true;
     }
   }
@@ -15248,7 +15703,8 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (distanceSq(source.x, source.y, enemy.x, enemy.y) <= radius * radius) {
+      // Hasar veren alan: govdesi halkaya degen (yavaslatan auralar merkezde kaliyor).
+      if (isPointInBody(enemy.body, source.x, source.y, radius)) {
         this.damageEnemy(enemy, damage, 0, "archer-skill-bully", source.dominatedOwnerId, "true");
       }
     }
@@ -17479,22 +17935,29 @@ export class MatchRoom extends Room<MatchState> {
 
     const now = this.runtime.now();
     const reachable: number[] = [];
+    const halfWidths: number[] = [];
     // Nisan: secilen sutunda atis anindaki vurulabilir dusman, en iyi sutunla
     // ayni kural. Isabetle kiyaslamak zincir olumlerde (Melis lanet patlamasi
     // sutundaki komsuyu sirasi gelmeden olduruyor) mukemmel nisani
     // imkansiz kiliyordu; olen komsuyu isabet saymak da sayiyi sisirirdi.
+    // Sutun cizilen bir isin: govdesi sutuna degen vuruluyor (govdenin x
+    // boyunca araligi: cokgenin en soldaki ve en sagdaki noktasi), en iyi
+    // sutun da ayni kuralla (aralik orta nokta ve yari genislik olarak).
     let aimed = 0;
     for (const enemy of this.enemies.values()) {
       if (!this.isEnemyDominatedAgainst(enemy, "ultimate", now)) {
-        reachable.push(enemy.x);
-        if (enemy.x >= left && enemy.x < right) aimed += 1;
+        const low = getBodyProjectionMin(enemy.body, 1, 0);
+        const high = getBodyProjectionMax(enemy.body, 1, 0);
+        reachable.push((low + high) / 2);
+        halfWidths.push((high - low) / 2);
+        if (high >= left && low < right) aimed += 1;
       }
     }
-    report.best = getBestUltimateColumnHits(reachable, origin.x, gridSize, this.activeMap.cols);
+    report.best = getBestUltimateColumnHits(reachable, origin.x, gridSize, this.activeMap.cols, halfWidths);
     report.aim = aimed;
 
     for (const enemy of this.enemies.values()) {
-      if (enemy.x < left || enemy.x >= right) {
+      if (getBodyProjectionMax(enemy.body, 1, 0) < left || getBodyProjectionMin(enemy.body, 1, 0) >= right) {
         continue;
       }
       this.strikeForUltimate(report, enemy, damage, ZEYNEP_COLUMN_ULTIMATE_SLOW_MS, "ultimate", ownerId);
@@ -18194,6 +18657,86 @@ export class MatchRoom extends Room<MatchState> {
       if (this.canTowerHitAir(tower)) return true;
     }
     return false;
+  }
+
+  /** Yeni govde nesnesi bu haritanin olceginde (dogumda); sorgu payini da yukseltiyor. */
+  private createEnemyBodyFor(view: EnemyBodyView, x: number, y: number) {
+    const body = createEnemyBody(view, getMapGridSize(this.activeMap), x, y);
+    if (body.reach > this.enemyBodyReachMax) this.enemyBodyReachMax = body.reach;
+    return body;
+  }
+
+  /**
+   * Dusmanin govdesi kendi alanlarindan: ruh cekici buyudugunde ayni nesneye
+   * yeniden olculuyor (nesne degismiyor, yonu korunuyor); elle kurulan (test)
+   * dusmanda ilk izgarada kuruluyor.
+   */
+  private assignEnemyBody(enemy: EnemyModel) {
+    const view: EnemyBodyView = { race: enemy.race, type: enemy.type, special: enemy.special?.kind, champion: Boolean(enemy.champion), movementKind: enemy.movementKind, ds: enemy.raceTrait?.stacks };
+    const body = enemy.body;
+    if (body === undefined) {
+      const created = this.createEnemyBodyFor(view, enemy.x, enemy.y);
+      enemy.body = created;
+      return created;
+    }
+    const reach = writeEnemyBodyShape(body, view, getMapGridSize(this.activeMap));
+    if (reach > this.enemyBodyReachMax) this.enemyBodyReachMax = reach;
+    return body;
+  }
+
+  /**
+   * Kaydin konumu govdeye: tik icinde yer degistiren dusman (yurume, itme,
+   * sicrama, geri cekilme) ayni tikin sonraki vurus hesaplarinda yeni yerinde.
+   * Yon burada degismiyor (izgarada, tik basina bir kez).
+   */
+  private syncEnemyBody(enemy: EnemyModel) {
+    const body = enemy.body ?? this.assignEnemyBody(enemy);
+    body.x = enemy.x;
+    body.y = enemy.y;
+    return body;
+  }
+
+  /**
+   * Tikin dusman izgarasi ve govdelerin konumu ve yonu, tek dongude. Yon bir
+   * onceki tikin butun hareketinden (yurume, itme, geri yurume, sicrama):
+   * istemci dokuyu ayni konum degisimiyle ceviriyor; yalnizca yurumeyi bilen
+   * `moveVx/moveVy` hasatciyi, Melis'in olusunu ve itmeyi kacirirdi. Kaydin
+   * konumu bir kez okunuyor (kayit cok bicimli: her okuma pahali); govde
+   * nesnesine yazma ve yon guncellemesi tek bicimli, tahsis yok, yuruyende bir
+   * karekok. Saha bossa sorgu payi sifirdan (bkz. `enemyBodyReachMax`).
+   */
+  private rebuildEnemyGrid() {
+    if (this.enemies.size === 0) this.enemyBodyReachMax = 0;
+    const grid = this.enemySpatialGrid;
+    grid.clear();
+    for (const enemy of this.enemies.values()) {
+      const body = enemy.body ?? this.assignEnemyBody(enemy);
+      const x = enemy.x;
+      const y = enemy.y;
+      body.x = x;
+      body.y = y;
+      updateBodyHeading(body, x, y);
+      grid.insertAt(enemy, x, y);
+    }
+  }
+
+  /**
+   * Alan hasarinin hedefleri: gorunen govdesi halkaya degen dusmanlar
+   * (sahibin karari, 2026-10; merkezi halkanin disinda kalsa da). Sorgu
+   * merkezden yaricap + sahadaki en uzak govde payi; hedeflenebilirlik ve
+   * govde sinamasi sorgunun kendi dizisinde tek geciste (ikinci dizi yok).
+   */
+  private getEnemiesTouchingRing(x: number, y: number, radius: number) {
+    const candidates = this.enemySpatialGrid.queryCircle(x, y, radius + this.enemyBodyReachMax);
+    let count = 0;
+    for (let index = 0; index < candidates.length; index += 1) {
+      const enemy = candidates[index];
+      // Hedeflenemeyen (yer alti, faz) ve izgarada kalmis olu kayit aday degil.
+      if (this.enemies.get(enemy.id) !== enemy || enemy.untargetable) continue;
+      if (isPointInBody(enemy.body, x, y, radius)) candidates[count++] = enemy;
+    }
+    candidates.length = count;
+    return candidates;
   }
 
   private getEnemiesNear(x: number, y: number, radius: number) {
@@ -19000,12 +19543,8 @@ export class MatchRoom extends Room<MatchState> {
 
   private triggerMelisBrokenMirrorDeathBurst(tower: TowerModel, x: number, y: number, storedDamage: number) {
     const radius = this.scaleWorldDistance(MELIS_BROKEN_MIRROR_DEATH_BURST_RADIUS);
-    const radiusSq = radius * radius;
     const burstDamage = storedDamage * MELIS_BROKEN_MIRROR_DEATH_BURST_RATIO;
-    for (const enemy of this.getEnemiesNear(x, y, radius)) {
-      if (distanceSq(x, y, enemy.x, enemy.y) > radiusSq) {
-        continue;
-      }
+    for (const enemy of this.getEnemiesTouchingRing(x, y, radius)) {
       this.damageEnemy(enemy, burstDamage, 0, "archer-5-mirror-burst", tower.ownerId, "psychic", 0, tower.level, tower.id, "impact");
     }
   }
@@ -19453,7 +19992,7 @@ export class MatchRoom extends Room<MatchState> {
       aimY: target.y,
       radius,
       canHitAir: this.canTowerHitAir(tower)
-    }, Array.from(this.enemies.values()), false);
+    }, Array.from(this.enemies.values()));
     for (const enemy of targets) {
       this.perfCounters.aoeChecks += 1;
       this.applyMelisCurseLoad(enemy, tower.ownerId, tower.id, tower.melisEvolutionLevel, burstDamage, expiresAt);
@@ -19511,10 +20050,10 @@ export class MatchRoom extends Room<MatchState> {
     enemy.melisCurseEvolutionLevel = 0;
     delete enemy.stackStates["curse-pool"];
     const radius = this.scaleWorldDistance(MELIS_CURSE_DEATH_BURST_RADIUS);
-    const radiusSq = radius * radius;
 
     for (const target of Array.from(this.enemies.values())) {
-      if (target.id === enemy.id || distanceSq(enemy.x, enemy.y, target.x, target.y) > radiusSq) {
+      // Alan hasari: govdesi patlama halkasina degen.
+      if (target.id === enemy.id || !isPointInBody(target.body, enemy.x, enemy.y, radius)) {
         continue;
       }
 
@@ -19567,10 +20106,10 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const radiusSq = pool.radius * pool.radius;
       for (const enemy of Array.from(this.enemies.values())) {
         this.perfCounters.aoeChecks += 1;
-        if (distanceSq(pool.x, pool.y, enemy.x, enemy.y) > radiusSq) {
+        // Bolge govdeye degiyorsa (lanet patlamasiyla ayni kural).
+        if (!isPointInBody(enemy.body, pool.x, pool.y, pool.radius)) {
           continue;
         }
 
@@ -19826,13 +20365,11 @@ export class MatchRoom extends Room<MatchState> {
 
     const damage = Math.max(1, enemy.hp);
     const radius = this.scaleWorldDistance(MELIS_WHISPER_TURN_EXPLOSION_RADIUS);
-    const radiusSq = radius * radius;
-    for (const target of this.getEnemiesNear(enemy.x, enemy.y, radius)) {
+    for (const target of this.getEnemiesTouchingRing(enemy.x, enemy.y, radius)) {
       if (
         target.id === enemy.id ||
         target.melisUndeadUntil > this.runtime.now() ||
-        target.melisWhisperTurnedUntil > this.runtime.now() ||
-        distanceSq(enemy.x, enemy.y, target.x, target.y) > radiusSq
+        target.melisWhisperTurnedUntil > this.runtime.now()
       ) {
         continue;
       }
@@ -19936,7 +20473,8 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (distanceToSegment(enemy.x, enemy.y, tower.x, tower.y, linkedEnemy.x, linkedEnemy.y) <= radius + getEnemyCollisionRadius(enemy)) {
+      // Bagin bandi gorunen govdeye degiyor mu.
+      if (isBandTouchingBody(enemy.body, tower.x, tower.y, linkedEnemy.x, linkedEnemy.y, radius)) {
         this.damageEnemy(enemy, this.getMelisUnderworldChainDamage(tower), 0, "archer-4-underworld-link", tower.ownerId, "psychic", 0, tower.level, tower.id, "focus");
       }
     }
@@ -20037,6 +20575,8 @@ export class MatchRoom extends Room<MatchState> {
       shield: 0,
       maxShield: 0,
       movementKind: "ground",
+      // Dusmus irkin nisanci govdesi, yonu dondurulmemis doku.
+      body: this.createEnemyBodyFor({ race, type: "shooter", movementKind: "ground" }, point.x, point.y),
       damageResistances: getEnemyDamageResistances(definition, race),
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
@@ -20130,6 +20670,7 @@ export class MatchRoom extends Room<MatchState> {
     const point = getPointAlongRuntimePath(this.activePaths[enemy.pathId] ?? this.activePaths[0], enemy.pathDistance);
     enemy.x = point.x;
     enemy.y = point.y;
+    this.syncEnemyBody(enemy);
   }
 
   private findMelisUndeadTarget(source: EnemyModel, now: number) {
@@ -20209,7 +20750,7 @@ export class MatchRoom extends Room<MatchState> {
       aimY: tower.y,
       radius,
       canHitAir: this.canTowerHitAir(tower)
-    }, Array.from(this.enemies.values()), false);
+    }, Array.from(this.enemies.values()));
     for (const enemy of targets) {
       const rangeExitDamage = areaDamageMultiplier > 0 ? this.getTowerDamage(tower) * areaDamageMultiplier : 0;
       const shieldDamage = tower.melisEvolutionLevel >= 2 && enemy.shield > 0 ? this.getTowerDamage(tower) * 2 : 0;
@@ -22227,8 +22768,9 @@ export class MatchRoom extends Room<MatchState> {
       if (hitSplash > 0) {
         const radius = cell * HIT_SPLASH_RADIUS_CELLS;
         let nearest: EnemyModel | undefined;
-        let best = radius * radius;
-        for (const other of this.getEnemiesNear(enemy.x, enemy.y, radius)) {
+        let best = Number.POSITIVE_INFINITY;
+        // Sicrama halkasina govdesi degenlerin merkezce en yakini.
+        for (const other of this.getEnemiesTouchingRing(enemy.x, enemy.y, radius)) {
           if (other === enemy || other.hp <= 0 || other.untargetable) continue;
           const distance = distanceSq(enemy.x, enemy.y, other.x, other.y);
           if (distance <= best) { best = distance; nearest = other; }
@@ -22238,9 +22780,8 @@ export class MatchRoom extends Room<MatchState> {
       if (critSplash > 0) {
         const radius = cell * CRIT_SPLASH_RADIUS_CELLS;
         const amount = damage * (1 + critAdd) * critSplash;
-        for (const other of this.getEnemiesNear(enemy.x, enemy.y, radius)) {
+        for (const other of this.getEnemiesTouchingRing(enemy.x, enemy.y, radius)) {
           if (other === enemy || other.hp <= 0) continue;
-          if (distanceSq(enemy.x, enemy.y, other.x, other.y) > radius * radius) continue;
           this.damageEnemy(other, amount, 0, hit.sourceDefinitionId, hit.sourceOwnerId, hit.damageType, 0, hit.sourceTowerLevel, tower.id, hit.hitType);
         }
       }
@@ -22389,8 +22930,8 @@ export class MatchRoom extends Room<MatchState> {
     const radius = getMapGridSize(this.activeMap) * BLAST_RADIUS_CELLS;
     const x = enemy.x;
     const y = enemy.y;
-    const victims = this.getEnemiesNear(x, y, radius)
-      .filter((other) => other.hp > 0 && distanceSq(x, y, other.x, other.y) <= radius * radius && this.canTowerTargetEnemy(tower, other));
+    const victims = this.getEnemiesTouchingRing(x, y, radius)
+      .filter((other) => other.hp > 0 && this.canTowerTargetEnemy(tower, other));
     const damage = this.getTowerLegendaryPower(tower) * BLAST_DAMAGE_SECONDS;
     this.broadcastLegendaryProc({ k: "blast", x: roundNetworkNumber(x), y: roundNetworkNumber(y), t: tower.id, r: Math.round(radius) });
     for (const victim of victims) {
@@ -22456,8 +22997,7 @@ export class MatchRoom extends Room<MatchState> {
     const radius = getMapGridSize(this.activeMap) * SHATTER_RADIUS_CELLS;
     const x = enemy.x;
     const y = enemy.y;
-    const victims = this.getEnemiesNear(x, y, radius).filter((other) => other !== enemy && other.hp > 0
-      && distanceSq(x, y, other.x, other.y) <= radius * radius
+    const victims = this.getEnemiesTouchingRing(x, y, radius).filter((other) => other !== enemy && other.hp > 0
       && (tower ? this.canTowerTargetEnemy(tower, other) : !this.isEnemyOnTeamSide(other, now)));
     const damage = getShatterDamage(enemy.maxHp, Boolean(enemy.champion), depth);
     this.broadcastLegendaryProc({ k: "shatter", f: 1, x: roundNetworkNumber(x), y: roundNetworkNumber(y), r: Math.round(radius) });
@@ -22636,6 +23176,7 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.movementKind === "air") {
       enemy.x = nextX;
       enemy.y = nextY;
+      this.syncEnemyBody(enemy);
       return true;
     }
     if (!this.isInsideMapGrid(enemy.x, enemy.y)) return false;
@@ -22657,6 +23198,7 @@ export class MatchRoom extends Room<MatchState> {
     if (this.metalShields.length > 0 && this.isShieldBlockingSegment(enemy.x, enemy.y, nextX, nextY)) return false;
     enemy.x = nextX;
     enemy.y = nextY;
+    this.syncEnemyBody(enemy);
     if (changedCell) this.resetEnemyNavigation(enemy);
     return true;
   }
@@ -23162,8 +23704,16 @@ export class MatchRoom extends Room<MatchState> {
         if ((to.col !== from.col || to.row !== from.row) && !this.isStructurePassable(from, to.col, to.row)) continue;
         if (this.metalShields.length > 0 && this.isShieldBlockingSegment(enemy.x, enemy.y, x, y)) continue;
       }
+      const previousX = enemy.x;
+      const previousY = enemy.y;
       enemy.x = x;
       enemy.y = y;
+      // Tik icinde itildi (izgara tikin basinda kuruldu): ayni tikin sonraki
+      // mermileri onu yeni yerinde bulsun (govde ve izgara). Sorgulara itme
+      // payi gerekmiyor; ust uste birkac itme (Cifte Namlu, birkac Ucube) de
+      // karsilaniyor. Hucre degismediyse izgaraya dokunulmuyor.
+      this.syncEnemyBody(enemy);
+      this.enemySpatialGrid.relocate(enemy, previousX, previousY);
       return share;
     }
     return 0;
@@ -24216,16 +24766,6 @@ function getProjectionOnAngle(px: number, py: number, originX: number, originY: 
   return dx * Math.cos(angle) + dy * Math.sin(angle);
 }
 
-function getPerpendicularDistanceOnAngle(px: number, py: number, originX: number, originY: number, angle: number) {
-  const dx = px - originX;
-  const dy = py - originY;
-  return dx * -Math.sin(angle) + dy * Math.cos(angle);
-}
-
-function normalizeAngle(angle: number) {
-  return Math.atan2(Math.sin(angle), Math.cos(angle));
-}
-
 function segmentIntersectsRect(
   x1: number,
   y1: number,
@@ -24271,62 +24811,6 @@ function pointOnSegment(px: number, py: number, ax: number, ay: number, bx: numb
     px <= Math.max(ax, bx) + 0.000001 &&
     py >= Math.min(ay, by) - 0.000001 &&
     py <= Math.max(ay, by) + 0.000001;
-}
-
-function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel, previousX: number, previousY: number) {
-  const hitRadius = getEnemyCollisionRadius(target);
-  const segmentDistanceSq = distanceToSegmentSq(target.x, target.y, previousX, previousY, projectile.x, projectile.y);
-  if (segmentDistanceSq <= hitRadius * hitRadius) {
-    return true;
-  }
-
-  const previousDistanceSq = distanceSq(previousX, previousY, target.x, target.y);
-  const currentDistanceSq = distanceSq(projectile.x, projectile.y, target.x, target.y);
-  const traveledSq = distanceSq(previousX, previousY, projectile.x, projectile.y);
-
-  return currentDistanceSq > previousDistanceSq && previousDistanceSq <= traveledSq + hitRadius * hitRadius;
-}
-
-
-function getEnemyCollisionRadius(enemy: EnemyModel) {
-  return getEnemyTypeCollisionRadius(enemy.type);
-}
-
-function didDebugLaserSweepHitEnemy(
-  tower: TowerModel,
-  enemy: EnemyModel,
-  previousAngle: number,
-  currentAngle: number,
-  endX: number,
-  endY: number,
-  beamRadius: number
-) {
-  const hitRadius = beamRadius + getEnemyCollisionRadius(enemy);
-  if (distanceToSegmentSq(enemy.x, enemy.y, tower.x, tower.y, endX, endY) <= hitRadius * hitRadius) {
-    return true;
-  }
-
-  const dx = enemy.x - tower.x;
-  const dy = enemy.y - tower.y;
-  const distance = Math.hypot(dx, dy);
-  if (distance <= 1) {
-    return true;
-  }
-
-  const sweptAngle = getSignedShortestAngleDelta(previousAngle, currentAngle);
-  if (Math.abs(sweptAngle) <= 0.0001) {
-    return false;
-  }
-
-  const enemyAngle = Math.atan2(dy, dx);
-  const enemyFromPrevious = getSignedShortestAngleDelta(previousAngle, enemyAngle);
-  const angleTolerance = Math.min(0.42, Math.asin(Math.min(0.98, hitRadius / distance)));
-
-  if (sweptAngle > 0) {
-    return enemyFromPrevious >= -angleTolerance && enemyFromPrevious <= sweptAngle + angleTolerance;
-  }
-
-  return enemyFromPrevious <= angleTolerance && enemyFromPrevious >= sweptAngle - angleTolerance;
 }
 
 type WorldBounds = ReturnType<typeof getMapWorldBounds>;
@@ -24463,17 +24947,6 @@ function getRayDirectionToWorldEdge(x1: number, y1: number, nx: number, ny: numb
     x: x1 + nx * distance,
     y: y1 + ny * distance
   };
-}
-
-function distanceToSegmentSq(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lengthSq = dx * dx + dy * dy;
-  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSq));
-  const x = ax + t * dx;
-  const y = ay + t * dy;
-
-  return distanceSq(px, py, x, y);
 }
 
 function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {

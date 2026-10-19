@@ -184,6 +184,15 @@ export class SnapshotPlaybackClock {
   }
 
   /**
+   * Yerel bir anin sunucu saati (oynatma gecikmesi yok): ayni soketten
+   * gelen bir mesajin sunucuda hangi tikte yazildigi. Saat kurulmadiysa
+   * `undefined`. Kelepce yok, `getTargetServerTime`in durumunu degistirmiyor.
+   */
+  getServerTimeAt(localTime: number) {
+    return this.offset === undefined ? undefined : localTime + this.offset;
+  }
+
+  /**
    * Su an cizilmesi gereken sunucu zamani.
    *
    * Geriye gitmesi engelleniyor: yumusatma duzeltmeleri milisaniyenin altinda

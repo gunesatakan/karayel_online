@@ -18,7 +18,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { isUltimateDamageSource } from "../apps/server/dist/rooms/MatchRoom.js";
 import { ATAKAN_EXECUTE_SOURCE_ID, characters, getMapGridSize, getMapOrigin } from "../packages/shared/dist/index.js";
-import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { createRoom, findBuildableSpot, syncEnemyBodies } from "./helpers/match-room-harness.mjs";
 
 /** Oldurme basina sarj (`finishEnemyKill`: 7; AttackLord'da 1/3). */
 const KILL_CHARGE = 7;
@@ -50,6 +50,8 @@ function enemyAt(room, x, y, hp = 30) {
   room.spawnEnemy();
   const enemy = [...room.enemies.values()].at(-1);
   Object.assign(enemy, { x, y, hp, maxHp: hp, shield: 0, maxShield: 0, armor: 0, movementKind: "ground", damageResistances: {}, hitTypeResistances: {}, statusResistances: {} });
+  // Govde yeni konumda (uretimde tikin basinda): ulti ve dron govdeye vuruyor.
+  syncEnemyBodies(room);
   return enemy;
 }
 

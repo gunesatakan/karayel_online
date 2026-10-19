@@ -87,7 +87,7 @@ import {
   serializeMasteryBook,
   towerCatalog
 } from "../packages/shared/dist/index.js";
-import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { createRoom, findBuildableSpot, syncEnemyBodies } from "./helpers/match-room-harness.mjs";
 
 const readSource = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
@@ -427,6 +427,8 @@ test("ulasilabilir: Zeynep sutunu en kalabalik sutuna inince Mükemmel Sütun", 
         const enemy = [...room.enemies.values()].at(-1);
         Object.assign(enemy, { x: origin.x + 6 * gridSize + gridSize / 2, y: origin.y + gridSize * row, hp: 1e7, maxHp: 1e7, shield: 0, maxShield: 0, movementKind: "ground", statusResistances: {} });
       }
+      // Govdeler yeni konumda (uretimde tikin basinda): sutun govdeye vuruyor.
+      syncEnemyBodies(room);
     }
   });
   const watch = liveWatch();

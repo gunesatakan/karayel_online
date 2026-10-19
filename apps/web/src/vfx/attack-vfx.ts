@@ -20,7 +20,7 @@
  * - `ground` (secenek): yanik izleri, dusmanlarin altinda.
  * - `flashes`: pisirilmis dokulu ADD parlamalari (havuzlu).
  */
-import type { ProjectileSnapshot } from "@karayel/shared";
+import { BALL_BODY, CELL_BODY, COMBAT_BODY, DART_BODY, ORB_BODY, PACKET_BODY, RING_BODY, type ProjectileSnapshot } from "@karayel/shared";
 import { drawObsessionShot, drawUcubeShot, getAtakanShotGlowSize, getAtakanShotHue, type AtakanShotInput } from "./atakan-shots";
 import { drawCombatProjectile } from "./combat-vfx";
 import {
@@ -112,6 +112,8 @@ export type AttackEventInput = {
   radius?: number;
   /** Vurulan dusmanin ekrandaki capi (sprite'in tam boyu); Zeynep kertigi icin. */
   size?: number;
+  /** Vurulan dusman (temas aninda bulundu): kozmetik itme ona. */
+  enemyId?: string;
   /** Bilinmeyen kimlikte profilin rengi. */
   fallbackColor?: number;
 };
@@ -126,7 +128,7 @@ export type AttackVfxOptions = {
    * Kozmetik itme (yalnizca yerel oyuncunun agir ya da kinetik kademe 2+
    * vurusu; hareket azaltmada hic): vurulan dusman `px` piksel, vurus yonunde.
    */
-  onKnock?: (x: number, y: number, angle: number, px: number) => void;
+  onKnock?: (x: number, y: number, angle: number, px: number, enemyId?: string) => void;
   /**
    * Mermilerin isisi icin tek dortgenlik ADD damgalar. Verilmezse ayni sey
    * `glow` Graphics'ine tek daireyle ciziliyor (testler ve yedek).
@@ -240,8 +242,9 @@ export class AttackVfx {
    * katmanlari (body ve glow) her karede bastan; cagiran `clear` etmiyor.
    */
   renderProjectiles(projectiles: readonly ProjectileSnapshot[], now: number, sceneScale: number, isOwn?: (projectile: ProjectileSnapshot) => boolean) {
-    // Merminin govdesi, izi ve isi damgasi gorunuste kuculuyor (visual-scale);
-    // carpisma ve vurus noktasi sunucuda, ayni.
+    // Merminin govdesi, izi ve isi damgasi gorunuste kuculuyor (visual-scale).
+    // Sunucunun isabet sekli bu govdenin kendisi: dis hatlarin carpanlari
+    // paylasilan pakette (`projectile-body`), cizim onlari okuyor.
     const scale = sceneScale * PROJECTILE_VISUAL_SCALE;
     this.body.clear();
     this.glow.clear();
@@ -297,7 +300,7 @@ export class AttackVfx {
         LANCE_OPTIONS.still = still;
         drawZeynepLance(this.body, projectile.x, projectile.y, angle, LANCE_OPTIONS);
       } else if (profile.silhouette === "combat") {
-        drawCombatProjectile(this.body, projectile, scale * 1.4, hue, recipe.heat);
+        drawCombatProjectile(this.body, projectile, scale * COMBAT_BODY.scale, hue, recipe.heat);
       } else if (profile.silhouette === "gaze" || profile.silhouette === "arc") {
         SHOT.x = projectile.x;
         SHOT.y = projectile.y;
@@ -358,56 +361,59 @@ export class AttackVfx {
     switch (profile.silhouette) {
       case "packet": {
         // Sunucu: agir koseli govde (elmas), icinde beyaz-sicak kare cekirdek.
-        const r = radius * 0.8;
+        const r = radius * PACKET_BODY.tip;
+        const side = r * PACKET_BODY.side;
+        const back = r * PACKET_BODY.back;
         g.fillStyle(darken(hue, 0.15), 0.95);
-        g.fillTriangle(x + ux * r, y + uy * r, x + nx * r * 0.7, y + ny * r * 0.7, x - nx * r * 0.7, y - ny * r * 0.7);
-        g.fillTriangle(x - ux * r * 0.8, y - uy * r * 0.8, x + nx * r * 0.7, y + ny * r * 0.7, x - nx * r * 0.7, y - ny * r * 0.7);
-        const half = radius * 0.17 * weight;
+        g.fillTriangle(x + ux * r, y + uy * r, x + nx * side, y + ny * side, x - nx * side, y - ny * side);
+        g.fillTriangle(x - ux * back, y - uy * back, x + nx * side, y + ny * side, x - nx * side, y - ny * side);
+        const half = radius * PACKET_BODY.core * weight;
         g.fillStyle(core, 1);
         g.fillRect(x - half, y - half, half * 2, half * 2);
         return;
       }
       case "cell": {
         // Izolasyon: kisa yogun govde ve ince altigen kabuk (gudumlu kapatma atisi).
-        drawSlug(g, x, y, ux, uy, radius * 1.2, radius * 0.3 * weight, hue, recipe.heat);
-        g.lineStyle(Math.max(0.6, radius * 0.1 * weight), hue, 0.75);
-        strokeHex(g, x, y, radius * 0.8, angle);
+        drawSlug(g, x, y, ux, uy, radius * CELL_BODY.shaft, radius * CELL_BODY.shaftWidth * weight, hue, recipe.heat);
+        g.lineStyle(Math.max(CELL_BODY.minStroke, radius * CELL_BODY.stroke * weight), hue, 0.75);
+        strokeHex(g, x, y, radius * CELL_BODY.hex, angle);
         return;
       }
       case "dart": {
         // Ok: sert iz mermisi ve sivri uc.
-        drawSlug(g, x, y, ux, uy, radius * 1.7, radius * 0.3 * weight, hue, recipe.heat);
-        const tip = radius * 0.75;
-        const half = radius * 0.24 * weight;
+        drawSlug(g, x, y, ux, uy, radius * DART_BODY.shaft, radius * DART_BODY.shaftWidth * weight, hue, recipe.heat);
+        const tip = radius * DART_BODY.tip;
+        const half = radius * DART_BODY.headHalf * weight;
+        const back = radius * DART_BODY.headBack;
         g.fillStyle(core, 1);
-        g.fillTriangle(x + ux * tip, y + uy * tip, x - ux * radius * 0.1 + nx * half, y - uy * radius * 0.1 + ny * half, x - ux * radius * 0.1 - nx * half, y - uy * radius * 0.1 - ny * half);
+        g.fillTriangle(x + ux * tip, y + uy * tip, x - ux * back + nx * half, y - uy * back + ny * half, x - ux * back - nx * half, y - uy * back - ny * half);
         return;
       }
       case "ball": {
         // Agir gulle: koyu govde, ince ton kenari, kucuk beyaz-sicak cekirdek.
         g.fillStyle(hue, 0.85);
-        fillDisc(g, x, y, radius * 0.72);
+        fillDisc(g, x, y, radius * BALL_BODY.radius);
         g.fillStyle(darken(hue, 0.7), 0.96);
-        fillDisc(g, x, y, radius * 0.58);
+        fillDisc(g, x, y, radius * BALL_BODY.inner);
         g.fillStyle(core, 1);
-        fillDisc(g, x, y, radius * 0.2 * weight);
+        fillDisc(g, x, y, radius * BALL_BODY.core * weight);
         return;
       }
       case "ring": {
         // Destek atisi: ince ton halkasi ve beyaz-sicak nokta.
-        g.lineStyle(Math.max(0.8, radius * 0.16 * weight), hue, 0.9);
-        strokeRing(g, x, y, radius * 0.55);
+        g.lineStyle(Math.max(RING_BODY.minWidth, radius * RING_BODY.width * weight), hue, 0.9);
+        strokeRing(g, x, y, radius * RING_BODY.radius);
         g.fillStyle(core, 1);
-        fillDisc(g, x, y, Math.max(0.8, radius * 0.18 * weight));
+        fillDisc(g, x, y, Math.max(RING_BODY.minCore, radius * RING_BODY.core * weight));
         return;
       }
       case "orb":
       default: {
         // Enerji gullesi: yogun ton, beyaz-sicak cekirdek; halka yok.
         g.fillStyle(hue, 0.9);
-        fillDisc(g, x, y, radius * 0.58);
+        fillDisc(g, x, y, radius * ORB_BODY.radius);
         g.fillStyle(core, 1);
-        fillDisc(g, x, y, radius * 0.24 * weight);
+        fillDisc(g, x, y, radius * ORB_BODY.core * weight);
       }
     }
   }
@@ -512,7 +518,7 @@ export class AttackVfx {
       this.options.onHeavyImpact?.(input.x, input.y);
     }
     if (recipe.knock > 0 && event.own && !still) {
-      this.options.onKnock?.(input.x, input.y, input.angle, recipe.knock);
+      this.options.onKnock?.(input.x, input.y, input.angle, recipe.knock, input.enemyId);
     }
   }
 

@@ -92,6 +92,30 @@ export const MEKA_SHIELD_THROWER = {
   checkIntervalMs: 200
 } as const;
 
+/**
+ * Inmis meka kalkaninin cizimi (race-traits `drawMekaShield`): koyu govde
+ * cizginin iki yaninda `max(2, kare x 0,075) + 1`, iki uzun kenarinda
+ * `max(1, yarim x 0,5)` kalinliginda kenar cizgisi (merkezi govdenin
+ * kenarinda). Sunucu mermiyi cizilen yuzde durduruyor (`getMekaShieldFace`):
+ * ikisi ayni sayilardan.
+ */
+export const MEKA_SHIELD_DRAWN = { halfRatio: 0.075, minHalf: 2, frame: 1, rimRatio: 0.5, minRim: 1 } as const;
+
+/** Kalkanin cizilen yari kalinligi (kenar cizgisinin merkezine kadar, dunya birimi). */
+export function getMekaShieldDrawnHalf(cellSize: number) {
+  return Math.max(MEKA_SHIELD_DRAWN.minHalf, cellSize * MEKA_SHIELD_DRAWN.halfRatio);
+}
+
+/** Kenar cizgisinin kalinligi. */
+export function getMekaShieldRimWidth(cellSize: number) {
+  return Math.max(MEKA_SHIELD_DRAWN.minRim, getMekaShieldDrawnHalf(cellSize) * MEKA_SHIELD_DRAWN.rimRatio);
+}
+
+/** Cizginin merkezinden kalkanin cizilen yuzune (kenar cizgisinin dis yani): mermi burada duruyor. */
+export function getMekaShieldFace(cellSize: number) {
+  return getMekaShieldDrawnHalf(cellSize) + MEKA_SHIELD_DRAWN.frame + getMekaShieldRimWidth(cellSize) / 2;
+}
+
 export type MekaShieldGeometry = { cx: number; cy: number; x1: number; y1: number; x2: number; y2: number };
 
 /**

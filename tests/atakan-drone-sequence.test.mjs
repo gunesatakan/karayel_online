@@ -16,7 +16,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ATAKAN_ULTIMATE_DRONE_LAUNCH_GAP_MS, SNAPSHOT_SEND_INTERVAL_MS } from "../apps/server/dist/rooms/MatchRoom.js";
 import { GAME_SPEED_MULTIPLIER } from "../packages/shared/dist/index.js";
-import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { createRoom, findBuildableSpot, syncEnemyBodies } from "./helpers/match-room-harness.mjs";
 
 const GAP = ATAKAN_ULTIMATE_DRONE_LAUNCH_GAP_MS;
 
@@ -53,6 +53,8 @@ function enemyAt(room, x, y, hp = 30) {
   room.spawnEnemy();
   const enemy = [...room.enemies.values()].at(-1);
   Object.assign(enemy, { x, y, hp, maxHp: hp, shield: 0, maxShield: 0, armor: 0, movementKind: "ground", damageResistances: {}, hitTypeResistances: {}, statusResistances: {} });
+  // Govde yeni konumda (uretimde tikin basinda): ulti ve dron govdeye vuruyor.
+  syncEnemyBodies(room);
   return enemy;
 }
 

@@ -70,6 +70,17 @@ export function createRoom(characterId) {
  * ilgilenmiyor ve bolge o kareye dusunce kurulamiyordu. Bolgenin kendi
  * kurallari tests/build-zones.test.mjs ve tests/build-zone-placement.test.mjs'te.
  */
+/**
+ * Elle tasinan (`Object.assign` ile) dusmanlarin izgarasi ve govdeleri yeni
+ * konumda. Uretimde dusmanin konumu yalnizca odanin kodunda degisiyor ve
+ * govde nesnesi (vurus hesaplarinin okudugu konum kopyasi) orada yaziliyor;
+ * test kaydi dogrudan tasiyinca tikin basindaki izgara kurulumu (govdelerin
+ * konumu da orada yaziliyor) gerekiyor.
+ */
+export function syncEnemyBodies(room) {
+  room.enemySpatialGrid.rebuild(room.enemies.values());
+}
+
 export function clearBuildZones(room) {
   room.buildZones = undefined;
   return room;
@@ -182,7 +193,8 @@ export function simulateTowerAgainstMovingShieldedEnemy({
   let killed = false;
 
   for (let tick = 0; tick < ticks; tick += 1) {
-    room.enemySpatialGrid.rebuild(room.enemies.values());
+    // Uretimin izgarasi: govdelerin yonu da orada guncelleniyor.
+    room.rebuildEnemyGrid();
     room.resetAuraSlows();
     room.updateTowers(tickMs);
     room.updateProjectiles(tickMs / 1000);

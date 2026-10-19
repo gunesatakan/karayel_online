@@ -1883,8 +1883,7 @@ export {
 export * from "./heat-mechanics/index.js";
 export * from "./range-mechanics/index.js";
 export * from "./durability-mechanics/index.js";
-export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, LINEAR_BALLISTIC_COLLISION_RADIUS, getBallisticMovementSpeed, getBallisticCollisionRadius, usesLinearBallistics, findFirstLinearCollision, towerFiresProjectiles, towerNeverAttacks } from "./ballistics/index.js";
-export type { BallisticCollisionBody } from "./ballistics/index.js";
+export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, getBallisticMovementSpeed, usesLinearBallistics, getProjectileBodyContact, writeProjectileBodyContactPoint, towerFiresProjectiles, towerNeverAttacks } from "./ballistics/index.js";
 export {
   RESOURCE_EXTRACTION_DURATION_MS,
   LOGISTICS_WORKER_CAPACITY,
@@ -2114,7 +2113,7 @@ export { applyTowerAuraModifier, evaluateTowerAuras, getTowerAuraLevelMultiplier
 export type { TowerAuraModifiers, TowerAuraSource, TowerAuraTarget } from "./auras/index.js";
 export { isTargetInsideAttackShape, selectAttackShapeTargets } from "./attacks/index.js";
 export type { AttackShapeQuery, AttackShapeTarget } from "./attacks/index.js";
-export { getOrbitRotationSpeedForInterval, getOrbitTargetHitCooldownMs, selectOrbitSweepContacts, selectOrbitSweepTargets } from "./attacks/orbit.js";
+export { ORBIT_BLADE_BODY, getOrbitBladeInner, getOrbitRotationSpeedForInterval, getOrbitTargetHitCooldownMs, selectOrbitSweepContacts, selectOrbitSweepTargets } from "./attacks/orbit.js";
 export type { OrbitSweepContact, OrbitSweepQuery } from "./attacks/orbit.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
@@ -2420,6 +2419,10 @@ export * from "./worker-skills.js";
 export * from "./synergy/index.js";
 export * from "./placement-range/index.js";
 export * from "./zeynep-shots/index.js";
+export * from "./enemy-hitboxes.js";
+export * from "./enemy-display.js";
+export * from "./enemy-body/index.js";
+export * from "./projectile-body/index.js";
 export * from "./zeynep-palace/index.js";
 export * from "./tower-panel/index.js";
 export * from "./legendary/index.js";

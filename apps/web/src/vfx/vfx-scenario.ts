@@ -17,7 +17,7 @@
  * dusmanlari, Abarti rayi. Spot isigi, damga, gecis, dizilim ve sekme
  * olaylari oyundaki gibi `ZeynepReceiptTracker`dan turuyor (`ScenarioCourtFeed`).
  */
-import { DEBUG_LASER_BEAM_WIDTH, DEBUG_LASER_OVERDRIVE_BEAM_WIDTH, towerCatalog, type BeamSnapshot, type ProjectileSnapshot, type TowerSnapshot } from "@karayel/shared";
+import { DEBUG_LASER_BEAM_WIDTH, DEBUG_LASER_OVERDRIVE_BEAM_WIDTH, getEnemyTextureKey, towerCatalog, type BeamSnapshot, type ProjectileSnapshot, type TowerSnapshot } from "@karayel/shared";
 import type { SignatureEnemy, SignatureTower } from "./atakan-signatures";
 import { fnvUnit, toTier, type VfxTier } from "./kit";
 import { getVfxProfile, getVfxTier, isAttackingDefinition, type VfxDelivery } from "./vfx-profiles";
@@ -747,10 +747,9 @@ export const GALLERY_DEATH_ROWS: readonly GalleryDeathRow[] = [
   }
 ];
 
-/** Olum satirinin dokusu (GameScene `getEnemyTextureKey` ile ayni kural). */
+/** Olum satirinin dokusu: oyunun kurali (paylasilan `getEnemyTextureKey`). */
 export function getGalleryDeathTexture(race: GalleryDeathRow["race"], type: GalleryDeathCell["type"]) {
-  const art = type === "siege" ? "brute" : type;
-  return race === "meka" ? `enemy-${art}` : `enemy-${race}-${art}`;
+  return getEnemyTextureKey({ race, type });
 }
 
 /**

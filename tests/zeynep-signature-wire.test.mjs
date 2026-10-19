@@ -15,7 +15,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getAbartiRailRect, getAbartiShowcaseRangeMultiplier, getEnemyTypeCollisionRadius, getMapGridSize, isAbartiArmorBreakProjectile } from "../packages/shared/dist/index.js";
+import { ENEMY_BODY_OUTLINES, getAbartiRailRect, getAbartiShowcaseRangeMultiplier, getMapGridSize, isAbartiArmorBreakProjectile } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1" };
@@ -96,8 +96,38 @@ test("istemcinin paylaşılan kuralları sunucunun kendisi: Abartı dikdörtgeni
   // Gosteri / Kin menzil carpani: sv 1'de 1.1, 10'da 2.0, dogrusal; disi sinirlaniyor.
   assert.deepEqual([0, 1, 4, 10, 12].map((level) => Math.round(getAbartiShowcaseRangeMultiplier(level) * 1000) / 1000), [1.1, 1.1, 1.4, 2, 2]);
   assert.deepEqual(["zeynep-1", "zeynep-3", "zeynep-3-kin-projectile", "zeynep-2", "warrior-1"].map(isAbartiArmorBreakProjectile), [true, true, true, false, false]);
-  // Dusmanlar %25 kucultuldu: 19 / 13 / 15 -> x0,75.
-  assert.deepEqual(["brute", "runner", "grunt", undefined].map(getEnemyTypeCollisionRadius), [19 * 0.675, 13 * 0.675, 15 * 0.675, 15 * 0.675]);
+  // Carpisma govdesi gorunen govdeden (eski tur tablosu 19 / 13 / 15 x 0,675
+  // yerine). Sunucunun govdesi, istemcinin cizdigi dokudan bagimsiz
+  // turetilmis haliyle karsilastiriliyor: GameScene dokuyu
+  // `taban boy x 0,675 x kare / 34 / 512` olcegiyle (sampiyon x1,25, havada
+  // x1,28) ciziyor, yani dokunun yari kenari o boyun yarisi; govde o kareye
+  // oturan doku cokgeni (uretilmis tablo, x yana, y ileri), yonu dondurulmemis
+  // doku (+y). Ayrintili tablolar tests/visible-hitbox.test.mjs'te.
+  const DISPLAY = { grunt: 34, siege: 38, brute: 43.2, runner: 40, shooter: 38 };
+  const BRUTE_RACE = { spaceBug: 1.3, fallen: 1.1 };
+  const ART = { grunt: "grunt", siege: "brute", brute: "brute", runner: "runner", shooter: "shooter" };
+  const sent = [];
+  room.broadcast = (type, payload) => sent.push({ type, payload });
+  for (let count = 0; count < 12; count += 1) {
+    room.wave = 1 + count;
+    room.spawnEnemy();
+    const enemy = [...room.enemies.values()].at(-1);
+    // Istemcinin gordugu: dogum mesaji (statik kayit).
+    const view = sent.filter((entry) => entry.type === "enemy:spawn").map((entry) => entry.payload).find((payload) => payload.id === enemy.id);
+    assert.ok(view, "enemy:spawn yok");
+    const drawn = DISPLAY[view.type] * (view.type === "brute" ? BRUTE_RACE[view.race] ?? 1 : 1) * 0.675 * (gridSize / 34)
+      * (view.champion ? 1.25 : 1) * (view.movementKind === "air" ? 1.28 : 1);
+    const label = `${view.race} ${view.type} ${view.movementKind}`;
+    assert.ok(Math.abs(enemy.body.scale - drawn / 2) < 1e-9, `${label}: yari kenar ${enemy.body.scale} / ${drawn / 2}`);
+    const outline = ENEMY_BODY_OUTLINES[view.race][ART[view.type]];
+    const poly = enemy.body.poly;
+    assert.equal(poly.count * 2, outline.length, label);
+    for (let k = 0; k < poly.count; k += 1) assert.ok(poly.vx[k] === outline[2 * k] && poly.vy[k] === outline[2 * k + 1], `${label}: kose ${k}`);
+    const far = Math.max(...Array.from({ length: poly.count }, (_, k) => Math.hypot(outline[2 * k], outline[2 * k + 1])));
+    assert.ok(Math.abs(enemy.body.reach - far * drawn / 2) < 1e-9, `${label}: erisim`);
+    assert.deepEqual([enemy.body.headingX, enemy.body.headingY], [0, 1], `${label}: dogumda yon`);
+    assert.deepEqual([enemy.body.x, enemy.body.y], [enemy.x, enemy.y], `${label}: konum`);
+  }
 });
 
 test("sunucunun Kin dalgası Abartı rayını geçince menzili paylaşılan çarpanla uzatıyor", () => {

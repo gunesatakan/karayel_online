@@ -1,5 +1,8 @@
 import {
+  COMBAT_BODY,
+  KIN_WAVE_STROKES,
   TIER_COLUMN_HEIGHT_RATIO,
+  getKinWaveFrontStroke,
   getUltimateShockwavePose,
   getDeathBurstPose,
   getTierCeremonyPose,
@@ -144,8 +147,9 @@ export function drawCombatProjectile(g: Graphics, p: ProjectileSnapshot, scale: 
   if (!style) return false;
   const tier = Math.max(1, Math.min(3, p.tier ?? 1));
   const angle = Math.atan2(p.vy ?? 0, p.vx ?? 1), ux = Math.cos(angle), uy = Math.sin(angle);
-  // Iz mermisi: govde kalinligi kademenin agirligiyla.
-  drawSlug(g, p.x, p.y, ux, uy, (6 + tier * 1.5) * scale, (1.1 + tier * 0.3) * scale, color, heat);
+  // Iz mermisi: govde kalinligi kademenin agirligiyla. Boy ve en paylasilan
+  // pakette (`COMBAT_BODY`): sunucunun isabet sekli ayni sayilardan.
+  drawSlug(g, p.x, p.y, ux, uy, (COMBAT_BODY.length + tier * COMBAT_BODY.lengthPerTier) * scale, (COMBAT_BODY.width + tier * COMBAT_BODY.widthPerTier) * scale, color, heat);
   return true;
 }
 
@@ -189,10 +193,12 @@ export function drawPressureWave(g: Graphics, beam: BeamSnapshot, now: number, s
   const edge = getTierEdge(tier, color);
   // Son 40 ms'de soner: dalga eskiden son karede birden kayboluyordu.
   const life = clamp((beam.ttlMs ?? 120) / 40);
-  // Yogun on kenar ve arkasinda koyu dusum: on kenar sunucunun geometrisiyle ilerliyor.
-  for (let band = 3; band >= 0; band--) {
-    const r = Math.max(1, radius - band * 2.5 * scale);
-    g.lineStyle((band === 0 ? 1.2 + tier * 0.4 : 2.5) * scale, band === 0 ? edge : darken(color, band * 0.18), (band === 0 ? 0.92 : 0.32 * (1 - band / 5)) * life);
+  // Yogun on kenar ve arkasinda koyu dusum: on kenar sunucunun geometrisiyle
+  // ilerliyor. Kalinliklar ve aralik paylasilan pakette (`KIN_WAVE_STROKES`):
+  // sunucu dalgayi bu cizgilerin kapladigi derinlikle vuruyor.
+  for (let band: number = KIN_WAVE_STROKES.trailing; band >= 0; band--) {
+    const r = Math.max(1, radius - band * KIN_WAVE_STROKES.step * scale);
+    g.lineStyle((band === 0 ? getKinWaveFrontStroke(tier) : KIN_WAVE_STROKES.stroke) * scale, band === 0 ? edge : darken(color, band * 0.18), (band === 0 ? 0.92 : 0.32 * (1 - band / 5)) * life);
     g.beginPath();
     for (let i = 0; i <= 16; i++) {
       const a = heading - halfAngle + halfAngle * 2 * i / 16;

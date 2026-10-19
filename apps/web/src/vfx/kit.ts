@@ -17,6 +17,7 @@
  *   edilemiyor (`tests/vfx-kit-laser-identity.test.mjs`). Kitin varsayilan
  *   sayilari bu yuzden lazerin sayilari; degistirmek lazeri degistirir.
  */
+import { PROJECTILE_SLUG } from "@karayel/shared";
 
 /**
  * Kitin cizdigi yuzey: Phaser Graphics'in kullanilan alt kumesi.
@@ -148,9 +149,22 @@ function discTable(sides: number) {
   return table;
 }
 
-/** Dolu daire: kucukse kare, degilse 8-20 kenarli ucgen yelpazesi (earcut yok). */
-export function fillDisc(g: VfxGraphics, x: number, y: number, radius: number) {
+/**
+ * Dolu daire: kucukse kare, degilse 8-20 kenarli ucgen yelpazesi (earcut yok).
+ * `fixedSides` verilirse o kadar kenar, kare yok: isabet sekli dairesi olan govde
+ * (Ucube'nin basi, `getProjectileDiscSides`) cokgenin disina tasmasin.
+ */
+export function fillDisc(g: VfxGraphics, x: number, y: number, radius: number, fixedSides?: number) {
   if (!(radius > 0)) return;
+  if (fixedSides !== undefined) {
+    const { cos, sin } = discTable(fixedSides);
+    const x0 = x + cos[0] * radius;
+    const y0 = y + sin[0] * radius;
+    for (let index = 1; index < fixedSides - 1; index += 1) {
+      g.fillTriangle(x0, y0, x + cos[index] * radius, y + sin[index] * radius, x + cos[index + 1] * radius, y + sin[index + 1] * radius);
+    }
+    return;
+  }
   if (radius < 2.2) {
     // Alani esit kare: bu boyda daireden ayirt edilmiyor.
     const side = radius * 1.7725;
@@ -976,13 +990,24 @@ export function drawCrackle(g: VfxGraphics, x: number, y: number, options: Crack
 export function drawSlug(g: VfxGraphics, x: number, y: number, ux: number, uy: number, length: number, width: number, hue: number, heat: number, alpha = 1) {
   const tailX = x - ux * length;
   const tailY = y - uy * length;
-  g.lineStyle(Math.max(0.8, width), hue, clamp01(0.95 * alpha));
+  // Govde cizgisinin ve basin tabanlari paylasilan pakette (`PROJECTILE_SLUG`):
+  // mermilerin isabet sekli bu govdeden.
+  g.lineStyle(Math.max(PROJECTILE_SLUG.minWidth, width), hue, clamp01(0.95 * alpha));
   g.lineBetween(tailX, tailY, x, y);
-  g.lineStyle(Math.max(0.6, width * 0.45), whiteHot(hue, heat), clamp01(alpha));
+  g.lineStyle(Math.max(PROJECTILE_SLUG.minCoreWidth, width * PROJECTILE_SLUG.coreRatio), whiteHot(hue, heat), clamp01(alpha));
   g.lineBetween(tailX + ux * length * 0.3, tailY + uy * length * 0.3, x, y);
-  const head = Math.max(0.7, width * 0.42);
+  const head = Math.max(PROJECTILE_SLUG.minHead, width * PROJECTILE_SLUG.headRatio);
   g.fillStyle(whiteHot(hue, Math.min(1, heat + 0.1)), clamp01(alpha));
-  g.fillRect(x - head, y - head, head * 2, head * 2);
+  // Kare bas ucusla birlikte donuk (iki ucgen, ayni boy): cizilen bas her
+  // acida isabet seklinin basiyla ayni. Eksene hizali kare capraz ucusta
+  // kosesiyle 0,99'a uzaniyor, modelin 0,70'lik ucunu ve 0,78'lik enini
+  // asiyordu (Takipci'de siyirma cizilip vurulmuyordu).
+  const ax = (ux - uy) * head;
+  const ay = (uy + ux) * head;
+  const bx = (ux + uy) * head;
+  const by = (uy - ux) * head;
+  g.fillTriangle(x + ax, y + ay, x + bx, y + by, x - ax, y - ay);
+  g.fillTriangle(x - ax, y - ay, x - bx, y - by, x + ax, y + ay);
 }
 
 /**

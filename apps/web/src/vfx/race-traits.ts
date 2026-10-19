@@ -5,8 +5,11 @@ import {
   FOURTH_FOLD_JUMP,
   GAME_SPEED_MULTIPLIER,
   GOLEM_PETRIFY,
+  MEKA_SHIELD_DRAWN,
   MEKA_SHIELD_THROWER,
   decodeRaceTrait,
+  getMekaShieldDrawnHalf,
+  getMekaShieldRimWidth,
   getBurrowTelegraphStart,
   getSoulDrawerMultipliers,
   type MekaShieldBlockMessage,
@@ -104,11 +107,6 @@ export function readRaceTraitView(enemy: RaceWireFields): RaceTraitView | undefi
     phased: enemy.ph === true,
     fold: fj ? { x: fj[0], y: fj[1], at: fj[2] } : undefined
   };
-}
-
-/** Govdenin boy carpani: ruh cekici yiginla buyuyor (+%6 / yigin). */
-export function getRaceBodyScale(view: RaceTraitView | undefined) {
-  return view && view.drawer > 0 ? getSoulDrawerMultipliers(view.drawer).size : 1;
 }
 
 /**
@@ -305,13 +303,15 @@ export function drawMekaShield(
   }
   const fade = Math.max(0, Math.min(1, shield.ms / 220));
   const alpha = fade;
-  const half = Math.max(2, cellSize * 0.075);
+  // Kalinliklar paylasilan pakette (`MEKA_SHIELD_DRAWN`): sunucu mermiyi cizilen yuzde durduruyor.
+  const half = getMekaShieldDrawnHalf(cellSize);
+  const edge = half + MEKA_SHIELD_DRAWN.frame;
   graphics.fillStyle(MEKA_SHIELD_BODY_COLOR, 0.88 * alpha);
-  quad(graphics, shield.x1, shield.y1, shield.x2, shield.y2, nx, ny, half + 1);
+  quad(graphics, shield.x1, shield.y1, shield.x2, shield.y2, nx, ny, edge);
   const pulse = reducedMotion ? 0.9 : 0.78 + 0.16 * (0.5 + 0.5 * Math.sin(now / 110));
-  graphics.lineStyle(Math.max(1, half * 0.5), MEKA_SHIELD_RIM_COLOR, pulse * alpha);
-  graphics.lineBetween(shield.x1 + nx * (half + 1), shield.y1 + ny * (half + 1), shield.x2 + nx * (half + 1), shield.y2 + ny * (half + 1));
-  graphics.lineBetween(shield.x1 - nx * (half + 1), shield.y1 - ny * (half + 1), shield.x2 - nx * (half + 1), shield.y2 - ny * (half + 1));
+  graphics.lineStyle(getMekaShieldRimWidth(cellSize), MEKA_SHIELD_RIM_COLOR, pulse * alpha);
+  graphics.lineBetween(shield.x1 + nx * edge, shield.y1 + ny * edge, shield.x2 + nx * edge, shield.y2 + ny * edge);
+  graphics.lineBetween(shield.x1 - nx * edge, shield.y1 - ny * edge, shield.x2 - nx * edge, shield.y2 - ny * edge);
   graphics.lineStyle(1, MEKA_SHIELD_EDGE_COLOR, 0.75 * alpha);
   graphics.lineBetween(shield.x1, shield.y1, shield.x2, shield.y2);
   const tick = half + Math.max(3, cellSize * 0.1);

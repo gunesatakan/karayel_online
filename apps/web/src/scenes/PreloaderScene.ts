@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { towerCatalog, type TowerDefinition } from "@karayel/shared";
+import { PROJECTILE_SPRITE_BODIES, towerCatalog, type TowerDefinition } from "@karayel/shared";
 import { bakeFlashTextures } from "../vfx/flash-pool";
 import { darken, liftToWhite } from "../vfx/kit";
 import { assetUrl } from "../asset-url";
@@ -217,7 +217,9 @@ export class PreloaderScene extends Phaser.Scene {
   private createProjectileTexture(tower: TowerDefinition) {
     const graphics = this.make.graphics({ x: 0, y: 0 }, false);
     const palette = getVisualPalette(tower);
-    const size = tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" || tower.hitType === "contamination" || tower.hitType === "curse" || tower.hitType === "wave" ? 24 : 20;
+    // Melis'in dokulu mermileri: doku boyu paylasilan pakette, govdenin piksel
+    // sinirlariyla (`PROJECTILE_SPRITE_BODIES`); sunucunun isabet sekli oradan.
+    const size = PROJECTILE_SPRITE_BODIES[tower.id]?.texture ?? (tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" || tower.hitType === "contamination" || tower.hitType === "curse" || tower.hitType === "wave" ? 24 : 20);
     const center = size / 2;
 
     if (tower.id === "warrior-2") {

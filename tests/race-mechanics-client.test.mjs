@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { RACE_MECHANIC_IDS, RACE_TRAIT_CODES, getSoulDrawerMultipliers } from "../packages/shared/dist/index.js";
+import { RACE_MECHANIC_IDS, RACE_TRAIT_CODES, getEnemyBodyScale, getSoulDrawerMultipliers } from "../packages/shared/dist/index.js";
 import { createRecorder, importWebModule } from "./helpers/web-module.mjs";
 
 const race = await importWebModule("apps/web/src/vfx/race-traits.ts");
@@ -45,9 +45,11 @@ test("tel okunuyor: alan yoksa nesne yok; bozuk ve bilinmeyen alanlar yok sayıl
   assert.equal(view.fold, undefined);
   assert.equal(race.readRaceTraitView({ rt: 42 }).trait, undefined);
   const drawer = race.readRaceTraitView({ rt: RACE_TRAIT_CODES.drawer, ds: 4 });
-  assert.equal(race.getRaceBodyScale(drawer), getSoulDrawerMultipliers(4).size);
+  // Govdenin boyu paylasilan `getEnemyBodyScale`tan (sunucunun isabet govdesiyle
+  // ayni fonksiyon); istemcinin okudugu yigin ona gidiyor.
+  assert.equal(getEnemyBodyScale({ ds: drawer.drawer }), getSoulDrawerMultipliers(4).size);
   assert.equal(race.getRaceMaxHpScale(drawer), getSoulDrawerMultipliers(4).hp);
-  assert.equal(race.getRaceBodyScale(undefined), 1);
+  assert.equal(getEnemyBodyScale({ ds: undefined }), 1);
 });
 
 test("mesaj temizliği: race:block ve race:soul bozuk veride düşüyor", () => {

@@ -42,6 +42,7 @@ import {
   SHATTER_CHAIN_FALLOFF,
   SHATTER_FRACTURE_MS,
   SHATTER_MAX_HP_RATIO,
+  SHATTER_RADIUS_CELLS,
   SHOP_LEGENDARY_OFFER_WEIGHT,
   advanceLegendaryEngagement,
   cardCatalog,
@@ -61,7 +62,8 @@ import {
   isShopItemAvailable,
   shopItemAppliesToTower,
   towerCatalog,
-  worldToGrid
+  worldToGrid,
+  getBodyProjectionMin
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
@@ -176,6 +178,8 @@ function dusman(room, x, y, overrides = {}) {
   const enemy = [...room.enemies.values()].at(-1);
   Object.assign(enemy, { x, y, hp: 1e9, maxHp: 1e9, shield: 0, maxShield: 0, armor: 0, type: "grunt", movementKind: "ground",
     damageResistances: {}, hitTypeResistances: {}, statusResistances: {}, ...overrides });
+  // Govde (gorunen govdenin cokgeni) verilen ture gore: dogumdaki rastgele tur degil.
+  room.assignEnemyBody(enemy);
   room.enemySpatialGrid.rebuild(room.enemies.values());
   return enemy;
 }
@@ -295,15 +299,27 @@ test("Zincirleme Simsek: en fazla CHAIN_JUMPS dusmana zincir halinde, her biri k
   assert.equal(proc.p.length, (CHAIN_JUMPS + 1) * 2, "zincirin halkalari istemciye gitmedi");
 });
 
-test("Vurusta Patlama: hedefin cevresindeki herkese, yaricap disina degil; kritik atmiyor", (t) => {
+test("Vurusta Patlama: hedefin cevresindeki herkese (govdesi halkaya degen), yaricap disina degil; kritik atmiyor", (t) => {
   const clock = saat(t);
   const room = oda();
   const tower = kur(room);
   esyaTak(room, tower, itemFor("blast"));
   const cell = getMapGridSize(room.activeMap);
+  const radius = cell * BLAST_RADIUS_CELLS;
   const target = dusman(room, tower.x + cell, tower.y);
   const inside = dusman(room, tower.x + cell + cell * (BLAST_RADIUS_CELLS - 0.2), tower.y);
-  const outside = dusman(room, tower.x + cell + cell * (BLAST_RADIUS_CELLS + 0.3), tower.y);
+  // Alan hasari gorunen govdeye (sahibin karari, 2026-10): merkezi halkanin
+  // disinda ama govdesinin yan kenari halkanin 1 birim icinde olan da
+  // vuruluyor. Govdenin en uzak noktasi (`body.reach`) bile halkaya 0,3 kare
+  // uzak olan vurulmuyor (eskiden merkezi 0,3 kare disarida olan).
+  // Yon dondurulmemis doku (+y): govdenin halkaya bakan (sol) ucu cokgenin en soldaki noktasi.
+  const edge = dusman(room, 0, tower.y);
+  const leftReach = edge.body.x - getBodyProjectionMin(edge.body, 1, 0);
+  edge.x = tower.x + cell + radius + leftReach - 1;
+  assert.ok(edge.x - (tower.x + cell) > radius + 5, "kenardaki dusmanin merkezi halkanin disinda degil");
+  const outside = dusman(room, 0, tower.y);
+  outside.x = tower.x + cell + radius + outside.body.reach + cell * 0.3;
+  room.enemySpatialGrid.rebuild(room.enemies.values());
   vur(room, tower, target);
   room.legendaryRandom = () => 0;
   room.towerCriticalRandom = () => 0;
@@ -312,6 +328,7 @@ test("Vurusta Patlama: hedefin cevresindeki herkese, yaricap disina degil; kriti
   vur(room, tower, target);
   const expected = room.getTowerLegendaryPower(tower) * BLAST_DAMAGE_SECONDS;
   near(1e9 - inside.hp, expected, "yaricap ici", 1e-3);
+  near(1e9 - edge.hp, expected, "govdesi halkaya degen", 1e-3);
   assert.equal(outside.hp, 1e9, "yaricap disina vurdu");
   assert.ok(before - target.hp >= expected, "hedef patlamadan pay almadi");
 });
@@ -386,7 +403,14 @@ test("Olum Parcalanmasi: catlakli olen dusman sarapnel saciyor; sarapnelin oldur
   const cell = getMapGridSize(room.activeMap);
   const target = dusman(room, tower.x + cell, tower.y, { hp: 1000, maxHp: 1000 });
   const weak = dusman(room, tower.x + cell * 2, tower.y, { hp: 50, maxHp: 400 });
-  const back = dusman(room, tower.x + cell * 3, tower.y);
+  // Arkadaki dusman ilk sarapnelin halkasina govdesiyle de degmiyor (alan
+  // hasari gorunen govdeye: govdenin en uzak noktasi `body.reach` bile 0,1 kare
+  // disarida), zayif dusmaninkinin icinde. Eskiden 3. karedeydi; merkezi
+  // halkanin disindaydi ama govdesi icindeydi.
+  const back = dusman(room, 0, tower.y);
+  back.x = target.x + cell * SHATTER_RADIUS_CELLS + back.body.reach + cell * 0.1;
+  assert.ok(back.x - weak.x + back.body.reach < cell * SHATTER_RADIUS_CELLS, "arkadaki dusman ikinci halkanin disinda");
+  room.enemySpatialGrid.rebuild(room.enemies.values());
   temasla(room, tower, target, clock);
   assert.ok(target.legendary.fractureUntil > clock.now, "catlak yok");
   near(target.legendary.fractureUntil - clock.now, wall(SHATTER_FRACTURE_MS), "catlak penceresi", 1);

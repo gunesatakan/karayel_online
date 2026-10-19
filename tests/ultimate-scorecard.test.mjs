@@ -33,7 +33,7 @@ import {
   getUltimateStampText,
   getUltimateTeamChipText
 } from "../packages/shared/dist/index.js";
-import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { createRoom, findBuildableSpot, syncEnemyBodies } from "./helpers/match-room-harness.mjs";
 
 /** Gonderilen mesajlari kaydeden istemci ve yayin. */
 function wire(room, sessionIds = ["p1", "p2"]) {
@@ -71,6 +71,8 @@ function putEnemy(room, column, { hp = 50, row = 3 } = {}) {
   enemy.maxShield = 0;
   enemy.movementKind = "ground";
   enemy.statusResistances = {};
+  // Govde yeni konumda (uretimde tikin basinda): sutun govdeye vuruyor.
+  syncEnemyBodies(room);
   return enemy;
 }
 
@@ -429,6 +431,7 @@ test("yeniden baglanan oyuncu havadaki drone'larin karnesini alir", () => {
   room.spawnEnemy();
   const enemy = [...room.enemies.values()].at(-1);
   Object.assign(enemy, { x: tower.x + 20, y: tower.y, hp: 30, maxHp: 30, shield: 0, maxShield: 0, statusResistances: {} });
+  syncEnemyBodies(room);
   ready(room);
   room.useUltimate(io.owner, { mode: "attack" });
 
@@ -515,6 +518,7 @@ test("oyuncu odadan ciktiysa karne sessizce birakilir", () => {
   room.spawnEnemy();
   const enemy = [...room.enemies.values()].at(-1);
   Object.assign(enemy, { x: tower.x + 20, y: tower.y, hp: 30, maxHp: 30, shield: 0, maxShield: 0, statusResistances: {} });
+  syncEnemyBodies(room);
   ready(room);
   room.useUltimate(io.owner, { mode: "attack" });
 

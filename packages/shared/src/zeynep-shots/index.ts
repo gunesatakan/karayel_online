@@ -8,30 +8,47 @@
  * Burada tek yerde: sunucu da bunlari cagiriyor.
  */
 
+// Dusmanin isabet govdesi `enemy-body` modulunde (gorunen govdenin yonlu
+// dis bukey cokgeni): sunucunun carpisma, isin ve dalga hesabiyla
+// istemcinin Gosteri / Kin secimi ayni fonksiyonlardan; Kin dalgasinin yayi
+// ve Kin gosterisinin ucgeni de (`writeKinWaveSector`, `writeKinShowcaseTriangle`).
+
 /**
- * Dusman tipinin carpisma yaricapi (dunya birimi, harita olceginden once).
- *
- * Sunucunun carpisma, isin ve dalga hesabi bunu kullaniyor; istemci Gosteri
- * hattinin ve Kin dalgasinin kimi vurdugunu ayni yaricapla seciyor.
- *
- * Onceki %25 kuculmeye ek %10: gorsel ve isabet kutusu ayni olcekte
- * (`ENEMY_SIZE_SCALE`): 19 / 13 / 15 -> 12,825 / 8,775 / 10,125.
+ * Kin dalgasinin cizgileri (combat-vfx `drawPressureWave`; dunya birimi,
+ * sahnenin mermi olcegiyle `getProjectileSceneScale`): on kenarda
+ * `front + frontPerTier x kademe` kalinliginda yay, arkasinda `step` arayla
+ * `trailing` dolu yay, her biri `stroke` kalinliginda. Arkadaki kirik
+ * kiymiklar (seyrek, sonen, 0,8 kalinlik) ve yaylarin dalgalanmasi (+/-0,4
+ * ve +/-1,2, istemcinin saatiyle; ortalamasi sifir) efekt.
  */
-export function getEnemyTypeCollisionRadius(type: string | undefined) {
-  return (type === "brute" ? 19 : type === "runner" ? 13 : 15) * ENEMY_SIZE_SCALE;
+export const KIN_WAVE_STROKES = { front: 1.2, frontPerTier: 0.4, trailing: 3, step: 2.5, stroke: 2.5 } as const;
+
+/** On kenarin cizgisinin kalinligi (olcekten once). */
+export function getKinWaveFrontStroke(tier: number) {
+  return KIN_WAVE_STROKES.front + KIN_WAVE_STROKES.frontPerTier * tier;
 }
 
 /**
- * Dusman boyutunun olcegi: ekrandaki cap ve carpisma yaricapi birlikte.
- * Istemci gorseli de bununla carpiyor, ikisi birbirinden kaymasin.
+ * Sahibin karari (2026-10): dalga cizilen derinligiyle vuruyor (eskiden 30
+ * birimlik bir oyun bandi; cizilen dolu yaylar ~10 birim). Bant on kenarin
+ * gerisinde en arkadaki dolu yayin arka yanina kadar...
  */
-export const ENEMY_SIZE_SCALE = 0.675;
+export function getKinWaveBandBehind(scale: number) {
+  return (KIN_WAVE_STROKES.trailing * KIN_WAVE_STROKES.step + KIN_WAVE_STROKES.stroke / 2) * scale;
+}
+
+/** ...onunde on cizginin yarisi kadar (cizilen dis kenar). */
+export function getKinWaveBandAhead(tier: number, scale: number) {
+  return (getKinWaveFrontStroke(tier) / 2) * scale;
+}
 
 /**
- * Kin dalgasinin bandi (dunya birimi, olcekten once): on kenarin arkasinda
- * dusmana degdigi derinlik. Sunucu `scaleWorldDistance` ile olcekliyor.
+ * Dalganin menzile varinca ne kadar daha (dunya birimi, olcekten once;
+ * sunucu `scaleWorldDistance` ile) yasadigi: cizilen dalga bu yol boyunca
+ * menzilde duruyor, sonra sonuyor. Vurusun derinligi degil (bkz.
+ * `getKinWaveBandBehind`); eski bant derinliginin suresi korunuyor.
  */
-export const KIN_WAVE_BAND_DEPTH = 30;
+export const KIN_WAVE_LINGER_DISTANCE = 30;
 
 /**
  * Abarti'nin zirh kirma ekledigi mermiler: fiziksel delici Zeynep atislari

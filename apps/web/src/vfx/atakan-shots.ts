@@ -25,6 +25,7 @@
  * Maliyet: daire `fillDisc` (earcut yok), yaylar ve arklar `lineBetween`,
  * yol yok; kademe 3 mermi ~370 kose.
  */
+import { OBSESSION_SHOT_BODY, UCUBE_SHOT_BODY, getProjectileDiscSides } from "@karayel/shared";
 import { clamp01, coolingColor, darken, fillDisc, hashNoise, whiteHot, type TrailEntry, type VfxGraphics, type VfxTier } from "./kit";
 import type { VfxTierRecipe } from "./vfx-profiles";
 
@@ -78,9 +79,9 @@ export function getAtakanShotHue(silhouette: string, tier: VfxTier, base: number
 }
 
 /** Govdenin kalinligi: eski kademe 1'in 2/3'u, her kademede. */
-const OBSESSION_THICKNESS = 2 / 3;
+const OBSESSION_THICKNESS = OBSESSION_SHOT_BODY.thickness;
 /** Ucube mermisinin boyu: eski kademe 1'in 3/4'u, her kademede. */
-const UCUBE_SHOT_SIZE = 0.75;
+const UCUBE_SHOT_SIZE = UCUBE_SHOT_BODY.size;
 
 /**
  * Isi damgasinin capi: kademeyle buyumuyor. Obsesyon 2/3 inceldi, Ucube
@@ -97,9 +98,9 @@ const BOLT_POINTS: Array<{ x: number; y: number }> = Array.from({ length: 8 }, (
 /* ------------------------------------------------------------------ */
 
 /** Mercegin boyu (`radius` carpani): eski kademe 1 (1.9 + 0.25). */
-const OBSESSION_LENGTH = 2.15;
+const OBSESSION_LENGTH = OBSESSION_SHOT_BODY.length;
 /** Mercegin yari eni: eski kademe 1 (0.52 + 0.1), 2/3. */
-const OBSESSION_HALF = 0.62 * OBSESSION_THICKNESS;
+const OBSESSION_HALF = OBSESSION_SHOT_BODY.half * OBSESSION_THICKNESS;
 /** Bakis kuyrugu (mercek boyu carpani): eski kademe 1 (0.95 + 0.3), yarisi. */
 const OBSESSION_TAIL = 1.25 / 2;
 /** Odak arklarinin bir turu (ms). */
@@ -117,7 +118,7 @@ const SHED_MS = 260;
  * Badem: ucus ekseni boyunca uzun, iki ucu sivri mercek. Merkezden yelpaze;
  * `segments` basina iki ucgen, earcut yok.
  */
-function fillLens(g: VfxGraphics, x: number, y: number, ux: number, uy: number, length: number, half: number, segments = 5) {
+function fillLens(g: VfxGraphics, x: number, y: number, ux: number, uy: number, length: number, half: number, segments: number = OBSESSION_SHOT_BODY.lensSegments) {
   const nx = -uy;
   const ny = ux;
   const back = -length * 0.5;
@@ -128,7 +129,7 @@ function fillLens(g: VfxGraphics, x: number, y: number, ux: number, uy: number, 
   for (let index = 1; index <= segments; index += 1) {
     const t = index / segments;
     const along = back + length * t;
-    const h = half * Math.pow(Math.sin(Math.PI * t), 0.7);
+    const h = half * Math.pow(Math.sin(Math.PI * t), OBSESSION_SHOT_BODY.lensExponent);
     const ax = x + ux * along;
     const ay = y + uy * along;
     const nextUpperX = ax + nx * h;
@@ -381,8 +382,9 @@ export function drawUcubeShot(g: VfxGraphics, input: AtakanShotInput) {
   const core = whiteHot(hue, recipe.heat);
   const filament = whiteHot(hue, recipe.heat * 0.8);
   const reseed = input.still ? 0 : Math.floor(input.now / SHOT_RESEED_MS) * 7;
-  const head = size * 0.4 * thick;
-  const tail = size * 2.6;
+  // Bas ve damla: merminin govdesi (isabet sekli ayni sayilardan, `UCUBE_SHOT_BODY`).
+  const head = size * UCUBE_SHOT_BODY.head * thick;
+  const tail = size * UCUBE_SHOT_BODY.tail;
 
   // Plazma damlasi: koyu ton kama, ton ic kama.
   g.fillStyle(darken(hue, 0.3), 0.85);
@@ -408,9 +410,11 @@ export function drawUcubeShot(g: VfxGraphics, input: AtakanShotInput) {
     drawFilament(g, fork.x, fork.y, fork.x - ux * reach * 0.8 + nx * side * reach, fork.y - uy * reach * 0.8 + ny * side * reach, input.seed + reseed + 43, head * 0.3);
   }
 
-  // Bas: ton disk, beyaz-sicak cekirdek (kademe 3'te daha genis).
+  // Bas: ton disk, beyaz-sicak cekirdek (kademe 3'te daha genis). Disk isabet
+  // dairesinin cokgeni: kenar ortasi daireden en fazla 0,05 iceride
+  // (`getProjectileDiscSides`; eski 8 kenar 0,26 icerideydi, daire cizimden erken degiyordu).
   g.fillStyle(hue, 1);
-  fillDisc(g, x, y, head);
+  fillDisc(g, x, y, head, getProjectileDiscSides(head));
   g.fillStyle(core, 1);
   fillDisc(g, x, y, head * (tier >= 3 ? 0.62 : 0.5));
 

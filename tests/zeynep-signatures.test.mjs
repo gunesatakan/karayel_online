@@ -24,6 +24,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getBodyProjectionMin } from "../packages/shared/dist/index.js";
 import { createCountingGraphics, createRecorder, importWebModule } from "./helpers/web-module.mjs";
 
 const zeynep = await importWebModule("apps/web/src/vfx/zeynep-signatures.ts");
@@ -191,30 +192,55 @@ const collect = () => {
   return { events, tracker };
 };
 
-test("Gösteri hattı: hattaki düşmanlar (sunucunun sorgusu, çarpışma yarıçapıyla) yeni ışında bir kez spot alıyor", () => {
+test("Gösteri hattı: hattaki düşmanlar (sunucunun sorgusu, yönlü görünen gövdeyle) yeni ışında bir kez spot alıyor", () => {
   const { events, tracker } = collect();
   const towers = [{ id: "t2", definitionId: "zeynep-2", x: 0, y: 0, level: 5, ownerId: "me" }];
   const beam = { id: "showcase-t2-1", definitionId: "zeynep-2", tier: 2, x1: 0, y1: 0, x2: 200, y2: 0, width: 18, color: 0xf9a8d4, ttlMs: 260 };
+  // Govde sunucunun govdesi (yonlu dis bukey cokgen; irk yazilmamis kayit
+  // meka): bant = hattin yari genisligi 9. Yonu bilinmeyen dusman
+  // dondurulmemis doku gibi +y'ye bakiyor: hatta (y = 0) en yakin noktasi
+  // cokgenin en alttaki (en kucuk y) kosesi. Kenardaki piyade bandin hemen
+  // icinde; brute ve sampiyon piyadenin erisemeyecegi yerde.
+  const lowest = (body) => -getBodyProjectionMin(body, 0, 1);
+  const reachOf = (enemy, heading) => 9 + lowest(zeynep.getReceiptEnemyBody({ id: "r", x: 0, y: 0, ...enemy }, 34, heading ? { get: () => heading } : undefined).body);
+  const grunt = reachOf({});
+  const brute = reachOf({ type: "brute" });
+  const champion = reachOf({ champion: true });
+  assert.ok(brute > grunt + 1 && champion > grunt + 1, `${grunt} / ${brute} / ${champion}`);
+  // Yonu istemcinin gordugu: ayni yerdeki iki kosucu, biri hatta boyuyla (yon +y)
+  // bakiyor ve degiyor, digeri yanini (yon +x, dar) donmus ve degmiyor.
+  const runnerLong = reachOf({ type: "runner" });
+  const runnerSide = reachOf({ type: "runner" }, { headingX: 1, headingY: 0 });
+  assert.ok(runnerLong > runnerSide + 2, `${runnerLong} / ${runnerSide}`);
+  const runnerY = (runnerLong + runnerSide) / 2;
+  const headings = { get: (id) => (id === "runner-side" ? { headingX: 1, headingY: 0 } : undefined) };
   const enemies = [
     { id: "on", x: 80, y: 3 },
-    // Yaricap: grunt 10,125 + hattin yari genisligi 9 = 19,125; brute 12,825 + 9
-    // = 21,825 (ek %10 kuculme dahil). Brute grunt'in erisemeyecegi yerde.
-    { id: "edge", x: 120, y: 19 },
-    { id: "brute", x: 150, y: 21, type: "brute" },
+    { id: "edge", x: 120, y: grunt - 0.05 },
+    { id: "outside", x: 125, y: grunt + 0.05 },
+    { id: "brute", x: 150, y: brute - 0.05, type: "brute" },
+    { id: "champion", x: 160, y: champion - 0.05, champion: true },
+    { id: "runner-nose", x: 40, y: runnerY, type: "runner" },
+    { id: "runner-side", x: 60, y: runnerY, type: "runner" },
     { id: "off", x: 120, y: 40 },
     { id: "behind", x: -40, y: 0 }
   ];
-  tracker.noteSnapshot([beam], enemies, towers, context, 0);
-  assert.deepEqual(events.filter((event) => event.kind === "spotlight").map((event) => event.key).sort(), ["brute", "edge", "on"]);
+  const withHeadings = { ...context, headings };
+  tracker.noteSnapshot([beam], enemies, towers, withHeadings, 0);
+  assert.deepEqual(events.filter((event) => event.kind === "spotlight").map((event) => event.key).sort(), ["brute", "champion", "edge", "on", "runner-nose"]);
   assert.ok(events.every((event) => event.own === true && event.tier === 2 && event.color === 0xf9a8d4));
   events.length = 0;
-  tracker.noteSnapshot([{ ...beam, ttlMs: 200 }], enemies, towers, context, 60);
+  tracker.noteSnapshot([{ ...beam, ttlMs: 200 }], enemies, towers, withHeadings, 60);
   assert.equal(events.filter((event) => event.kind === "spotlight").length, 0, "ayni isin ikinci kez spot vermiyor");
-  // Kin gosterisi: gercek koni (genislikten), merkez menzil icinde.
+  // Kin gosterisi: cizilen ucgen (yari aci 30 derece genislikten, uzak kenar
+  // isinin ucunda duz). Govdesi ucgene degen dusman da (merkezi 33 derecede,
+  // kenari icerde); uzak kenarin otesindeki (x = 110: govdesinin ucgene
+  // bakan ucu 101'de) degil.
   events.length = 0;
   const cone = { id: "kin-showcase-t3-4", definitionId: "zeynep-3-kin-showcase", x1: 0, y1: 0, x2: 100, y2: 0, width: Math.tan(Math.PI / 6) * 200, color: 0xef4444, ttlMs: 260 };
-  tracker.noteSnapshot([cone], [{ id: "in", x: 80, y: 40 }, { id: "out", x: 60, y: 45 }, { id: "far", x: 110, y: 0 }], [], context, 120);
-  assert.deepEqual(events.filter((event) => event.kind === "spotlight").map((event) => event.key), ["in"]);
+  const at = (degrees, distance) => ({ x: Math.cos((degrees * Math.PI) / 180) * distance, y: Math.sin((degrees * Math.PI) / 180) * distance });
+  tracker.noteSnapshot([cone], [{ id: "in", x: 80, y: 40 }, { id: "body-in", ...at(33, 70) }, { id: "out", ...at(45, 85) }, { id: "far", x: 110, y: 0 }], [], context, 120);
+  assert.deepEqual(events.filter((event) => event.kind === "spotlight").map((event) => event.key).sort(), ["body-in", "in"]);
 });
 
 test("Kin dalgası: bandı geçen düşman bir kez damgalanıyor; güç uzaklıktan, süre kulenin yavaşlatmasından", () => {

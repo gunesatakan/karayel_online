@@ -11,6 +11,7 @@ import {
   getOrbitRotationSpeedForInterval,
   getOrbitTargetHitCooldownMs,
   getTowerShotFuel,
+  isPointInBody,
   selectOrbitSweepTargets,
   towerCatalog
 } from "../packages/shared/dist/index.js";
@@ -89,34 +90,77 @@ test("aynı düşman soğuma süresinde tekrar vurulmaz, sıradaki bıçak geçi
   assert.ok(enemy.hp + enemy.shield < firstHp);
 });
 
+/**
+ * Dusmani kulenin saginda, govdesinin kuleye en yakin noktasi `gap` uzakta
+ * olacak yere koyar (govde yonlu cokgen: merkez uzakligi irka ve ture gore
+ * degisiyor). Ikili arama: govde ayni, yalnizca konum.
+ */
+function placeAtGap(room, tower, enemy, gap) {
+  let low = gap;
+  let high = gap + 80;
+  for (let step = 0; step < 60; step += 1) {
+    const middle = (low + high) / 2;
+    enemy.x = tower.x + middle;
+    enemy.y = tower.y;
+    room.enemySpatialGrid.rebuild(room.enemies.values());
+    if (isPointInBody(enemy.body, tower.x, tower.y, gap)) low = middle;
+    else high = middle;
+  }
+  enemy.x = tower.x + low;
+  room.enemySpatialGrid.rebuild(room.enemies.values());
+}
+
+/** Bicagin tam bir turundaki vurus sayisi (hasar cagrisi sayiliyor). */
+function countFullTurnHits(room, tower) {
+  let hits = 0;
+  room.damageEnemyFromTower = () => { hits += 1; };
+  const tickSeconds = 1 / 60;
+  // Tam tur suresi donme hizindan gelir; hiz ates araligindan turetildigi icin
+  // buraya sabit yazmak testi kulenin gercek hizindan koparirdi.
+  const rotationSpeed = getOrbitRotationSpeedForInterval(
+    tower.definition.engine.attack.bladeCount,
+    tower.definition.fireIntervalMs
+  );
+  const fullRotationSeconds = Math.PI * 2 / rotationSpeed;
+  const ticks = Math.floor(fullRotationSeconds / tickSeconds);
+  let now = 10_000;
+  for (let tick = 0; tick < ticks; tick += 1) {
+    room.updateOrbitTower(tower, tickSeconds, now);
+    now += tickSeconds * 1000;
+  }
+  return hits;
+}
+
 test("sabit düşman mesafeden bağımsız olarak tam turda iki kez vurulur", () => {
-  for (const distance of [15, 25, 35, 45]) {
+  // Uzakliklar govdenin kuleye en yakin noktasinin uzakligi: bicagin kokunden
+  // ucunun hemen icine kadar (eskiden merkez 45 birimde sabitti; bicagin
+  // cizilen ucu bu haritada 37,6'da, kucuk govdeli irkta 45 menzil disi).
+  for (const gap of [10, 20, 30, "tip"]) {
     const { room, tower } = createSawRoom();
     room.spawnEnemy();
     const enemy = [...room.enemies.values()][0];
-    enemy.x = tower.x + distance;
-    enemy.y = tower.y;
     enemy.maxHp = 100_000;
     enemy.hp = enemy.maxHp;
-    room.enemySpatialGrid.rebuild(room.enemies.values());
+    const length = room.getOrbitBladeLengthForTower(tower);
+    placeAtGap(room, tower, enemy, gap === "tip" ? length - 0.5 : gap);
+    assert.equal(countFullTurnHits(room, tower), 2, `gap=${gap}`);
+  }
+});
 
-    let hits = 0;
-    room.damageEnemyFromTower = () => { hits += 1; };
-    const tickSeconds = 1 / 60;
-    // Tam tur suresi donme hizindan gelir; hiz ates araligindan turetildigi icin
-    // buraya sabit yazmak testi kulenin gercek hizindan koparirdi.
-    const rotationSpeed = getOrbitRotationSpeedForInterval(
-      tower.definition.engine.attack.bladeCount,
-      tower.definition.fireIntervalMs
-    );
-    const fullRotationSeconds = Math.PI * 2 / rotationSpeed;
-    const ticks = Math.floor(fullRotationSeconds / tickSeconds);
-    let now = 10_000;
-    for (let tick = 0; tick < ticks; tick += 1) {
-      room.updateOrbitTower(tower, tickSeconds, now);
-      now += tickSeconds * 1000;
-    }
-    assert.equal(hits, 2, `distance=${distance}`);
+test("bıçak cizildigi yere kadar: sivri ucun otesindeki govdeye değmiyor (eskiden uc + yarim en)", () => {
+  // Bicagin cizilen govdesi sivri uclu bir cokgen, ucu bicagin boyunda.
+  // Eskiden taranan dilim yari en kadar sisiriliyordu: ucun 4 birim otesine
+  // kadar (yuvarlak uc) kesiyordu.
+  const width = createSawRoom().definition.engine.attack.width;
+  for (const [gap, expected] of [[-0.5, 2], [0.5, 0], [width / 2 - 0.5, 0]]) {
+    const { room, tower } = createSawRoom();
+    room.spawnEnemy();
+    const enemy = [...room.enemies.values()][0];
+    enemy.maxHp = 100_000;
+    enemy.hp = enemy.maxHp;
+    const length = room.getOrbitBladeLengthForTower(tower);
+    placeAtGap(room, tower, enemy, length + gap);
+    assert.equal(countFullTurnHits(room, tower), expected, `ucun ${gap} otesi`);
   }
 });
 

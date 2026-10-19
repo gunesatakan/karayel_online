@@ -27,7 +27,10 @@ import {
   decodeSurgeCuts,
   encodeSurgeCuts,
   getAegisCrossMs,
+  getAegisFrontFace,
   getCounterSurgeDamageRatio,
+  getProjectileSceneScale,
+  getProjectileShape,
   getCounterSurgeDiagonalOffsetLimit,
   getCounterSurgeGeometry,
   getSurgeObstacleContact,
@@ -665,8 +668,16 @@ test("siper: uçan mermi siperde duruyor (doğrusal ve güdümlü), hasar yok; d
       assert.equal(hedef.hp, hp, `${hitType}: mermi siperi gecip vurdu`);
       const front = getMapOrigin(room.activeMap).y + surge.frontAlong;
       if (hitType === "projectile") {
+        // Mermi govdesinin on ucu siperin cizilen on kenarina (on cizginin
+        // yarim kalinligi, `getAegisFrontFace`) varinca duruyor: merkez on
+        // cizgiden yuz + ucun uzakligi kadar geride. Siper tik icinde ilerliyor:
+        // tikin sonundaki on cizgi en fazla bir tiklik yol (< 1) daha yakin.
+        // Eskiden cizginin kendisinde (yalnizca ucun uzakligi) duruyordu.
         const hit = room.sent.filter((entry) => entry.type === "projectile:hit").at(-1);
-        assert.ok(hit && Math.abs(hit.payload.y - front) < 1, `${hitType}: mermi siperde durmadi (${hit?.payload.y} / ${front})`);
+        const reachFront = getProjectileShape(kule.definition.id, 1, getProjectileSceneScale(getMapGridSize(room.activeMap))).front;
+        const expected = getAegisFrontFace() + reachFront;
+        const gap = hit ? hit.payload.y - front : Number.NaN;
+        assert.ok(gap <= expected + 0.06 && gap >= expected - 1, `${hitType}: mermi siperin cizilen yuzunde durmadi (${gap} / ${expected})`);
       }
       saat.now += 400;
       room.updateCounterSurge(saat.now);
@@ -676,6 +687,55 @@ test("siper: uçan mermi siperde duruyor (doğrusal ve güdümlü), hasar yok; d
       assert.deepEqual(blocks[0].payload.a, [2.5], "durma noktasi seridin genisliginde degil");
     });
   }
+});
+
+test("siper: cizilen govde on levhaya (genislik boyunca, uclar dahil) degince duruyor; zaten degen mermi yerinde; namlunun gerisindeki ve gecilmis siper durdurmuyor", () => {
+  // Meka kalkaniyla ayni kural (tests/visible-hitbox): levha on cizgi arti
+  // eksi sert kenarin yarisi (`getAegisFrontFace`), seridin genisligi
+  // boyunca. Eskiden yalnizca ucus 0'da (dogarken) zaten degen mermi
+  // duruyordu; siper ustune geldiginde degen mermi levhanin icinden
+  // geciyordu, namlunun gerisindeki siper de dogan mermiyi durduruyordu.
+  sahteSaat((saat) => {
+    const room = oda(3);
+    const surge = siper(room, saat, 11.5);
+    const band = surge.band;
+    const scale = getProjectileSceneScale(getMapGridSize(room.activeMap));
+    const face = getAegisFrontFace();
+    const frontY = band.originY + surge.frontAlong;
+    const span = { from: band.originX - band.width / 2, to: band.originX + band.width / 2 };
+    const middle = (span.from + span.to) / 2;
+    const stopAt = (id, x, y, ux, uy, flown, travel = 6) => room.getProjectileBlockCrossing({ flown }, getProjectileShape(id, 1, scale), x, y, ux, uy, travel);
+    for (const id of ["zeynep-1", "warrior-6", "warrior-1"]) {
+      const shape = getProjectileShape(id, 1, scale);
+      // Onunden (siperin yol yonunde, +y) yukari, kafa kafaya: merkez on cizgiden `gap` geride.
+      for (let gap = 0.5; gap <= 12; gap += 0.5) {
+        const t = stopAt(id, middle, frontY + gap, 0, -1, 1000);
+        if (gap < face + shape.front) assert.equal(t, 0, `${id} ${gap}: degen mermi yerinde durmadi`);
+        else if (gap - face - shape.front <= 6) assert.ok(t !== undefined && Math.abs(t - (gap - face - shape.front)) < 1e-6, `${id} ${gap}: cizilen yuzde durmadi (${t})`);
+        else assert.equal(t, undefined, `${id} ${gap}: erisemeyecegi siperde durdu`);
+      }
+      // Namlunun gerisindeki siper: dogan mermi ondan uzaklasiyor (asagi ya da yukari).
+      for (const behind of [0.5, 2, 6]) {
+        assert.equal(stopAt(id, middle, frontY + behind, 0, 1, 0), undefined, `${id}: namlunun ${behind} gerisindeki siper durdurdu (on yan)`);
+        assert.equal(stopAt(id, middle, frontY - behind, 0, -1, 0), undefined, `${id}: namlunun ${behind} gerisindeki siper durdurdu (arka yan)`);
+      }
+      // Gecilmis siper: merkez on cizginin otesinde, govde hala levhada, uzaklasiyor.
+      assert.equal(stopAt(id, middle, frontY - 0.5, 0, -1, 1000), undefined, `${id}: gecilmis siper arkadan durdurdu`);
+    }
+    // Levhanin ucu: Ucube'nin ekseni seridin 0,5 disinda, basi levhanin ucuna degiyor; 5 disarida degmiyor.
+    const ucube = getProjectileShape("warrior-6", 1, scale);
+    assert.ok(stopAt("warrior-6", span.to + 0.5, frontY + 10, 0, -1, 1000, 10) !== undefined, "levhanin ucuna degen mermi gecti");
+    assert.equal(stopAt("warrior-6", span.to + ucube.halfWidth + 0.5, frontY + 10, 0, -1, 1000, 10), undefined, "seridin disindaki mermi durdu");
+    // Gercek ucus: yandan girip on levhaya degen mermi siperde duruyor, isaret seridin genisliginde.
+    room.projectiles.set("px", {
+      id: "px", towerId: "t", definitionId: "warrior-6", kind: "tower", damageType: "physical", hitType: "projectile", source: "tower",
+      targetId: "", x: span.to + 0.5, y: frontY + 30, vx: 0, vy: -300, damage: 1, maxHealthDamageRatio: 0, aoeRadius: 0, slowMs: 0,
+      pierceLimit: 1, armorBreakAmount: 0, piercedEnemyIds: [], tier: 1, flown: 1000
+    });
+    for (let index = 0; index < 30 && room.projectiles.has("px"); index += 1) room.updateProjectiles(1 / 60);
+    assert.ok(!room.projectiles.has("px"), "ucun yanindaki mermi durmadi");
+    assert.ok(room.aegisBlockPending.length === 1 && Math.abs(room.aegisBlockPending[0] - surge.width) < 0.11, `isaret: ${room.aegisBlockPending}`);
+  });
 });
 
 test("siper: seyrek mesaj — çok sayıda durdurulan atış saniyede birkaç mesaj", () => {
