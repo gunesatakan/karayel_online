@@ -7223,8 +7223,10 @@ export class GameScene extends Phaser.Scene {
     let rate = 1;
     if (profile.delivery === "laser") {
       const mover = this.findHitMover(beam.x2, beam.y2);
-      if (mover) rate = getBeamPulseRate(this.noteBeamHeat(mover, now));
-      this.attackVfx?.emitBeamContact({ x: beam.x2, y: beam.y2, angle, definitionId: beam.definitionId, tier: beam.tier, own, key: `${beam.id}@${Math.round(now)}`, bornAt: now }, 0);
+      const heat = mover ? this.noteBeamHeat(mover, now) : 0;
+      rate = getBeamPulseRate(heat);
+      // Eritme imzasi isiyla buyuyor: erimis nokta, damlalar, duman.
+      this.attackVfx?.emitBeamContact({ x: beam.x2, y: beam.y2, angle, definitionId: beam.definitionId, tier: beam.tier, own, key: `${beam.id}@${Math.round(now)}`, bornAt: now, beamHeat: heat, size: mover?.displaySize }, 0);
     } else if (!tick && profile.delivery === "showcase") {
       this.applyShowcaseFeel(beam, angle, own, now);
     }
@@ -7947,9 +7949,8 @@ export class GameScene extends Phaser.Scene {
       const anchor = this.createHitAnchor(message.x, message.y, receivedAt);
       // Yalnizca dogrusal mermi icin: kaldirma mesajini (`projectile:hit`) o gonderiyor, kayit orada siliniyor.
       if (anchor && linear) this.lastProjectileContact.set(message.id, { anchor, receivedAt });
-      // Govdenin boyu: Zeynep kertigi ve carpma mermisinin govdeyi saran halkasi icin.
-      const sized = pierce || getWeaponFeel(definitionId).end === "burst";
-      const size = sized ? this.getEnemyBodySize(anchor ? this.snapshotBuffer[this.snapshotBuffer.length - 1]?.snapshot.enemies.find((enemy) => enemy.id === anchor.enemyId) : undefined) : undefined;
+      // Govdenin boyu: Zeynep kertigi ve vurus imzasi (delme, ezme, kafes) govdenin olcusunde.
+      const size = anchor ? this.getEnemyBodySize(this.snapshotBuffer[this.snapshotBuffer.length - 1]?.snapshot.enemies.find((enemy) => enemy.id === anchor.enemyId)) : undefined;
       this.queueDelayedEffect(() => {
         const at = this.getAnchoredHitPoint(anchor, message.x, message.y);
         this.attackVfx?.emitImpact({

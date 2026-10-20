@@ -52,6 +52,8 @@ const game = new Phaser.Game({
 const vfxGallery = new URLSearchParams(window.location.search).has("vfx-gallery");
 if (vfxGallery) {
   const launchGallery = async () => {
+    // Menu kurulmuyor ama kabugu (#menu-root, arka plan) tuvalin ustunde kaliyordu: galeri bos gorunuyordu.
+    document.getElementById("menu-root")?.classList.add("menu-root--hidden");
     const { VfxGalleryScene } = await import("./scenes/VfxGalleryScene");
     if (!game.scene.getScene("vfx-gallery")) game.scene.add("vfx-gallery", VfxGalleryScene, false);
     game.scene.stop("preloader");

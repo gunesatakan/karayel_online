@@ -212,5 +212,7 @@ test("merminin sonu: carpma mermisi (Obsesyon, Ucube) govdenin cevresinde kaybol
   assert.match(scene, /const projectiles = this\.applyProjectileEnds\(input, performance\.now\(\)\);/);
   assert.match(scene, /if \(projectile\.source !== "tower" \|\| getWeaponFeel\(projectile\.definitionId\)\.end === "burst"\) continue;/);
   assert.match(scene, /arrived: Boolean\(\(projectile as TerminalProjectile\)\.terminal && \(oldProjectile as TerminalProjectile\)\.terminal\)/);
-  assert.match(read("apps/web/src/vfx/attack-vfx.ts"), /if \(getWeaponFeel\(event\.profile\.id\)\.end === "burst" && !event\.profile\.aoe && event\.size > 0\) \{/);
+  // Govdeyi saran carpma halkasi ezme imzasinda (vurus turu "Carpma").
+  assert.match(read("apps/web/src/vfx/attack-vfx.ts"), /this\.drawSignature\(g, event, elapsed, scale, still\);/);
+  assert.match(read("apps/web/src/vfx/hit-signatures.ts"), /function drawCrush\(/);
 });

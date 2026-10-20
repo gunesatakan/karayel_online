@@ -57,6 +57,7 @@ import type { FlashSink, GlowStampSink } from "./flash-pool";
 import { VfxLod } from "./lod";
 import { getVfxProfile, getVfxTier, type VfxProfile, type VfxTierRecipe } from "./vfx-profiles";
 import { getFeelTierIndex, getWeaponFeel, type DeathStyle } from "./weapon-feel";
+import { HIT_SIGNATURE_MS, drawHitSignature, getHitSignature, type HitSignature, type HitSignatureGates, type HitSignatureInput } from "./hit-signatures";
 import { COURT_FLASH_GAP_MS, LANCE_OPTIONS, drawDecreeTick, drawZeynepLance, getLanceMode, getZeynepBodyColor } from "./zeynep-signatures";
 import { TAHT_DUAL_LANCE_GOLD } from "./taht-tiers";
 import { PROJECTILE_VISUAL_SCALE } from "../visual-scale";
@@ -71,6 +72,10 @@ export const MUZZLE_MS = 90;
 export const HARD_FLASH_MS = 50;
 /** Yanik izinin omru. */
 export const IMPACT_DECAL_MS = 900;
+/** Govde boyu bilinmeyen temasta (galeri, eski cagri) siradan dusmanin boyu. */
+const DEFAULT_BODY_SIZE = 34;
+const SIGNATURE_INPUT: HitSignatureInput = { x: 0, y: 0, angle: 0, size: 0, tier: 1, seed: 0, hue: 0, heat: 0, weight: 1, extra: 1, beamHeat: 0 };
+const SIGNATURE_GATES: HitSignatureGates = { sparks: true, smoke: true, still: false };
 /** Carpma mermisinin dusmani saran halkasinin omru. */
 export const BURST_RING_MS = 150;
 /** Isin temasinin omru (kivilcim) ve lazerin kucuk yanik izi. */
@@ -103,6 +108,10 @@ type AttackEvent = {
   size: number;
   /** Kimlik tonu: Zeynep'te mizragin kipi, digerlerinde kademenin tonu. */
   body: number;
+  /** Vurus turunun imzasi (`hit-signatures`): delme, ezme, eritme, kilitleme... */
+  signature: HitSignature;
+  /** Lazerin dusmanda biriktirdigi isi (0-1); eritme imzasi buyuyor. */
+  beamHeat: number;
 };
 
 export type AttackEventInput = {
@@ -122,6 +131,8 @@ export type AttackEventInput = {
   enemyId?: string;
   /** Bilinmeyen kimlikte profilin rengi. */
   fallbackColor?: number;
+  /** Isin temasi: lazerin bu dusmanda biriktirdigi isi (0-1). */
+  beamHeat?: number;
 };
 
 export type AttackVfxOptions = {
@@ -529,22 +540,7 @@ export class AttackVfx {
       durationMs: HARD_FLASH_MS,
       bornAt: input.bornAt
     });
-    if (getWeaponFeel(event.profile.id).end === "burst" && !event.profile.aoe && event.size > 0) {
-      // Carpma mermisi govdeye girmiyor: degdigi yerde kayboluyor ve dusmanin
-      // govdesini saran kisa bir halka aciliyor (alan mermisinin halkasi kendi yaricapinda).
-      const body = event.size;
-      this.flashes.flash({
-        x: input.x,
-        y: input.y,
-        texture: "ring",
-        tint: whiteHot(event.body, 0.35),
-        alpha: (event.own ? 0.8 : 0.55),
-        sizeFrom: body * 0.55,
-        sizeTo: still ? body * 0.55 : body * 1.15,
-        durationMs: BURST_RING_MS,
-        bornAt: input.bornAt
-      });
-    }
+    // Carpma mermisinin govdeyi saran halkasi ezme imzasinda (`hit-signatures`).
     if (event.profile.matter === "energy" && this.options.lod.smoke) {
       // Enerji vurusunun isisi: tonun kendisi, kisa ve sonuk; soluk bir halka degil.
       this.flashes.flash({
@@ -735,6 +731,10 @@ export class AttackVfx {
         ? BEAM_SCORCH_MS
         : event.durationMs;
     event.seed = input.key ? fnvHash(input.key) % 100003 : fnvHash(`${Math.round(input.x)}:${Math.round(input.y)}:${Math.round(input.bornAt)}`) % 100003;
+    // Vurus imzasi (`hit-signatures`) ana cizimden uzun yasayabiliyor: olay onun kadar.
+    event.signature = getHitSignature(input.definitionId);
+    event.beamHeat = input.beamHeat ?? 0;
+    if (kind === "impact" || kind === "beamHit") event.lifeMs = Math.max(event.lifeMs, HIT_SIGNATURE_MS[event.signature]);
     event.own = input.own ?? true;
     event.radius = input.radius ?? 0;
     event.size = input.size ?? 0;
@@ -803,6 +803,32 @@ export class AttackVfx {
     }
   }
 
+  /** Vurus turunun imzasi; govde boyu temastan (yoksa siradan dusman boyu). */
+  private drawSignature(g: VfxGraphics, event: AttackEvent, elapsed: number, scale: number, still: boolean) {
+    const input = SIGNATURE_INPUT;
+    input.angle = event.angle;
+    input.size = event.size > 0 ? event.size : DEFAULT_BODY_SIZE * scale;
+    // Merminin temasi govdenin kenarinda (gelis yonunde): delme oradan giriyor,
+    // govdeyi saran imzalar (ezme, kafes, curutme) govdenin merkezinde. Isin
+    // temasinin noktasi zaten govdenin uzerinde.
+    const centered = event.kind === "beamHit" || event.signature === "pierce" || event.signature === "cleave";
+    const toCenter = centered ? 0 : input.size * 0.45;
+    input.x = event.x + Math.cos(event.angle) * toCenter;
+    input.y = event.y + Math.sin(event.angle) * toCenter;
+    input.tier = event.tier;
+    input.seed = event.seed;
+    input.hue = event.body;
+    input.heat = event.recipe.heat;
+    input.weight = event.recipe.weight;
+    input.extra = event.own ? 1 : TEAMMATE_EXTRA_ALPHA;
+    input.beamHeat = event.beamHeat;
+    const gates = SIGNATURE_GATES;
+    gates.sparks = this.options.lod.sparks;
+    gates.smoke = this.options.lod.smoke;
+    gates.still = still;
+    drawHitSignature(g, event.signature, input, elapsed, scale, gates, this.options.ground);
+  }
+
   /** Isinin temasi: beyaz-sicak nokta, kaynaga geri sacilan kivilcim; lazerde yanik. */
   private drawBeamHit(g: VfxGraphics, event: AttackEvent, elapsed: number, scale: number, still: boolean) {
     const ground = this.options.ground;
@@ -812,6 +838,7 @@ export class AttackVfx {
       const rx = (2 + event.tier * 0.6) * scale;
       drawScorch(ground, x, y + 1.5 * scale, elapsed / BEAM_SCORCH_MS, rx, rx * 0.5, SCORCH, 0.42, event.seed);
     }
+    this.drawSignature(g, event, elapsed, scale, still);
     if (elapsed >= event.durationMs) return;
     const hue = event.body;
     const extra = event.own ? 1 : TEAMMATE_EXTRA_ALPHA;
@@ -850,7 +877,11 @@ export class AttackVfx {
       const rx = event.radius > 0 ? event.radius * 0.42 : (3 + event.tier * 1.4) * scale * weight;
       drawScorch(ground, x, y + 2 * scale, elapsed / IMPACT_DECAL_MS, rx, rx * 0.5, SCORCH, 0.5, event.seed);
     }
-    if (elapsed >= event.durationMs) return;
+    // Imza ana cizimden uzun yasiyor: ana cizim bittikten sonra yalniz o.
+    if (elapsed >= event.durationMs) {
+      this.drawSignature(g, event, elapsed, scale, still);
+      return;
+    }
     const age = elapsed / event.durationMs;
 
     // Cekirdek: 1-3 karelik beyaz-sicak nokta.
@@ -860,6 +891,7 @@ export class AttackVfx {
     }
 
     this.drawMechanic(g, event, age, elapsed, scale, still);
+    this.drawSignature(g, event, elapsed, scale, still);
 
     if (event.profile.matter === "kinetic") {
       if (elapsed < 40) {
@@ -978,11 +1010,7 @@ export class AttackVfx {
         return;
       }
       case "contain": {
-        // Izolasyon: hedefin cevresinde kapanan ince altigen kafes.
-        const close = still ? 0.5 : Math.pow(1 - clamp01(age / 0.5), 2);
-        const r = (5 + close * 8) * scale;
-        g.lineStyle(Math.max(0.7, (0.7 + tier * 0.25) * scale), hue, clamp01(0.9 * fade));
-        strokeHex(g, x, y, r, hashNoise(event.seed) * Math.PI);
+        // Izolasyon'un kafesi kilitleme imzasinda: govde boyunda kapanan altigen.
         return;
       }
       case "slash": {
