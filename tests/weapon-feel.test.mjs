@@ -171,3 +171,42 @@ test("isin temasi ve olumun bicimleri ciziliyor; hareket azaltmada kivilcim ve p
     assert.ok(g.calls.length > 0, `${style} cizilmeli`);
   }
 });
+
+test("merminin sonu: carpma mermisi (Sunucu, Obsesyon, Ucube) govdenin cevresinde kayboluyor, digerleri govdeye gomuluyor", async () => {
+  const bursts = Object.entries(feel.WEAPON_FEELS).filter(([, entry]) => entry.end === "burst").map(([id]) => id).sort();
+  assert.deepEqual(bursts, ["warrior-2", "warrior-4", "warrior-6"]);
+  assert.equal(feel.getWeaponFeel("warrior-1").end, "sink");
+  assert.equal(feel.getWeaponFeel("zeynep-1").end, "sink");
+  assert.equal(feel.getWeaponFeel("mage-1").end, "burst", "alan mermisi govdeye gomulmuyor");
+
+  // Gomulme: ucus yonunde ilerliyor, kuculuyor, SINK_MS'de bitiyor.
+  const start = feel.getSinkPose(0);
+  assert.deepEqual({ ...start }, { depth: 0, size: 1 });
+  const mid = { ...feel.getSinkPose(feel.SINK_MS / 2) };
+  assert.ok(mid.depth > feel.SINK_DEPTH / 2 && mid.depth < feel.SINK_DEPTH, "once hizli giriyor");
+  assert.ok(Math.abs(mid.size - 0.5) < 1e-9);
+  assert.equal(feel.getSinkPose(feel.SINK_MS), undefined);
+  assert.ok(feel.SINK_MS <= 120, "gomulme kisa: tas gibi durmuyor");
+
+  // Cizim: gomulen govde kucuk, bitmis govde hic cizilmiyor.
+  const { AttackVfx } = await importWebModule("apps/web/src/vfx/attack-vfx.ts");
+  const { VfxLod } = await importWebModule("apps/web/src/vfx/lod.ts");
+  const recorder = () => {
+    const calls = [];
+    return new Proxy({ calls }, { get: (target, key) => (key in target ? target[key] : (...args) => { calls.push([key, ...args]); return target; }) });
+  };
+  const draw = (sink) => {
+    const body = recorder();
+    const vfx = new AttackVfx(body, recorder(), recorder(), undefined, { lod: new VfxLod() });
+    vfx.renderProjectiles([{ id: "p", x: 10, y: 10, vx: 100, vy: 0, definitionId: "warrior-1", source: "tower", tier: 1, sink }], 0, 1);
+    return body.calls.filter(([name]) => name !== "clear").length;
+  };
+  assert.ok(draw(1) > 0);
+  assert.equal(draw(0), 0, "bitmis gomulme cizilmiyor");
+
+  const scene = read("apps/web/src/scenes/GameScene.ts");
+  assert.match(scene, /const projectiles = this\.applyProjectileEnds\(input, performance\.now\(\)\);/);
+  assert.match(scene, /if \(projectile\.source !== "tower" \|\| getWeaponFeel\(projectile\.definitionId\)\.end === "burst"\) continue;/);
+  assert.match(scene, /arrived: Boolean\(\(projectile as TerminalProjectile\)\.terminal && \(oldProjectile as TerminalProjectile\)\.terminal\)/);
+  assert.match(read("apps/web/src/vfx/attack-vfx.ts"), /if \(getWeaponFeel\(event\.profile\.id\)\.end === "burst" && !event\.profile\.aoe && event\.size > 0\) \{/);
+});

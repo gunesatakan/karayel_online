@@ -43,6 +43,15 @@ export type WeaponMass = "light" | "medium" | "heavy";
  */
 export type DeathStyle = "shards" | "ash" | "implode";
 
+/**
+ * Merminin sonu (sahibin karari, 2026-10-20: "tas atilmis gibi olmasin"):
+ * - "sink": mermi dusmana degince durmuyor; ucus yonunde govdenin icine
+ *   birkac birim daha girip kuculerek ve sonerek kayboluyor;
+ * - "burst": carpma mermisi (Sunucu, Obsesyon, Ucube) degdigi anda
+ *   kayboluyor, yerine dusmanin govdesini saran kisa bir carpma halkasi.
+ */
+export type ProjectileEnd = "sink" | "burst";
+
 type PerTier = readonly [number, number, number];
 
 export type WeaponFeel = {
@@ -64,12 +73,15 @@ export type WeaponFeel = {
   /** Kendi vurusunda kamera sarsintisi (px); 0 yok. Yonetmenin araligi ve ust siniri gecerli. */
   shake: PerTier;
   death: DeathStyle;
+  /** Merminin sonu: govdeye gomulme ya da govdenin cevresinde carpma. */
+  end: ProjectileEnd;
 };
 
 const NONE: PerTier = Object.freeze([0, 0, 0]) as PerTier;
 const tiers = (a: number, b: number, c: number): PerTier => Object.freeze([a, b, c]) as PerTier;
 
 const feel = (overrides: Partial<WeaponFeel> & Pick<WeaponFeel, "mass" | "death">): WeaponFeel => Object.freeze({
+  end: "sink" as ProjectileEnd,
   fireGain: 1,
   recoil: NONE,
   knock: NONE,
@@ -90,19 +102,19 @@ export const WEAPON_FEELS: Readonly<Record<string, WeaponFeel>> = Object.freeze(
   // Sunucu: topcu. Tok gumbur, kule geri tepiyor; dusman itiliyor, kisa duruyor, eziliyor.
   "warrior-2": feel({
     mass: "heavy", fire: "fireHeavy", recoil: tiers(2, 2.5, 3), knock: tiers(2, 3, 4), hitStopMs: tiers(35, 45, 55),
-    squash: 0.12, shake: tiers(1, 1.5, 2), death: "shards"
+    squash: 0.12, shake: tiers(1, 1.5, 2), death: "shards", end: "burst"
   }),
   // Izolasyon: kilitlenme. Gudum sesi; dusman kisa bir an tutuluyor, itilmiyor.
   "warrior-3": feel({ mass: "medium", fire: "fireHoming", recoil: tiers(0.8, 1, 1.2), hitStopMs: tiers(25, 30, 35), squash: 0.04, death: "ash" }),
   // Obsesyon: cokus. Ice cekme sesi; agir: itme, duraklama, sarsinti.
   "warrior-4": feel({
     mass: "heavy", fire: "fireCollapse", recoil: tiers(1.2, 1.5, 2), knock: tiers(1.5, 2, 2.5), hitStopMs: tiers(30, 40, 45),
-    squash: 0.08, shake: tiers(1, 1.5, 2), death: "implode"
+    squash: 0.08, shake: tiers(1, 1.5, 2), death: "implode", end: "burst"
   }),
   // Debug Lazer: surekli isin. Atis sesi yok (nabzi isindikca kalinlasiyor); dusman isiniyor.
   "warrior-5": feel({ mass: "light", death: "ash" }),
   // Ucube: elektrik. Catirti; dusman elektrige tutulmus gibi titriyor.
-  "warrior-6": feel({ mass: "medium", fire: "fireBolt", recoil: tiers(1, 1.2, 1.5), knock: tiers(0.5, 1, 1), shiver: tiers(1, 1.2, 1.5), death: "ash" }),
+  "warrior-6": feel({ mass: "medium", fire: "fireBolt", recoil: tiers(1, 1.2, 1.5), knock: tiers(0.5, 1, 1), shiver: tiers(1, 1.2, 1.5), death: "ash", end: "burst" }),
   // Hiza: delici mizrak. Metalik "sink"; deldigi her dusmanda kisa duraklama.
   "zeynep-1": feel({ mass: "medium", fire: "fireLance", recoil: tiers(1, 1.2, 1.5), knock: tiers(0.5, 1, 1.5), hitStopMs: tiers(15, 20, 25), squash: 0.03, death: "shards" }),
   // Gosteri: gosteri isini. Atis sesi yok (isinin akoru); ucundaki dusman kisa duruyor.
@@ -125,7 +137,8 @@ function deriveFeel(profile: VfxProfile): WeaponFeel {
     // Eski agir tek vurus (Jackpot, Omer): kademe 2+ itme 1-2 px, kademe 3 sarsinti.
     return feel({
       mass: "heavy", fire: beam ? undefined : "fireHeavy", fireGain: 0.85, recoil: tiers(1.5, 2, 2.5), knock: tiers(0, 1, 2),
-      hitStopMs: tiers(20, 30, 40), squash: 0.08, shake: tiers(0, 0, 1.5), death: energy ? "ash" : "shards"
+      hitStopMs: tiers(20, 30, 40), squash: 0.08, shake: tiers(0, 0, 1.5), death: energy ? "ash" : "shards",
+      end: profile.aoe || energy ? "burst" : "sink"
     });
   }
   return feel({
@@ -133,7 +146,9 @@ function deriveFeel(profile: VfxProfile): WeaponFeel {
     fire: beam ? undefined : energy ? "fireBolt" : "fireLight",
     fireGain: 0.7,
     recoil: beam ? NONE : tiers(0.6, 0.8, 1),
-    death: energy ? "ash" : "shards"
+    death: energy ? "ash" : "shards",
+    // Alan mermisi (Baransel) govdeye gomulmuyor, cevresinde patliyor.
+    end: profile.aoe ? "burst" : "sink"
   });
 }
 
@@ -157,6 +172,23 @@ export function getFeelTierIndex(tier: number | undefined): 0 | 1 | 2 {
 /* ------------------------------------------------------------------ */
 /* Egriler: hepsi saf, kare basina nesne yok                             */
 /* ------------------------------------------------------------------ */
+
+/** Gomulmenin suresi ve derinligi (dunya birimi; govdenin yaricapinin yarisi kadar). */
+export const SINK_MS = 90;
+export const SINK_DEPTH = 7;
+
+/**
+ * Gomulmenin bu andaki hali: `depth` ucus yonunde ilerleme (birim), `size`
+ * govdenin olcegi (1 -> 0); bitmisse `undefined`. Donen nesne yeniden kullaniliyor.
+ */
+const SINK_OUT = { depth: 0, size: 1 };
+export function getSinkPose(elapsedMs: number) {
+  if (!(elapsedMs >= 0) || elapsedMs >= SINK_MS) return undefined;
+  const t = elapsedMs / SINK_MS;
+  SINK_OUT.depth = SINK_DEPTH * (1 - (1 - t) * (1 - t));
+  SINK_OUT.size = 1 - t;
+  return SINK_OUT;
+}
 
 /** Geri tepmenin omru: hizli vurus (`RECOIL_KICK_MS`), sonra yerine donus. */
 export const RECOIL_MS = 120;

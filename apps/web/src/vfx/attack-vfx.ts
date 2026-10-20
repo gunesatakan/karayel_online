@@ -71,6 +71,8 @@ export const MUZZLE_MS = 90;
 export const HARD_FLASH_MS = 50;
 /** Yanik izinin omru. */
 export const IMPACT_DECAL_MS = 900;
+/** Carpma mermisinin dusmani saran halkasinin omru. */
+export const BURST_RING_MS = 150;
 /** Isin temasinin omru (kivilcim) ve lazerin kucuk yanik izi. */
 export const BEAM_HIT_MS = 180;
 export const BEAM_SCORCH_MS = 600;
@@ -150,6 +152,9 @@ export type AttackVfxOptions = {
   /** Yanik izlerinin yuzeyi (dusmanlarin altinda); yoksa iz cizilmiyor. */
   ground?: VfxGraphics & { clear(): unknown };
 };
+
+/** Gomulmekte olan merminin olcegi (istemcinin eki; sunucu gondermiyor). */
+export type SinkingProjectile = ProjectileSnapshot & { sink?: number };
 
 /** Carpmanin dusmana etkisi; olay basina yeniden kullanilan tek nesne. */
 export type EnemyHitFeel = {
@@ -287,6 +292,9 @@ export class AttackVfx {
       if (projectile.source !== "tower") continue;
       const profile = getVfxProfile(projectile.definitionId);
       if (profile.silhouette === "none") continue;
+      // Gomulen mermi (`weapon-feel` "sink"): govde kuculuyor; 0'da cizilmiyor.
+      const sink = (projectile as SinkingProjectile).sink ?? 1;
+      if (!(sink > 0)) continue;
       const tier = toTier(projectile.tier);
       const recipe = getVfxTier(profile, tier);
       const own = isOwn ? isOwn(projectile) : true;
@@ -318,7 +326,7 @@ export class AttackVfx {
         drawTaperedRibbon(this.body, entry, this.trails.bufferCapacity, projectile.x, projectile.y, RIBBON);
       }
 
-      const radius = (recipe.silhouette / 2) * scale;
+      const radius = (recipe.silhouette / 2) * scale * sink;
       if (profile.silhouette === "lance") {
         // Mizrak (zeynep-signatures): kipin tonu, Taht'ta dizilim kertikleri.
         LANCE_OPTIONS.mode = getLanceMode(projectile.definitionId);
@@ -331,13 +339,13 @@ export class AttackVfx {
         LANCE_OPTIONS.still = still;
         drawZeynepLance(this.body, projectile.x, projectile.y, angle, LANCE_OPTIONS);
       } else if (profile.silhouette === "combat") {
-        drawCombatProjectile(this.body, projectile, scale * COMBAT_BODY.scale, hue, recipe.heat);
+        drawCombatProjectile(this.body, projectile, scale * sink * COMBAT_BODY.scale, hue, recipe.heat);
       } else if (profile.silhouette === "gaze" || profile.silhouette === "arc") {
         SHOT.x = projectile.x;
         SHOT.y = projectile.y;
         SHOT.angle = angle;
         SHOT.radius = radius;
-        SHOT.scale = scale;
+        SHOT.scale = scale * sink;
         SHOT.tier = tier;
         SHOT.recipe = recipe;
         SHOT.hue = hue;
@@ -363,7 +371,7 @@ export class AttackVfx {
         const size = profile.silhouette === "gaze" || profile.silhouette === "arc"
           ? getAtakanShotGlowSize(profile.silhouette, radius, recipe.thickness)
           : radius * (tier >= 3 ? 3.2 : tier >= 2 ? 2.6 : 2) * Math.sqrt(recipe.thickness);
-        const alpha = (tier >= 3 ? 0.42 * extra : tier >= 2 ? 0.32 : 0.22);
+        const alpha = (tier >= 3 ? 0.42 * extra : tier >= 2 ? 0.32 : 0.22) * sink;
         if (stamps) {
           stamps.stamp(projectile.x, projectile.y, hue, size, alpha);
         } else {
@@ -521,6 +529,22 @@ export class AttackVfx {
       durationMs: HARD_FLASH_MS,
       bornAt: input.bornAt
     });
+    if (getWeaponFeel(event.profile.id).end === "burst" && !event.profile.aoe && event.size > 0) {
+      // Carpma mermisi govdeye girmiyor: degdigi yerde kayboluyor ve dusmanin
+      // govdesini saran kisa bir halka aciliyor (alan mermisinin halkasi kendi yaricapinda).
+      const body = event.size;
+      this.flashes.flash({
+        x: input.x,
+        y: input.y,
+        texture: "ring",
+        tint: whiteHot(event.body, 0.35),
+        alpha: (event.own ? 0.8 : 0.55),
+        sizeFrom: body * 0.55,
+        sizeTo: still ? body * 0.55 : body * 1.15,
+        durationMs: BURST_RING_MS,
+        bornAt: input.bornAt
+      });
+    }
     if (event.profile.matter === "energy" && this.options.lod.smoke) {
       // Enerji vurusunun isisi: tonun kendisi, kisa ve sonuk; soluk bir halka degil.
       this.flashes.flash({

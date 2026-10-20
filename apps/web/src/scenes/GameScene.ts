@@ -58,7 +58,7 @@ import { getTowerBodySize, getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_
 import { ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE, PROJECTILE_VISUAL_SCALE, WORKER_VISUAL_SCALE } from "../visual-scale";
 import { arcade } from "../arcade";
 import { getArcadeRunScore } from "../arcade-score";
-import { AttackVfx, findHomingMuzzleOrigin, type EnemyHitFeel } from "../vfx/attack-vfx";
+import { AttackVfx, findHomingMuzzleOrigin, type EnemyHitFeel, type SinkingProjectile } from "../vfx/attack-vfx";
 import {
   BEAM_HEAT_COLOR,
   BEAM_HEAT_MAX_MIX,
@@ -75,6 +75,7 @@ import {
   getSquashAmount,
   getSquashScale,
   getStereoPan,
+  getSinkPose,
   getWeaponFeel,
   mixColor,
   shouldStartHitStop,
@@ -610,6 +611,9 @@ type ControlActionDetail = {
   workerId?: string;
   product?: string;
 };
+
+/** Durmus (kaldirilmis) mermi: temas noktasinda; `arrived` cizimde oraya varildi. */
+type TerminalProjectile = ProjectileSnapshot & { terminal?: boolean; arrived?: boolean };
 
 type RenderTower = {
   effect: Phaser.GameObjects.Graphics;
@@ -1304,6 +1308,8 @@ export class GameScene extends Phaser.Scene {
    * menzil disinda kalkan merminin kaydi eski temasi kullanmiyor (geldigi an).
    */
   private readonly lastProjectileContact = new Map<string, { anchor: HitAnchor; receivedAt: number }>();
+  /** Temas noktasina varan merminin varis ani (gomulme egrisi buradan). */
+  private readonly projectileSinkStarts = new Map<string, number>();
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   /**
    * Gelismis iscilerin govdesi.
@@ -7411,7 +7417,7 @@ export class GameScene extends Phaser.Scene {
       linearProjectiles.push({ ...projectile, ...getLinearProjectilePosition(projectile, snapshot.serverTime) });
     }
     const now = performance.now();
-    const terminalProjectiles: ProjectileSnapshot[] = [];
+    const terminalProjectiles: TerminalProjectile[] = [];
     for (const [id, terminal] of this.terminalProjectileSnapshots) {
       if (now >= terminal.removeAfter) {
         this.terminalProjectileSnapshots.delete(id);
@@ -7423,7 +7429,9 @@ export class GameScene extends Phaser.Scene {
       // boyunca yuruyen govdeye 1-4 birim giriyor ya da ondan kopuyordu.
       const anchor = terminal.anchor;
       const enemy = anchor && this.resolveHitAnchor(anchor, hydrated) ? hydrated.enemies.find((entry) => entry.id === anchor.enemyId) : undefined;
-      terminalProjectiles.push(enemy ? { ...terminal.projectile, x: enemy.x + anchor!.offsetX, y: enemy.y + anchor!.offsetY } : terminal.projectile);
+      terminalProjectiles.push(enemy
+        ? { ...terminal.projectile, x: enemy.x + anchor!.offsetX, y: enemy.y + anchor!.offsetY, terminal: true }
+        : { ...terminal.projectile, terminal: true });
     }
     return { ...hydrated, projectiles: [...hydrated.projectiles, ...linearProjectiles, ...terminalProjectiles] };
   }
@@ -7621,6 +7629,8 @@ export class GameScene extends Phaser.Scene {
       if (oldProjectile) {
         return {
           ...projectile,
+          // Iki ucu da duran mermi: temas noktasina varildi (gomulme ya da carpma basliyor).
+          arrived: Boolean((projectile as TerminalProjectile).terminal && (oldProjectile as TerminalProjectile).terminal),
           x: Phaser.Math.Linear(oldProjectile.x, projectile.x, alpha),
           y: Phaser.Math.Linear(oldProjectile.y, projectile.y, alpha)
         };
@@ -7935,7 +7945,9 @@ export class GameScene extends Phaser.Scene {
       const anchor = this.createHitAnchor(message.x, message.y, receivedAt);
       // Yalnizca dogrusal mermi icin: kaldirma mesajini (`projectile:hit`) o gonderiyor, kayit orada siliniyor.
       if (anchor && linear) this.lastProjectileContact.set(message.id, { anchor, receivedAt });
-      const size = pierce ? this.getEnemyBodySize(anchor ? this.snapshotBuffer[this.snapshotBuffer.length - 1]?.snapshot.enemies.find((enemy) => enemy.id === anchor.enemyId) : undefined) : undefined;
+      // Govdenin boyu: Zeynep kertigi ve carpma mermisinin govdeyi saran halkasi icin.
+      const sized = pierce || getWeaponFeel(definitionId).end === "burst";
+      const size = sized ? this.getEnemyBodySize(anchor ? this.snapshotBuffer[this.snapshotBuffer.length - 1]?.snapshot.enemies.find((enemy) => enemy.id === anchor.enemyId) : undefined) : undefined;
       this.queueDelayedEffect(() => {
         const at = this.getAnchoredHitPoint(anchor, message.x, message.y);
         this.attackVfx?.emitImpact({
@@ -11372,8 +11384,57 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
   private readonly activeProjectileIds = new Set<string>();
 
-  private renderProjectiles(projectiles: ProjectileSnapshot[]) {
+  /**
+   * Merminin sonu (`weapon-feel` "end"): temas noktasina varan mermi orada
+   * durmuyor. Gomulen mermi ucus yonunde govdenin icine birkac birim girip
+   * 90 ms'de kuculerek kayboluyor; carpma mermisi vardigi karede kayboluyor
+   * (yerine carpma cizimi). Varis ani cizimden: duran mermi oynatmada iki
+   * snapshot arka arkaya dururken (`arrived`).
+   */
+  private applyProjectileEnds(projectiles: ProjectileSnapshot[], now: number) {
+    let hasTerminal = false;
+    for (const projectile of projectiles) {
+      if ((projectile as TerminalProjectile).terminal) {
+        hasTerminal = true;
+        break;
+      }
+    }
+    if (!hasTerminal) return projectiles;
+    const out: ProjectileSnapshot[] = [];
+    for (const projectile of projectiles) {
+      const terminal = projectile as TerminalProjectile;
+      if (!terminal.terminal || !terminal.arrived) {
+        out.push(projectile);
+        continue;
+      }
+      // Varis ani mermi basina bir kez: kayit silinse de tamponda oynatilan
+      // snapshot'lar ayni mermiyi tasiyor, gomulme bastan baslamasin. Kayit
+      // tampondan uzun (2 sn) yasiyor, sonra budaniyor.
+      let start = this.projectileSinkStarts.get(projectile.id);
+      if (start === undefined) {
+        start = now;
+        if (this.projectileSinkStarts.size > 200) {
+          for (const [id, at] of this.projectileSinkStarts) {
+            if (now - at > PROJECTILE_SINK_MEMORY_MS) this.projectileSinkStarts.delete(id);
+          }
+        }
+        this.projectileSinkStarts.set(projectile.id, start);
+      }
+      if (projectile.source !== "tower" || getWeaponFeel(projectile.definitionId).end === "burst") continue;
+      const pose = getSinkPose(now - start);
+      if (!pose) continue;
+      const vx = projectile.vx ?? 0;
+      const vy = projectile.vy ?? 0;
+      const speed = Math.hypot(vx, vy);
+      const depth = speed > 0.01 ? pose.depth * this.getTowerEffectScale() / speed : 0;
+      out.push({ ...projectile, x: projectile.x + vx * depth, y: projectile.y + vy * depth, sink: pose.size } as SinkingProjectile);
+    }
+    return out;
+  }
+
+  private renderProjectiles(input: ProjectileSnapshot[]) {
     const scale = this.getTowerEffectScale();
+    const projectiles = this.applyProjectileEnds(input, performance.now());
     // Govde, iz ve kademe eklentileri profilden (attack-vfx). Kendi cizilmis
     // dokusu olan Melis mermileri disinda sprite gizli: siluet profilden.
     this.attackVfx?.renderProjectiles(projectiles, performance.now(), scale, this.projectileOwnResolver);
@@ -11425,7 +11486,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         // 2-3te doku beyaz-sicak cekirdege dogru isiniyor (pastel ara ton yok).
         const recipe = getVfxTier(profile, projectile.tier);
         const size = recipe.silhouette * scale * PROJECTILE_VISUAL_SCALE;
-        sprite.setDisplaySize(size, size);
+        // Gomulen mermi kuculerek kayboluyor (`applyProjectileEnds`).
+        const sunk = size * ((projectile as SinkingProjectile).sink ?? 1);
+        sprite.setDisplaySize(sunk, sunk);
         const tint = toTier(projectile.tier) >= 2 ? recipe.core : 0xffffff;
         if (sprite.tintTopLeft !== tint) sprite.setTint(tint);
       } else {
@@ -14473,6 +14536,8 @@ function getBackgroundMusicPath(_characterId: CharacterId): string {
 
 /** Kimligi bilinmeyen carpmanin itecegi dusmanin aranacagi yaricap (harita olcegi 1'de): en buyuk govdenin erisimi. */
 const KNOCK_SEARCH_RADIUS = 32;
+/** Merminin varis kaydinin omru: oynatma tamponundan (500 ms) uzun. */
+const PROJECTILE_SINK_MEMORY_MS = 2000;
 /** Kin dalgasinin cephesinin govdeye degmesi icin pay (dunya birimi; govde yaricapi kadar). */
 const KIN_FRONT_SLACK = 10;
 /** Kendi kritiginin beyaz cakmasi en fazla bu aralikta (isiga duyarlilik). */
