@@ -61,7 +61,11 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
     noteKey: "credits.group.audio.note",
     sources: [
       { id: "kenney-impact", title: "Impact Sounds", author: "Kenney", license: "CC0 1.0", url: "https://kenney.nl/assets/impact-sounds" },
-      { id: "kenney-scifi", title: "Sci-Fi Sounds", author: "Kenney", license: "CC0 1.0", url: "https://kenney.nl/assets/sci-fi-sounds" }
+      { id: "kenney-scifi", title: "Sci-Fi Sounds", author: "Kenney", license: "CC0 1.0", url: "https://kenney.nl/assets/sci-fi-sounds" },
+      // Sinematik vuruslarin patlama ve top atisi kayitlari (tools/build-sfx.mjs).
+      { id: "oga-bang", title: "25 CC0 bang / firework SFX", author: "rubberduck", license: "CC0 1.0", url: "https://opengameart.org/content/25-cc0-bang-firework-sfx" },
+      { id: "oga-scifi50", title: "50 CC0 Sci-Fi SFX", author: "rubberduck", license: "CC0 1.0", url: "https://opengameart.org/content/50-cc0-sci-fi-sfx" },
+      { id: "oga-scifi60", title: "60 CC0 Sci-Fi SFX", author: "rubberduck", license: "CC0 1.0", url: "https://opengameart.org/content/60-cc0-sci-fi-sfx" }
     ]
   },
   {

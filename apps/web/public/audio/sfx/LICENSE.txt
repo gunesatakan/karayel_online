@@ -9,8 +9,15 @@ geldigi manifest.json'da):
   https://kenney.nl/assets/impact-sounds
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/sci-fi-sounds
+- "25 CC0 bang / firework SFX" - rubberduck (OpenGameArt)
+  https://opengameart.org/content/25-cc0-bang-firework-sfx
+- "50 CC0 Sci-Fi SFX" - rubberduck (OpenGameArt)
+  https://opengameart.org/content/50-cc0-sci-fi-sfx
+- "60 CC0 Sci-Fi SFX" - rubberduck (OpenGameArt)
+  https://opengameart.org/content/60-cc0-sci-fi-sfx
 
-Vurus, atis, kritik ve beceri (Execute infazi) sesleri bu iki paketten kesildi.
+Vurus, atis, kritik ve beceri (Execute infazi) sesleri bu paketlerden kesilip
+katmanlandi (bang/, scifi50/, scifi60/ = rubberduck'in OpenGameArt paketleri).
 
 Dusman oldurme sesleri ("portal"; death-portal-*.mp3) bu iki paketin su
 dosyalarinin katmanli karisimi (impact/ = Impact Sounds, scifi/ = Sci-Fi
@@ -71,4 +78,4 @@ Oldurme seslerinde kullanilan kaynak dosyalarin tamami:
 Lisans: Creative Commons Zero (CC0 1.0)
 http://creativecommons.org/publicdomain/zero/1.0/
 
-CC0 atif istemiyor; yine de tesekkurler: Kenney.
+CC0 atif istemiyor; yine de tesekkurler: Kenney ve rubberduck.

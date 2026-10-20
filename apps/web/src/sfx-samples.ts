@@ -89,7 +89,7 @@ const portalFamily = (size: KillPortalSize, gain: number, label: string): Sample
 export const SAMPLE_FAMILIES: Readonly<Record<SampleFamilyId, SampleFamily>> = Object.freeze({
   projectile: family("projectile", 3, 0.4, "Mermi"),
   impact: family("impact", 3, 0.41, "Çarpma"),
-  focus: family("focus", 2, 0.34, "Odak"),
+  focus: family("focus", 2, 0.29, "Odak"),
   aura: family("aura", 2, 0.33, "Aura"),
   contamination: family("contamination", 2, 0.29, "Bulaşma"),
   curse: family("curse", 2, 0.34, "Lanet"),

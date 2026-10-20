@@ -36,9 +36,15 @@ dosya kaynak `apps/web/public/audio/sfx/manifest.json`, lisans notu
 |---|---|---|---|
 | Impact Sounds | Kenney | CC0 1.0 | https://kenney.nl/assets/impact-sounds |
 | Sci-Fi Sounds | Kenney | CC0 1.0 | https://kenney.nl/assets/sci-fi-sounds |
+| 25 CC0 bang / firework SFX | rubberduck | CC0 1.0 | https://opengameart.org/content/25-cc0-bang-firework-sfx |
+| 50 CC0 Sci-Fi SFX | rubberduck | CC0 1.0 | https://opengameart.org/content/50-cc0-sci-fi-sfx |
+| 60 CC0 Sci-Fi SFX | rubberduck | CC0 1.0 | https://opengameart.org/content/60-cc0-sci-fi-sfx |
+
+Vuruş, atış ve kritik sesleri sinematik: rubberduck'ın patlama ve top atışı
+kayıtlarından tok darbe, Kenney metal gövdesi ve kısa metalik yankı.
 
 CC0 1.0: http://creativecommons.org/publicdomain/zero/1.0/ . Atıf istemiyor;
-yine de teşekkürler: Kenney.
+yine de teşekkürler: Kenney ve rubberduck.
 
 ### Yazı tipleri
 
@@ -256,7 +262,9 @@ manifest.
 
 - Sound effects: Kenney "Impact Sounds" and "Sci-Fi Sounds" (hits, tower shots, crits,
   the execute cue and the "portal" enemy death sound, layered from Sci-Fi noise
-  and hum recordings and Impact thumps). Both CC0 1.0 (see `apps/web/public/audio/sfx/LICENSE.txt`).
+  and hum recordings and Impact thumps), and rubberduck's "25 CC0 bang / firework SFX",
+  "50 CC0 Sci-Fi SFX" and "60 CC0 Sci-Fi SFX" (OpenGameArt; the bangs and cannon shots
+  under the cinematic hits and tower shots). All CC0 1.0 (see `apps/web/public/audio/sfx/LICENSE.txt`).
 - Typefaces (loaded from Google Fonts): Cinzel (Natanael Gama), Rajdhani
   (Indian Type Foundry), Share Tech Mono (Carrois Apostrophe). All SIL OFL 1.1.
 - Generative AI: OpenAI gpt-image, under the OpenAI Terms of Use

@@ -362,7 +362,8 @@ test("sv 10 govdesi yuvayi paylasiyor: butce ikisinden uzununu tutuyor", async (
   instance.playHit("impact", 3, true, "k");
   advance(heft / shape.rate - 2);
   assert.equal(instance.getBudgetUsage().hitVoices, 1, "govde bitene kadar yuva dolu");
-  advance(40);
+  // Butce en yavas hizla (+%4 kayma) ve sonme payiyla tutuluyor.
+  advance(heft / (shape.rate * (1 - samples.SAMPLE_RATE_SPREAD)) - heft / shape.rate + hit.HIT_SOUND_LIMITS.tailMs + 4);
   assert.equal(instance.getBudgetUsage().hitVoices, 0);
   instance.destroy();
 });
@@ -455,8 +456,10 @@ test("portal dosyalari Kenney'den uretiliyor; eski ezilme ve yaratik sesleri yok
   assert.ok(Math.max(...Object.values(MAX_PORTAL_SECONDS)) <= 0.9, "sure siniri yalnizca gerektigi kadar");
   // Eski organik oldurme tamamen gitti: dosya, aile, paket.
   for (const name of readdirSync(sfxDir)) assert.doesNotMatch(name, /^kill-/, `eski oldurme dosyasi kaldi: ${name}`);
-  assert.deepEqual(Object.keys(manifest.sources).sort(), ["impact", "scifi"]);
-  assert.doesNotMatch(license, /squish|creature|EZduzziteh|rubberduck/i);
+  // Paketler: Kenney ikilisi ve sinematik vuruslarin rubberduck kayitlari; eski
+  // organik oldurmenin ezilme ve yaratik paketleri yok.
+  assert.deepEqual(Object.keys(manifest.sources).sort(), ["bang", "impact", "scifi", "scifi50", "scifi60"]);
+  assert.doesNotMatch(license, /squish|creature|EZduzziteh/i);
   assert.ok(RECIPES.every((recipe) => !/^(squish|creature)/.test(recipe.src ?? "")));
   assert.ok(samples.SAMPLE_FAMILY_IDS.every((id) => !/^(body|voice)/.test(id)));
 });

@@ -5,6 +5,14 @@
  *
  *   <paketler>/impact/Audio/*.ogg   Kenney "Impact Sounds"   https://kenney.nl/assets/impact-sounds
  *   <paketler>/scifi/Audio/*.ogg    Kenney "Sci-Fi Sounds"   https://kenney.nl/assets/sci-fi-sounds
+ *   <paketler>/oga/bang/*.ogg       rubberduck "25 CC0 bang / firework SFX"  https://opengameart.org/content/25-cc0-bang-firework-sfx
+ *   <paketler>/oga/scifi50/*.ogg    rubberduck "50 CC0 Sci-Fi SFX"           https://opengameart.org/content/50-cc0-sci-fi-sfx
+ *   <paketler>/oga/scifi60/*.ogg    rubberduck "60 CC0 Sci-Fi SFX"           https://opengameart.org/content/60-cc0-sci-fi-sfx
+ *
+ * Vuruslar sinematik bilim kurgu (sahibin karari, 2026-10-20: kisa metal/cam
+ * tikirtilari "futuristik Candy Crush gibi"): gercek patlama ve top atisi
+ * kayitlarindan tok darbe, Kenney metal govdesi, kisa metalik yanki kuyrugu
+ * (`tail`). Cam, zil ve ince teneke tinilari kaldirildi.
  *
  * Vuruslar sert, mekanik bilim kurgu. Dusman oldurmesi bir "portal" sesi:
  * yarik acilip dusmani yutuyor (tools/sfx-portal.mjs; iki tarz x uc boy).
@@ -50,8 +58,8 @@ import { PORTAL_SIZES, PORTAL_STYLES, PORTAL_TARGET_LUFS, getPortalDesign, measu
 const root = fileURLToPath(new URL("..", import.meta.url));
 const outDir = join(root, "apps", "web", "public", "audio", "sfx");
 
-/** Vurus orneginin en uzun suresi (sn). */
-const MAX_HIT_SECONDS = 0.19;
+/** Vurus orneginin en uzun suresi (sn): darbe + kisa yanki kuyrugu. */
+const MAX_HIT_SECONDS = 0.34;
 /**
  * Oldurme portal sesinin boy basina en uzun suresi (sn): sisme + kuyruk.
  * small 0.15 + 0.234, normal 0.30 + 0.30 (D), large 1.45 x 0.60 (D) = 0.87.
@@ -74,7 +82,7 @@ const MAX_CUE_SECONDS = 0.4;
  * Atis seslerinin (`fire`) en uzun suresi: namlunun kisa vurusu. Hizli atan
  * kulelerde (Takipci) bir sonraki atisa tasmasin; vurus sesinden kisa.
  */
-const MAX_FIRE_SECONDS = 0.17;
+const MAX_FIRE_SECONDS = 0.24;
 /** Dosya basina ve toplam boyut butcesi (bayt); testler de ayni sayilari okuyor. */
 export const SFX_BUDGET = { hitBytes: 8 * 1024, killBytes: 12 * 1024, totalBytes: 400 * 1024 };
 /** 500 Hz - 5 kHz bandinin toplam enerjiye gore en az payi (dB). */
@@ -86,17 +94,19 @@ const MIN_MID_BAND_DB = -12;
  * tinlamasin.
  */
 const RECIPES = [
-  // Mermi: orta agirlikta metal "tank" -- zirhli govdeye giren mermi.
-  { family: "projectile", id: "projectile-1", src: "impact/impactMetal_medium_001", dur: 0.15, rate: 0.94, hp: 160, fadeOut: 0.07 },
-  { family: "projectile", id: "projectile-2", src: "impact/impactMetal_medium_002", dur: 0.15, rate: 0.94, hp: 160, fadeOut: 0.07 },
-  { family: "projectile", id: "projectile-3", src: "impact/impactMetal_medium_004", dur: 0.15, rate: 0.94, hp: 160, fadeOut: 0.07 },
-  // Carpma: agir metal gumlemesi; telefonda okunsun diye 1.8 kHz'te biraz govde.
-  { family: "impact", id: "impact-1", src: "impact/impactMetal_heavy_000", dur: 0.17, rate: 0.88, hp: 130, eq: [[1800, 4]], fadeOut: 0.08 },
-  { family: "impact", id: "impact-2", src: "impact/impactMetal_heavy_002", dur: 0.17, rate: 0.88, hp: 130, eq: [[1800, 4]], fadeOut: 0.08 },
-  { family: "impact", id: "impact-3", src: "impact/impactMetal_heavy_004", dur: 0.17, rate: 0.88, hp: 130, eq: [[1800, 4]], fadeOut: 0.08 },
-  // Odak: kisa elektrik "tzak" -- lazerin nabzi.
-  { family: "focus", id: "focus-1", src: "scifi/laserSmall_000", dur: 0.12, rate: 0.9, hp: 250, fadeOut: 0.05, tick: true },
-  { family: "focus", id: "focus-2", src: "scifi/laserSmall_003", dur: 0.12, rate: 0.9, hp: 250, fadeOut: 0.05, tick: true },
+  // ---- Vuruslar: sinematik bilim kurgu. Tok darbe (gercek patlama ve top
+  // atisi kayitlari) + Kenney metal govdesi + kisa metalik yanki (`tail`).
+  // Mermi: kisa sert patlama catlamasi, zirhli govdeye giren mermi.
+  { family: "projectile", id: "projectile-1", src: "bang/bang_02", layers: [{ src: "impact/impactMetal_heavy_001", gain: -9 }], dur: 0.24, rate: 1.05, hp: 110, eq: [[1600, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, drive: 0.9, fadeOut: 0.12 },
+  { family: "projectile", id: "projectile-2", src: "bang/bang_04", layers: [{ src: "impact/impactMetal_heavy_003", gain: -9 }], dur: 0.24, rate: 1.05, hp: 110, eq: [[1600, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, drive: 0.9, fadeOut: 0.12 },
+  { family: "projectile", id: "projectile-3", src: "bang/bang_07", layers: [{ src: "impact/impactMetal_heavy_001", gain: -9 }], dur: 0.24, rate: 1.05, hp: 110, eq: [[1600, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, drive: 0.9, fadeOut: 0.12 },
+  // Carpma: top atisinin gumlemesi + agir yumruk; buyuk yanki.
+  { family: "impact", id: "impact-1", src: "bang/cannon_04", layers: [{ src: "impact/impactPunch_heavy_002", gain: -5 }], dur: 0.3, rate: 0.85, hp: 90, eq: [[1100, 4]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, drive: 0.85, fadeOut: 0.16 },
+  { family: "impact", id: "impact-2", src: "bang/cannon_01", layers: [{ src: "impact/impactPunch_heavy_004", gain: -5 }], dur: 0.3, rate: 0.85, hp: 90, eq: [[1100, 4]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, drive: 0.85, fadeOut: 0.16 },
+  { family: "impact", id: "impact-3", src: "bang/bang_10", layers: [{ src: "impact/impactPunch_heavy_002", gain: -5 }], dur: 0.3, rate: 0.85, hp: 90, eq: [[1100, 4]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, drive: 0.85, fadeOut: 0.16 },
+  // Odak: lazerin nabzi -- kisa, kalin bir enerji catirtisi (tik).
+  { family: "focus", id: "focus-1", src: "scifi60/sfx_09a", dur: 0.12, rate: 0.82, hp: 160, lp: 7000, eq: [[1400, 4]], fadeOut: 0.05, tick: true },
+  { family: "focus", id: "focus-2", src: "scifi60/sfx_09b", dur: 0.12, rate: 0.82, hp: 160, lp: 7000, eq: [[1400, 4]], fadeOut: 0.05, tick: true },
   // Aura: kuvvet alaninin yumusak atakli citirtisi.
   { family: "aura", id: "aura-1", src: "scifi/forceField_002", at: 0.03, dur: 0.12, rate: 1, hp: 320, eq: [[2200, 6]], fadeIn: 0.015, fadeOut: 0.06, tick: true },
   { family: "aura", id: "aura-2", src: "scifi/forceField_004", at: 0.03, dur: 0.12, rate: 1, hp: 320, eq: [[2200, 6]], fadeIn: 0.015, fadeOut: 0.06, tick: true },
@@ -106,29 +116,29 @@ const RECIPES = [
   // Lanet: bozulmus sinyal -- bilgisayar gurultusu cok yavas, ezilmis ve koyu.
   { family: "curse", id: "curse-1", src: "scifi/computerNoise_002", at: 0.1, dur: 0.12, rate: 0.6, hp: 200, lp: 3600, crush: true, fadeIn: 0.01, fadeOut: 0.06, tick: true },
   { family: "curse", id: "curse-2", src: "scifi/computerNoise_003", at: 0.05, dur: 0.12, rate: 0.6, hp: 200, lp: 3600, crush: true, fadeIn: 0.01, fadeOut: 0.06, tick: true },
-  // Dalga: buyuk lazerin inen supurmesi, agirlastirilmis -- sok dalgasi.
-  { family: "wave", id: "wave-1", src: "scifi/laserLarge_000", dur: 0.18, rate: 0.8, hp: 250, fadeOut: 0.09 },
-  { family: "wave", id: "wave-2", src: "scifi/laserLarge_001", dur: 0.18, rate: 0.8, hp: 250, fadeOut: 0.09 },
-  // Kesme: hafif metalin parlak, kuru cinlamasi.
-  { family: "slash", id: "slash-1", src: "impact/impactMetal_light_000", dur: 0.15, rate: 0.96, hp: 400, fadeOut: 0.07 },
-  { family: "slash", id: "slash-2", src: "impact/impactMetal_light_002", dur: 0.15, rate: 0.96, hp: 400, fadeOut: 0.07 },
-  // Kure: enerji kuresinin camsi patlamasi, biraz agirlastirilmis.
-  { family: "orb", id: "orb-1", src: "impact/impactGlass_light_000", dur: 0.12, rate: 0.85, hp: 250, fadeOut: 0.05 },
-  { family: "orb", id: "orb-2", src: "impact/impactGlass_light_002", dur: 0.12, rate: 0.85, hp: 250, fadeOut: 0.05 },
-  // Halka: agir metal cinlamasi, kisa kesilmis (cana donmesin).
-  { family: "ring", id: "ring-1", src: "impact/impactBell_heavy_003", dur: 0.18, rate: 1, hp: 300, eq: [[2500, 5]], fadeOut: 0.1 },
-  { family: "ring", id: "ring-2", src: "impact/impactBell_heavy_002", dur: 0.18, rate: 1, hp: 300, eq: [[2500, 5]], fadeOut: 0.1 },
-  // Gulle: agir celik levhanin "klank"i.
-  { family: "ball", id: "ball-1", src: "impact/impactPlate_heavy_000", dur: 0.18, rate: 0.92, hp: 140, fadeOut: 0.09 },
-  { family: "ball", id: "ball-2", src: "impact/impactPlate_heavy_002", dur: 0.18, rate: 0.92, hp: 140, fadeOut: 0.09 },
-  // Ok: ince sacin kuru tiki.
-  { family: "dart", id: "dart-1", src: "impact/impactTin_medium_000", dur: 0.11, rate: 1.05, hp: 300, fadeOut: 0.05 },
-  { family: "dart", id: "dart-2", src: "impact/impactTin_medium_002", dur: 0.11, rate: 1.05, hp: 300, fadeOut: 0.05 },
-  // Sv 10 katmani: kisa, tok bir govde; her ailenin altina kisik ekleniyor.
-  { family: "heft", id: "heft-1", src: "impact/impactPunch_heavy_003", dur: 0.14, rate: 1, hp: 220, eq: [[1200, 7]], rms: -24, fadeOut: 0.08 },
-  // Kritik: zirh levhasinin parlak catlamasi; vurus sesinin ustune biniyor.
-  { family: "crit", id: "crit-1", src: "impact/impactPlate_light_000", dur: 0.12, rate: 1, hp: 350, fadeOut: 0.07 },
-  { family: "crit", id: "crit-2", src: "impact/impactPlate_light_003", dur: 0.12, rate: 1, hp: 350, fadeOut: 0.07 },
+  // Dalga: alcak patlamanin basinci -- sok dalgasi.
+  { family: "wave", id: "wave-1", src: "scifi50/explosion_02", dur: 0.32, rate: 0.9, hp: 80, eq: [[1000, 5]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, drive: 0.85, fadeOut: 0.16 },
+  { family: "wave", id: "wave-2", src: "bang/bang_06", layers: [{ src: "impact/impactPunch_heavy_004", gain: -6 }], dur: 0.32, rate: 0.82, hp: 80, eq: [[1000, 5]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, drive: 0.85, fadeOut: 0.16 },
+  // Kesme: kuru patlama catlamasi + celik levha; cinlama degil.
+  { family: "slash", id: "slash-1", src: "bang/shot_03", layers: [{ src: "impact/impactPlate_medium_001", gain: -8 }], dur: 0.22, rate: 1.1, hp: 160, eq: [[2400, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.1 },
+  { family: "slash", id: "slash-2", src: "bang/bang_08", layers: [{ src: "impact/impactPlate_medium_003", gain: -8 }], dur: 0.22, rate: 1.1, hp: 160, eq: [[2400, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.1 },
+  // Kure: enerji gullesinin boguk patlamasi + kuvvet alani citirtisi (cam degil).
+  { family: "orb", id: "orb-1", src: "bang/bang_05", layers: [{ src: "scifi/forceField_000", at: 0.12, gain: -10 }], dur: 0.26, rate: 0.92, hp: 110, eq: [[1300, 4]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, drive: 0.9, fadeOut: 0.12 },
+  { family: "orb", id: "orb-2", src: "bang/fw_03", layers: [{ src: "scifi/forceField_001", at: 0.12, gain: -10 }], dur: 0.26, rate: 0.92, hp: 110, eq: [[1300, 4]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, drive: 0.9, fadeOut: 0.12 },
+  // Halka: top atisi + agir metal govde; zil yok.
+  { family: "ring", id: "ring-1", src: "bang/cannon_05", layers: [{ src: "impact/impactMetal_heavy_000", gain: -7 }], dur: 0.28, rate: 0.95, hp: 110, eq: [[1500, 3]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, fadeOut: 0.14 },
+  { family: "ring", id: "ring-2", src: "bang/cannon_03", layers: [{ src: "impact/impactMetal_heavy_002", gain: -7 }], dur: 0.28, rate: 0.95, hp: 110, eq: [[1500, 3]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, fadeOut: 0.14 },
+  // Gulle: agir celik levhanin "klank"i + top atisinin govdesi; buyuk yanki.
+  { family: "ball", id: "ball-1", src: "impact/impactPlate_heavy_000", layers: [{ src: "bang/cannon_02", gain: -6 }], dur: 0.3, rate: 0.88, hp: 100, eq: [[1300, 3]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, fadeOut: 0.15 },
+  { family: "ball", id: "ball-2", src: "impact/impactPlate_heavy_002", layers: [{ src: "bang/cannon_02", gain: -6 }], dur: 0.3, rate: 0.88, hp: 100, eq: [[1300, 3]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, fadeOut: 0.15 },
+  // Ok: kisa kuru atis catlamasi (teneke degil).
+  { family: "dart", id: "dart-1", src: "bang/shot_02", dur: 0.18, rate: 1.0, hp: 180, lp: 9000, eq: [[2000, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.08 },
+  { family: "dart", id: "dart-2", src: "scifi50/shoot_01", dur: 0.18, rate: 0.9, hp: 180, lp: 9000, eq: [[2000, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.08 },
+  // Sv 10 katmani: alcak patlamanin tok govdesi; her ailenin altina kisik.
+  { family: "heft", id: "heft-1", src: "scifi50/explosion_01", dur: 0.34, rate: 0.85, hp: 70, eq: [[900, 6]], rms: -24, drive: 0.8, fadeOut: 0.16 },
+  // Kritik: sert patlama catlamasi + agir metal; vurusun ustune biniyor.
+  { family: "crit", id: "crit-1", src: "bang/bang_09", layers: [{ src: "impact/impactMetal_heavy_004", gain: -6 }], dur: 0.2, rate: 1.08, hp: 200, eq: [[2600, 4]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.1 },
+  { family: "crit", id: "crit-2", src: "bang/bang_01", layers: [{ src: "impact/impactMetal_heavy_000", gain: -6 }], dur: 0.2, rate: 1.08, hp: 200, eq: [[2600, 4]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.1 },
   // Execute (AttackLord infazi): once nisangahin kuru kilit tiki (hafif metal,
   // `layers`), ~50 ms sonra agir, tok bir darbe (agir yumruk) -- biraz
   // yavaslatilmis. Parilti ya da nota yok; kisa ve sert.
@@ -136,15 +146,15 @@ const RECIPES = [
   { family: "execute", id: "execute-2", src: "impact/impactPunch_heavy_001", delay: 50, layers: [{ src: "impact/impactMetal_light_003", gain: -9 }], dur: 0.32, rate: 0.9, hp: 140, eq: [[1500, 4]], fadeOut: 0.14, cue: true },
   // ---- Atis: namlunun sesi (vfx/weapon-feel.ts). Vurus seslerinden kisa ve
   // kisik; kulenin kutlesini soyluyor. Kaynaklar vurus ailelerinden ayri.
-  // Hafif (Takipci): patlama kaydinin ilk kuru catirtisi, hizlandirilmis.
-  { family: "fireLight", id: "fire-light-1", src: "scifi/explosionCrunch_000", dur: 0.07, rate: 1.3, hp: 450, eq: [[2600, 3]], fadeOut: 0.045, fire: true },
-  { family: "fireLight", id: "fire-light-2", src: "scifi/explosionCrunch_002", dur: 0.07, rate: 1.3, hp: 450, eq: [[2600, 3]], fadeOut: 0.045, fire: true },
-  // Agir (Sunucu, topcu): yavaslatilmis patlama catlamasi + alcak patlamanin govdesi.
-  { family: "fireHeavy", id: "fire-heavy-1", src: "scifi/explosionCrunch_001", layers: [{ src: "scifi/lowFrequency_explosion_001", gain: -2 }], dur: 0.17, rate: 0.72, hp: 120, eq: [[1100, 5]], fadeOut: 0.1, fire: true },
-  { family: "fireHeavy", id: "fire-heavy-2", src: "scifi/explosionCrunch_003", layers: [{ src: "scifi/lowFrequency_explosion_000", at: 0.12, gain: -3 }], dur: 0.17, rate: 0.72, hp: 120, eq: [[1100, 5]], fadeOut: 0.1, fire: true },
-  // Gudum (Izolasyon): firlatma tiki + iticinin kisa nefesi.
-  { family: "fireHoming", id: "fire-homing-1", src: "impact/impactGeneric_light_000", layers: [{ src: "scifi/thrusterFire_000", at: 1, gain: -7 }], dur: 0.13, rate: 0.9, hp: 300, lp: 7000, fadeOut: 0.08, fire: true },
-  { family: "fireHoming", id: "fire-homing-2", src: "impact/impactMetal_light_004", layers: [{ src: "scifi/thrusterFire_002", at: 1, gain: -7 }], dur: 0.13, rate: 0.85, hp: 300, lp: 7000, fadeOut: 0.08, fire: true },
+  // Hafif (Takipci): gercek atis catlamasi, kisa yanki.
+  { family: "fireLight", id: "fire-light-1", src: "bang/shot_01", dur: 0.14, rate: 1.1, hp: 140, eq: [[2400, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.07, fire: true },
+  { family: "fireLight", id: "fire-light-2", src: "bang/fw_01", dur: 0.14, rate: 1.15, hp: 140, eq: [[2400, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.07, fire: true },
+  // Agir (topcu): top atisi + alcak patlama govdesi, buyuk yanki.
+  { family: "fireHeavy", id: "fire-heavy-1", src: "bang/cannon_02", layers: [{ src: "scifi/lowFrequency_explosion_001", gain: -3 }], dur: 0.24, rate: 0.82, hp: 80, eq: [[1100, 5]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, drive: 0.85, fadeOut: 0.12, fire: true },
+  { family: "fireHeavy", id: "fire-heavy-2", src: "scifi/explosionCrunch_003", layers: [{ src: "scifi/lowFrequency_explosion_000", at: 0.12, gain: -3 }], dur: 0.24, rate: 0.72, hp: 80, eq: [[1100, 5]], tail: { delays: [27, 61, 109], decays: [0.4, 0.26, 0.15], wet: 0.55 }, drive: 0.85, fadeOut: 0.12, fire: true },
+  // Gudum (Izolasyon): roket ateslemesinin nefesi + firlatma tiki.
+  { family: "fireHoming", id: "fire-homing-1", src: "scifi50/rocket_01", at: 0.3, layers: [{ src: "impact/impactGeneric_light_000", gain: -6 }], dur: 0.2, rate: 1.1, hp: 160, lp: 7000, fadeIn: 0.01, fadeOut: 0.1, fire: true },
+  { family: "fireHoming", id: "fire-homing-2", src: "impact/impactMetal_light_004", layers: [{ src: "scifi/thrusterFire_002", at: 1, gain: -7 }], dur: 0.16, rate: 0.85, hp: 300, lp: 7000, fadeOut: 0.08, fire: true },
   // Cokus (Obsesyon): kucuk lazerin cok yavaslatilmis, koyu cekisi.
   { family: "fireCollapse", id: "fire-collapse-1", src: "scifi/laserSmall_001", dur: 0.14, rate: 0.6, hp: 200, lp: 3800, fadeOut: 0.08, fire: true },
   { family: "fireCollapse", id: "fire-collapse-2", src: "scifi/laserSmall_002", dur: 0.14, rate: 0.6, hp: 200, lp: 3800, fadeOut: 0.08, fire: true },
@@ -183,8 +193,15 @@ geldigi manifest.json'da):
   https://kenney.nl/assets/impact-sounds
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/sci-fi-sounds
+- "25 CC0 bang / firework SFX" - rubberduck (OpenGameArt)
+  https://opengameart.org/content/25-cc0-bang-firework-sfx
+- "50 CC0 Sci-Fi SFX" - rubberduck (OpenGameArt)
+  https://opengameart.org/content/50-cc0-sci-fi-sfx
+- "60 CC0 Sci-Fi SFX" - rubberduck (OpenGameArt)
+  https://opengameart.org/content/60-cc0-sci-fi-sfx
 
-Vurus, atis, kritik ve beceri (Execute infazi) sesleri bu iki paketten kesildi.
+Vurus, atis, kritik ve beceri (Execute infazi) sesleri bu paketlerden kesilip
+katmanlandi (bang/, scifi50/, scifi60/ = rubberduck'in OpenGameArt paketleri).
 
 Dusman oldurme sesleri ("portal"; death-portal-*.mp3) bu iki paketin su
 dosyalarinin katmanli karisimi (impact/ = Impact Sounds, scifi/ = Sci-Fi
@@ -198,7 +215,7 @@ ${used.map((source) => `- ${source}`).join("\n")}
 Lisans: Creative Commons Zero (CC0 1.0)
 http://creativecommons.org/publicdomain/zero/1.0/
 
-CC0 atif istemiyor; yine de tesekkurler: Kenney.
+CC0 atif istemiyor; yine de tesekkurler: Kenney ve rubberduck.
 `;
 }
 
@@ -245,7 +262,10 @@ const round = (value, digits = 1) => Number(value.toFixed(digits));
 /** Paket adindan klasore: Kenney paketleri `Audio/` altinda. */
 const PACK_DIRS = {
   impact: join("impact", "Audio"),
-  scifi: join("scifi", "Audio")
+  scifi: join("scifi", "Audio"),
+  bang: join("oga", "bang"),
+  scifi50: join("oga", "scifi50"),
+  scifi60: join("oga", "scifi60")
 };
 
 /** `paket/ad` -> dosya yolu; uzanti .ogg ya da .mp3 (paket neyse). */
@@ -414,6 +434,11 @@ function build() {
       if (recipe.lp) chain.push(`lowpass=f=${recipe.lp}`);
       for (const [frequency, gain] of recipe.eq ?? []) chain.push(`equalizer=f=${frequency}:t=q:w=1:g=${gain}`);
       if (recipe.crush) chain.push("acrusher=bits=7:mode=log:aa=1:samples=2:mix=0.6");
+      // Kisa metalik yanki (hangar / zirh govdesi): darbeyi tok ve buyuk
+      // duyuruyor; kuyruk `dur` icinde kaliyor, sonumu `fadeOut`.
+      if (recipe.tail) chain.push(`aecho=0.85:${recipe.tail.wet ?? 0.5}:${recipe.tail.delays.join("|")}:${recipe.tail.decays.join("|")}`);
+      // Hafif doyum: darbenin gövdesi kalinlasiyor, tepe yumusuyor.
+      if (recipe.drive) chain.push(`asoftclip=type=tanh:threshold=${recipe.drive}`);
       chain.push(
         `atrim=duration=${recipe.dur}`,
         "areverse",
@@ -456,10 +481,13 @@ function build() {
   const totalBytes = files.reduce((sum, entry) => sum + entry.bytes, 0);
   if (totalBytes > SFX_BUDGET.totalBytes) problems.push(`toplam ${totalBytes} bayt`);
   const manifest = {
-    note: "tools/build-sfx.mjs uretti; elle duzenlemeyin. Lisans: LICENSE.txt (CC0: Kenney).",
+    note: "tools/build-sfx.mjs uretti; elle duzenlemeyin. Lisans: LICENSE.txt (CC0: Kenney, rubberduck).",
     sources: {
       impact: { title: "Impact Sounds", author: "Kenney", url: "https://kenney.nl/assets/impact-sounds", license: "CC0-1.0" },
-      scifi: { title: "Sci-Fi Sounds", author: "Kenney", url: "https://kenney.nl/assets/sci-fi-sounds", license: "CC0-1.0" }
+      scifi: { title: "Sci-Fi Sounds", author: "Kenney", url: "https://kenney.nl/assets/sci-fi-sounds", license: "CC0-1.0" },
+      bang: { title: "25 CC0 bang / firework SFX", author: "rubberduck", url: "https://opengameart.org/content/25-cc0-bang-firework-sfx", license: "CC0-1.0" },
+      scifi50: { title: "50 CC0 Sci-Fi SFX", author: "rubberduck", url: "https://opengameart.org/content/50-cc0-sci-fi-sfx", license: "CC0-1.0" },
+      scifi60: { title: "60 CC0 Sci-Fi SFX", author: "rubberduck", url: "https://opengameart.org/content/60-cc0-sci-fi-sfx", license: "CC0-1.0" }
     },
     format: { codec: "mp3", channels: 1, sampleRate: 44100, bitrateKbps: 96 },
     budget: SFX_BUDGET,
