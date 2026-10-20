@@ -58,14 +58,35 @@ import { getTowerBodySize, getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_
 import { ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE, PROJECTILE_VISUAL_SCALE, WORKER_VISUAL_SCALE } from "../visual-scale";
 import { arcade } from "../arcade";
 import { getArcadeRunScore } from "../arcade-score";
-import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
+import { AttackVfx, findHomingMuzzleOrigin, type EnemyHitFeel } from "../vfx/attack-vfx";
+import {
+  BEAM_HEAT_COLOR,
+  BEAM_HEAT_MAX_MIX,
+  CRIT_HIT_STOP_MS,
+  CRIT_SHAKE_PX,
+  HIT_STOP_MAX_MS,
+  RECOIL_MS,
+  SHIVER_MS,
+  getBeamHeat,
+  getBeamPulseRate,
+  getFeelTierIndex,
+  getRecoilAmount,
+  getShiverOffset,
+  getSquashAmount,
+  getSquashScale,
+  getStereoPan,
+  getWeaponFeel,
+  mixColor,
+  shouldStartHitStop,
+  type DeathStyle
+} from "../vfx/weapon-feel";
 import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
 import { fnvHash, hashNoise, TEAMMATE_EXTRA_ALPHA, toTier } from "../vfx/kit";
 import { drawServerReactorArcs, type ServerReactorInput } from "../vfx/server-reactor";
 import { VfxLod } from "../vfx/lod";
 import { LegendaryProcVfx, sanitizeLegendaryProc } from "../vfx/legendary-procs";
-import { getProfileDefinitionId, getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
+import { getBeamVfxProfile, getProfileDefinitionId, getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
 import type { MekaShieldSnapshot, RaceMechanicId } from "@karayel/shared";
 import {
@@ -611,6 +632,13 @@ type RenderTower = {
   scaleY: number;
   /** Yerlestirme inisinin basladigi an; inis bitince yok. */
   landingAt?: number;
+  /** Kulenin yeri (snapshot'tan); geri tepme bunun etrafinda. */
+  homeX?: number;
+  homeY?: number;
+  /** Geri tepmenin ani ve yonu (dunya px, atisin tersine); bitince yok. */
+  recoilAt?: number;
+  recoilX?: number;
+  recoilY?: number;
   range: Phaser.GameObjects.Arc;
   deadZone: Phaser.GameObjects.Arc;
   isolation: Phaser.GameObjects.Graphics;
@@ -646,6 +674,24 @@ type RenderMover = {
   knockY?: number;
   knockDx?: number;
   knockDy?: number;
+  /** Bu karede govdenin kaymasiz yeri (duraklama baslarken buradan donuyor). */
+  baseX?: number;
+  baseY?: number;
+  /** Vurusta duraklama (silahin hissi): bu ana kadar govde `stopX/Y`de. */
+  stopUntil?: number;
+  stopX?: number;
+  stopY?: number;
+  /** Ezilme: ani, orani ve vurusun yonu. */
+  squashAt?: number;
+  squashAmount?: number;
+  squashAngle?: number;
+  /** Elektrik titremesi (Ucube): ani, genligi ve tohumu. */
+  shiverAt?: number;
+  shiverPx?: number;
+  shiverSeed?: number;
+  /** Debug Lazer isisi: ilk ve son nabiz (maruz kalma). */
+  heatStartAt?: number;
+  heatLastAt?: number;
   /** Sampiyonun sabit isareti ("[Ş]"); normal dusmanda yok. */
   crown?: Phaser.GameObjects.Text;
   /** Ozel dusmanin isareti (avci ayraclari, isitici halkasi, yiyici altigeni ve emme hatti). */
@@ -1234,6 +1280,13 @@ export class GameScene extends Phaser.Scene {
    * oldurme olayi yok, izi kimse almiyor ve siliniyor.
    */
   private readonly removedEnemyTraces = new RecentEnemyTraces<RemovedEnemyTrace>();
+  /** Dusmani son vuran silah (`weapon-feel`): olumun bicimi ve yonu. */
+  private readonly lastEnemyHits = new Map<string, { death: DeathStyle; angle: number; at: number }>();
+  /** Kendi kritiginin beyaz cakmasinin son ani (saniyede en fazla ~4). */
+  private lastCritFlashAt = Number.NEGATIVE_INFINITY;
+  /** Kin dalgasi basina cephenin degdigi dusmanlar (dalga gorunmez olunca siliniyor). */
+  private readonly kinWaveHits = new Map<string, { ids: Set<string>; seen: number; shook: boolean; own: boolean }>();
+  private kinFrame = 0;
   /** Doku basina vurgu rengi; bir kez okunuyor. */
   private readonly enemyAccentColors = new Map<string, number>();
   private towers = new Map<string, RenderTower>();
@@ -1510,9 +1563,7 @@ export class GameScene extends Phaser.Scene {
   private sfxVolume = readStoredVolume(SFX_VOLUME_STORAGE_KEY, DEFAULT_SFX_VOLUME);
   private hitVolume = readStoredVolume(HIT_VOLUME_STORAGE_KEY, DEFAULT_HIT_VOLUME);
   /** Isinlarin vurus ani: cizildigi karede, oynatma gecikmesinden sonra. */
-  private readonly beamHitTracker = new BeamHitTracker((beam, voice, tick) => {
-    this.feedback?.playHit(voice, beam.tier, this.isOwnBeam(beam), beam.id, tick);
-  });
+  private readonly beamHitTracker = new BeamHitTracker((beam, voice, tick) => this.playBeamHit(beam, voice, tick));
   /** Titresim ayari; cihaz desteklemiyorsa ayar gorunmuyor ama deger kaliyor. */
   private vibrationEnabled = readStoredFlag(VIBRATION_STORAGE_KEY, true);
   /**
@@ -2019,12 +2070,14 @@ export class GameScene extends Phaser.Scene {
       lod: this.vfxLod,
       stamps: this.glowStamps,
       reducedMotion: () => this.feedback?.reducedMotion ?? false,
-      // Agir tek vurus (Sunucu, Jackpot; kademe 3, yalnizca kendi kulen):
-      // yonetmenin mikro sarsintisi. Aralik, ust sinir ve hareket azaltma orada.
-      onHeavyImpact: () => this.feedback?.shakeCamera({ own: true, priority: 1, px: 1.5, durationMs: 90 }),
-      // Kendi agir / kinetik kademe 2+ vurusun: vurulan dusman 1-2 px itiliyor
-      // (yalnizca istemcide, govdenin cizimi; konum ve can cubugu yerinde).
+      // Kendi agir vurusun (Sunucu, Obsesyon, Kin; silahin hissi): yonetmenin
+      // mikro sarsintisi. Aralik, ust sinir ve hareket azaltma orada.
+      onHeavyImpact: (_x, _y, px) => this.feedback?.shakeCamera({ own: true, priority: 1, px, durationMs: 70 + px * 15 }),
+      // Kendi vurusun: vurulan dusman silahin kutlesi kadar itiliyor (yalnizca
+      // istemcide, govdenin cizimi; konum ve can cubugu yerinde).
       onKnock: (x, y, angle, px, enemyId) => this.knockEnemyNear(x, y, angle, px, enemyId),
+      // Duraklama, ezilme, titreme ve olumun bicimi icin son vuran silah.
+      onEnemyHit: (hit) => this.applyEnemyHitFeel(hit),
       // Yanik izleri dusmanlarin (8) altinda.
       ground: this.add.graphics().setDepth(7.3)
     });
@@ -2266,6 +2319,8 @@ export class GameScene extends Phaser.Scene {
       this.feedback?.destroy();
       this.feedback = undefined;
       this.beamHitTracker.clear();
+      this.lastEnemyHits.clear();
+      this.kinWaveHits.clear();
       this.flashPool?.destroy();
       this.flashPool = undefined;
       this.glowStamps?.destroy();
@@ -7001,8 +7056,19 @@ export class GameScene extends Phaser.Scene {
    * konumu ve can cubugu degismiyor.
    */
   private knockEnemyNear(x: number, y: number, angle: number, px: number, enemyId?: string) {
-    let target = enemyId ? this.enemies.get(enemyId) : undefined;
-    if (!target) {
+    const target = this.findHitMover(x, y, enemyId);
+    if (!target) return;
+    target.knockAt = performance.now();
+    target.knockX = Math.cos(angle) * px;
+    target.knockY = Math.sin(angle) * px;
+  }
+
+  /** Vurulan cizili dusman: kimlikle, yoksa noktaya en yakin govde (en buyuk govdenin erisimi kadar). */
+  private findHitMover(x: number, y: number, enemyId?: string) {
+    // Temasin dusmani biliniyor ama artik cizilmiyor (oldu): komsusu itilmesin.
+    if (enemyId) return this.enemies.get(enemyId);
+    let target: RenderMover | undefined;
+    {
       let best = (KNOCK_SEARCH_RADIUS * this.getMapCellSize() / TOWER_GRID_SIZE) ** 2;
       for (const mover of this.enemies.values()) {
         const gap = (mover.sprite.x - x) ** 2 + (mover.sprite.y - y) ** 2;
@@ -7012,10 +7078,239 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
-    if (!target) return;
-    target.knockAt = performance.now();
-    target.knockX = Math.cos(angle) * px;
-    target.knockY = Math.sin(angle) * px;
+    return target;
+  }
+
+  /**
+   * Silahin hissinin dusmana etkisi (`weapon-feel`). Her vurusta son vuran
+   * silah kaydediliyor (olum onun bicimiyle); kendi vurusunda ve hareket
+   * azaltma kapaliyken duraklama, ezilme ve titreme. Takim arkadasinin vurusu
+   * senin ekraninda dusmani oynatmiyor.
+   */
+  private applyEnemyHitFeel(hit: EnemyHitFeel) {
+    const mover = this.findHitMover(hit.x, hit.y, hit.enemyId);
+    if (!mover) return;
+    const now = performance.now();
+    const id = hit.enemyId && this.enemies.get(hit.enemyId) === mover ? hit.enemyId : this.findMoverId(mover);
+    if (id !== undefined) this.noteEnemyHit(id, hit.death, hit.angle, now);
+    if (!hit.own || hit.still) return;
+    this.startHitStop(mover, hit.hitStopMs, now);
+    if (hit.squash > 0) {
+      mover.squashAt = now;
+      mover.squashAmount = hit.squash;
+      mover.squashAngle = hit.angle;
+    }
+    if (hit.shiverPx > 0) {
+      mover.shiverAt = now;
+      mover.shiverPx = hit.shiverPx;
+      mover.shiverSeed = (mover.shiverSeed ?? 0) + 1;
+    }
+  }
+
+  /** Dusmanin kisa duraklamasi; ust sinir ve tekrar araligi `weapon-feel`de. */
+  private startHitStop(mover: RenderMover, ms: number, now: number) {
+    if (!shouldStartHitStop(mover.stopUntil, now, ms)) return;
+    mover.stopUntil = now + Math.min(ms, HIT_STOP_MAX_MS);
+    mover.stopX = mover.baseX ?? mover.sprite.x;
+    mover.stopY = mover.baseY ?? mover.sprite.y;
+  }
+
+  /** Son vuran silah: olumun bicimi ve yonu (kimlik basina; olen dusmanin kaydi siliniyor). */
+  private noteEnemyHit(id: string, death: DeathStyle, angle: number, now: number) {
+    if (this.lastEnemyHits.size > 400) this.lastEnemyHits.clear();
+    const entry = this.lastEnemyHits.get(id);
+    if (entry) {
+      entry.death = death;
+      entry.angle = angle;
+      entry.at = now;
+    } else {
+      this.lastEnemyHits.set(id, { death, angle, at: now });
+    }
+  }
+
+  private findMoverId(mover: RenderMover) {
+    for (const [id, candidate] of this.enemies) {
+      if (candidate === mover) return id;
+    }
+    return undefined;
+  }
+
+  /** Debug Lazer'in dusmanda biriktirdigi isi (0-1); sogudugunda kayit siliniyor. */
+  private getEnemyBeamHeat(mover: RenderMover, now: number) {
+    if (mover.heatStartAt === undefined || mover.heatLastAt === undefined) return 0;
+    const heat = getBeamHeat(mover.heatLastAt - mover.heatStartAt, now - mover.heatLastAt);
+    if (heat <= 0 && now - mover.heatLastAt > 1000) {
+      mover.heatStartAt = undefined;
+      mover.heatLastAt = undefined;
+    }
+    return heat;
+  }
+
+  /** Lazerin nabzi dusmana degdi: isi birikiyor (ara 240 ms'yi asarsa bastan). */
+  private noteBeamHeat(mover: RenderMover, now: number) {
+    if (mover.heatLastAt === undefined || now - mover.heatLastAt > 240) mover.heatStartAt = now;
+    mover.heatLastAt = now;
+    return getBeamHeat(now - (mover.heatStartAt ?? now), 0);
+  }
+
+  /** Sesin sag-sol yeri: kameranin gordugu alanda noktanin yatay konumu. */
+  private getStereoPan(x: number) {
+    const view = this.cameras?.main?.worldView;
+    return view ? getStereoPan(x, view.x, view.width) : 0;
+  }
+
+  /**
+   * Kulenin atisi (`weapon-feel`): namlunun sesi ve geri tepme. Atis
+   * mesajinin konumu namlu; atan kule ayni tanimin o noktaya en yakin kulesi.
+   * Hareket azaltmada geri tepme yok, ses var.
+   */
+  private fireFromTower(definitionId: string, tier: number | undefined, x: number, y: number, angle: number, own: boolean, key: string) {
+    const feel = getWeaponFeel(definitionId);
+    if (feel.fire) this.feedback?.playFire(feel.fire, tier, own, key, this.getStereoPan(x), feel.fireGain);
+    const recoil = feel.recoil[getFeelTierIndex(tier)];
+    if (!(recoil > 0) || this.feedback?.reducedMotion) return;
+    const profileId = getProfileDefinitionId(definitionId);
+    let best = (this.getMapCellSize() * 1.6) ** 2;
+    let towerId: string | undefined;
+    for (const tower of this.towerSnapshots.values()) {
+      if (tower.definitionId !== profileId) continue;
+      const gap = (tower.x - x) ** 2 + (tower.y - y) ** 2;
+      if (gap <= best) {
+        best = gap;
+        towerId = tower.id;
+      }
+    }
+    const rendered = towerId ? this.towers.get(towerId) : undefined;
+    if (!rendered) return;
+    rendered.recoilAt = performance.now();
+    rendered.recoilX = -Math.cos(angle) * recoil;
+    rendered.recoilY = -Math.sin(angle) * recoil;
+    this.animatedTowers.add(rendered);
+  }
+
+  /** Kendi kritigin: vurulan dusman kisa duruyor, 1 px sarsinti, kisa beyaz cakma. */
+  private punchCrit(x: number, y: number, now: number) {
+    if (this.feedback?.reducedMotion) return;
+    const mover = this.findHitMover(x, y);
+    if (mover) this.startHitStop(mover, CRIT_HIT_STOP_MS, now);
+    this.feedback?.shakeCamera({ own: true, priority: 1, px: CRIT_SHAKE_PX, durationMs: 70 });
+    if (now - this.lastCritFlashAt >= CRIT_FLASH_GAP_MS) {
+      this.lastCritFlashAt = now;
+      this.flashPool?.flash({ x, y, texture: "glow", tint: 0xffffff, alpha: 0.85, sizeFrom: 11, sizeTo: 7, durationMs: 40, bornAt: now });
+    }
+  }
+
+  /**
+   * Isinin vurus ani (`BeamHitTracker`): ses sag-sol yeriyle; Debug Lazer'de
+   * nabiz isinin ucuna kivilcim ve dusmanda isi (sesi isindikca kalinlasiyor);
+   * Gosteri'nin dogusunda hattaki dusmanlarda temas ve silahin hissi (ucu
+   * menzilin sonu, dusman degil). Kin dalgasinin hissi burada degil: dalga
+   * ilerledikce cephesinin degdigi dusmanda (`updateKinWaveFeel`).
+   */
+  private playBeamHit(beam: BeamSnapshot, voice: HitVoiceId, tick: boolean) {
+    const own = this.isOwnBeam(beam);
+    const profile = getBeamVfxProfile(beam.definitionId, beam.color);
+    const angle = Math.atan2(beam.y2 - beam.y1, beam.x2 - beam.x1);
+    const now = performance.now();
+    let rate = 1;
+    if (profile.delivery === "laser") {
+      const mover = this.findHitMover(beam.x2, beam.y2);
+      if (mover) rate = getBeamPulseRate(this.noteBeamHeat(mover, now));
+      this.attackVfx?.emitBeamContact({ x: beam.x2, y: beam.y2, angle, definitionId: beam.definitionId, tier: beam.tier, own, key: `${beam.id}@${Math.round(now)}`, bornAt: now }, 0);
+    } else if (!tick && profile.delivery === "showcase") {
+      this.applyShowcaseFeel(beam, angle, own, now);
+    }
+    this.feedback?.playHit(voice, beam.tier, own, beam.id, tick, this.getStereoPan(beam.x2), rate);
+  }
+
+  /**
+   * Gosteri isini: hattaki dusmanlar (isinin bandinda, en fazla 6) temas
+   * kivilcimi ve silahin hissiyle. Isinin ucu menzilin sonu; orada dusman yok.
+   */
+  private applyShowcaseFeel(beam: BeamSnapshot, angle: number, own: boolean, now: number) {
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const lengthSq = dx * dx + dy * dy;
+    const reach = beam.width / 2 + 10;
+    let touched = 0;
+    for (const [id, mover] of this.enemies) {
+      if (touched >= 6) break;
+      const x = mover.baseX ?? mover.sprite.x;
+      const y = mover.baseY ?? mover.sprite.y;
+      let t = 0;
+      if (lengthSq > 0.0001) t = Math.max(0, Math.min(1, ((x - beam.x1) * dx + (y - beam.y1) * dy) / lengthSq));
+      const ex = x - (beam.x1 + dx * t);
+      const ey = y - (beam.y1 + dy * t);
+      if (ex * ex + ey * ey > reach * reach) continue;
+      touched += 1;
+      this.attackVfx?.emitBeamContact({ x, y, angle, definitionId: beam.definitionId, tier: beam.tier, own, key: `${beam.id}:${id}`, enemyId: id, bornAt: now });
+    }
+  }
+
+  /**
+   * Kin dalgasi: dalga koni gibi ilerliyor (sunucu `setKinWaveBeam`: ucu
+   * cephenin ortasi, genisligi cephedeki koni eni). Her karede cephenin
+   * ulastigi, koninin icindeki dusman bir kez (dalga basina) silahin hissini
+   * aliyor: itme dalganin yonunde (sunucunun itmesiyle ayni), kisa duraklama,
+   * ezilme; sarsinti dalga basina bir kez, ilk degdigi kendi dusmaninda.
+   */
+  private updateKinWaveFeel(beams: readonly BeamSnapshot[], now: number) {
+    let any = false;
+    for (const beam of beams) {
+      // Kin kulesinin dalgasi ve Taht'in Kin sentezi dalgasi (kare basina profil aramasi yok).
+      if (beam.definitionId !== "zeynep-6" && !beam.definitionId.endsWith("kin-wave")) continue;
+      any = true;
+      let hit = this.kinWaveHits.get(beam.id);
+      if (!hit) {
+        hit = { ids: new Set(), seen: 0, shook: false, own: this.isOwnBeam(beam) };
+        this.kinWaveHits.set(beam.id, hit);
+      }
+      hit.seen = this.kinFrame + 1;
+      const dx = beam.x2 - beam.x1;
+      const dy = beam.y2 - beam.y1;
+      const front = Math.hypot(dx, dy);
+      if (front < 1) continue;
+      const angle = Math.atan2(dy, dx);
+      const halfAngle = Math.atan2(beam.width / 2, front);
+      const feel = getWeaponFeel("zeynep-6");
+      const index = getFeelTierIndex(beam.tier);
+      const still = this.feedback?.reducedMotion ?? false;
+      for (const [id, mover] of this.enemies) {
+        if (hit.ids.has(id)) continue;
+        const x = mover.baseX ?? mover.sprite.x;
+        const y = mover.baseY ?? mover.sprite.y;
+        const ox = x - beam.x1;
+        const oy = y - beam.y1;
+        const distance = Math.hypot(ox, oy);
+        if (distance > front + KIN_FRONT_SLACK) continue;
+        let offset = Math.abs(Math.atan2(oy, ox) - angle);
+        if (offset > Math.PI) offset = Math.PI * 2 - offset;
+        // Govdenin kenari koniye degiyorsa (yakin dusmanda aci genis).
+        const margin = Math.atan2(KIN_FRONT_SLACK, Math.max(1, distance));
+        if (offset > halfAngle + margin) continue;
+        hit.ids.add(id);
+        if (hit.ids.size > 64) break;
+        this.attackVfx?.emitBeamContact({ x, y, angle, definitionId: "zeynep-6", tier: beam.tier, own: hit.own, key: `${beam.id}:${id}`, enemyId: id, bornAt: now }, 0);
+        this.noteEnemyHit(id, feel.death, angle, now);
+        if (!hit.own || still) continue;
+        this.startHitStop(mover, feel.hitStopMs[index], now);
+        mover.knockAt = now;
+        mover.knockX = Math.cos(angle) * feel.knock[index];
+        mover.knockY = Math.sin(angle) * feel.knock[index];
+        mover.squashAt = now;
+        mover.squashAmount = feel.squash * (0.6 + index * 0.2);
+        mover.squashAngle = angle;
+        if (!hit.shook && feel.shake[index] > 0) {
+          hit.shook = true;
+          this.feedback?.shakeCamera({ own: true, priority: 1, px: feel.shake[index], durationMs: 70 + feel.shake[index] * 15 });
+        }
+      }
+    }
+    this.kinFrame += 1;
+    if (!any && this.kinWaveHits.size === 0) return;
+    for (const [id, hit] of this.kinWaveHits) {
+      if (hit.seen !== this.kinFrame) this.kinWaveHits.delete(id);
+    }
   }
 
   /** Carpmanin dusmana gore yeri, gelen snapshot'lardan (`resolveHitAnchor`). */
@@ -7073,9 +7368,16 @@ export class GameScene extends Phaser.Scene {
         x: originX, y: originY, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
       }), recipe.muzzle.anticipationMs);
     }
-    this.queueDelayedEffect(() => this.attackVfx?.emitMuzzle({
-      x: originX, y: originY, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
-    }));
+    const queuedAt = performance.now();
+    this.queueDelayedEffect(() => {
+      this.attackVfx?.emitMuzzle({
+        x: originX, y: originY, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
+      });
+      // Sekme gizliyken biriken gec atis sessiz ve yerinde (dogrusal mermideki kural).
+      if (isHitSoundFresh(queuedAt, performance.now(), this.playbackDelayMs)) {
+        this.fireFromTower(definitionId, projectile.tier, originX, originY, angle, own, projectile.id);
+      }
+    });
   }
 
   private hydrateSnapshot(snapshot: WireGameSnapshot): HydratedGameSnapshot | undefined {
@@ -7365,6 +7667,7 @@ export class GameScene extends Phaser.Scene {
     // Isinin vurus sesi cizimle ayni karede: tek atis isini dogusunda,
     // surekli isin (lazer) nabizla, alan isini icinde dusman varken tikle.
     this.beamHitTracker.update(beams, now, enemies);
+    this.updateKinWaveFeel(beams, now);
   }
 
   /**
@@ -7583,7 +7886,14 @@ export class GameScene extends Phaser.Scene {
       this.linearProjectileSnapshots.set(projectile.id, projectile);
       // Sahiplik atis aninda kulenin konumundan: takim arkadasinin kademe 3
       // eklentileri soluk, kendi kulen tam.
-      if (this.projectileOwnership.size > 600) this.projectileOwnership.clear();
+      // Dolunca en eskiler gidiyor; tamamen silmek ucustaki mermilerin temasini "kendi" sayardi.
+      if (this.projectileOwnership.size > 600) {
+        let drop = 150;
+        for (const id of this.projectileOwnership.keys()) {
+          this.projectileOwnership.delete(id);
+          if (--drop <= 0) break;
+        }
+      }
       const own = this.isOwnShotFrom(projectile.x, projectile.y);
       this.projectileOwnership.set(projectile.id, own);
       const definitionId = projectile.definitionId ?? "";
@@ -7596,9 +7906,16 @@ export class GameScene extends Phaser.Scene {
           x: projectile.x, y: projectile.y, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
         }), recipe.muzzle.anticipationMs);
       }
-      this.queueDelayedEffect(() => this.attackVfx?.emitMuzzle({
-        x: projectile.x, y: projectile.y, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
-      }));
+      const receivedAt = performance.now();
+      this.queueDelayedEffect(() => {
+        this.attackVfx?.emitMuzzle({
+          x: projectile.x, y: projectile.y, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
+        });
+        // Atis sesi ve geri tepme namluyla ayni anda; sekme gizliyken biriken gec atis sessiz.
+        if (isHitSoundFresh(receivedAt, performance.now(), this.playbackDelayMs)) {
+          this.fireFromTower(definitionId, projectile.tier, projectile.x, projectile.y, angle, own, projectile.id);
+        }
+      });
     });
     // Carpma cizimi her temasta (delip gecen ara temaslar dahil) ve her kulede:
     // profil kulenin carpma dilini, kademesini ve rengini veriyor. Eskiden
@@ -7641,7 +7958,7 @@ export class GameScene extends Phaser.Scene {
         // Sekme gizliyken biriken kuyruk donuste hep birden bosaliyor: o
         // gec carpmalar cizilir ama sessiz kalir.
         if (voice && isHitSoundFresh(receivedAt, performance.now(), this.playbackDelayMs)) {
-          this.feedback?.playHit(voice, message.tier, own, key);
+          this.feedback?.playHit(voice, message.tier, own, key, false, this.getStereoPan(at.x));
         }
       });
     });
@@ -9623,9 +9940,19 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Kozmetik itme (kendi agir vurusun, 1-2 px): yalnizca govdenin cizimi,
       // ENEMY_KNOCK_MS'de yerine oturuyor. Konum, can cubugu ve yon etkilenmiyor.
       const knock = mover.knockAt === undefined ? 0 : 1 - (now - mover.knockAt) / ENEMY_KNOCK_MS;
-      mover.knockDx = knock > 0 ? (mover.knockX ?? 0) * knock : 0;
-      mover.knockDy = knock > 0 ? (mover.knockY ?? 0) * knock : 0;
-      mover.sprite.setPosition(enemy.x + mover.knockDx, enemy.y + mover.knockDy);
+      // Ucube'nin elektrik titremesi itmenin ustune; ikisi de yalnizca cizim.
+      const shiverAge = mover.shiverAt === undefined ? -1 : now - mover.shiverAt;
+      if (shiverAge >= SHIVER_MS) mover.shiverAt = undefined;
+      mover.knockDx = (knock > 0 ? (mover.knockX ?? 0) * knock : 0) + getShiverOffset(shiverAge, mover.shiverPx ?? 0, mover.shiverSeed ?? 0, 0);
+      mover.knockDy = (knock > 0 ? (mover.knockY ?? 0) * knock : 0) + getShiverOffset(shiverAge, mover.shiverPx ?? 0, mover.shiverSeed ?? 0, 1);
+      // Vurusta duraklama: govde kisa bir an yerinde; sonra oynatmanin yerine
+      // donuyor (en fazla 60 ms'lik yol, 1-2 birim).
+      const stopped = mover.stopUntil !== undefined && now < mover.stopUntil;
+      const drawX = stopped ? mover.stopX ?? enemy.x : enemy.x;
+      const drawY = stopped ? mover.stopY ?? enemy.y : enemy.y;
+      mover.baseX = drawX;
+      mover.baseY = drawY;
+      mover.sprite.setPosition(drawX + mover.knockDx, drawY + mover.knockDy);
       // Karede degismeyen derinlik yeniden yazilmiyor: her `setDepth` sahnenin
       // siralamasini kuyruga sokuyor ve bu dongu her karede her dusmanda donuyor.
       setDepthIfChanged(mover.sprite, enemy.movementKind === "air" ? 9 : 8);
@@ -9638,7 +9965,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const championScale = getEnemyBodyScale({ champion: enemy.champion, ds: raceView?.drawer });
       const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * championScale / ENEMY_TEXTURE_SIZE;
       const artScale = getEnemyArtScale(enemy);
-      mover.sprite.setScale(baseSpriteScale * artScale * ((enemy.movementKind === "air" ? AIR_ENEMY_DISPLAY_SCALE : 1) + slowPulse));
+      const spriteScale = baseSpriteScale * artScale * ((enemy.movementKind === "air" ? AIR_ENEMY_DISPLAY_SCALE : 1) + slowPulse);
+      // Agir vurusun ezilmesi: vurus ekseninde basilip yerine donuyor (110 ms).
+      const squash = mover.squashAt === undefined ? 0 : getSquashAmount(now - mover.squashAt, mover.squashAmount ?? 0);
+      if (squash > 0) {
+        const [squashX, squashY] = getSquashScale(squash, mover.squashAngle ?? 0, mover.sprite.rotation);
+        mover.sprite.setScale(spriteScale * squashX, spriteScale * squashY);
+      } else {
+        mover.squashAt = undefined;
+        mover.sprite.setScale(spriteScale);
+      }
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
       const baseTint = enemy.isDominated ? 0xf0abfc : enemy.isWhisperTurned ? 0xa78bfa : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff;
       // Vurus flasi burada, tonun her karede yeniden yazildigi yerde: baska
@@ -9653,10 +9989,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       mover.lastEffectiveHp = effectiveHp;
       mover.baseTint = baseTint;
+      // Debug Lazer'in isisi: isin uzerinde kaldikca govde koyu turuncuya
+      // kiziyor, birakinca soguyor. Patlamanin rengi taban tondan (kizginsiz).
+      const heat = this.getEnemyBeamHeat(mover, now);
       if (isEnemyHitFlashActive(mover.hitFlashAt, now)) {
         mover.sprite.setTintFill(ENEMY_HIT_FLASH_COLOR);
       } else {
-        mover.sprite.setTint(baseTint);
+        mover.sprite.setTint(heat > 0 ? mixColor(baseTint, BEAM_HEAT_COLOR, heat * BEAM_HEAT_MAX_MIX) : baseTint);
       }
       const hasShield = enemy.shield > 0 && enemy.maxShield > 0;
       const shieldRatio = hasShield ? Phaser.Math.Clamp(enemy.shield / enemy.maxShield, 0, 1) : 0;
@@ -9985,6 +10324,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         if (this.shouldDrawTowerCrown(tower)) this.drawTowerCrown(rendered.halo, tower.x, tower.y, bodySize / 2);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
+        rendered.homeX = tower.x;
+        rendered.homeY = tower.y;
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
         rendered.deadZone.setPosition(tower.x, tower.y).setRadius(tower.minimumRange ?? 0);
         this.drawIsolationGrid(rendered.isolation, tower.x, tower.y);
@@ -10099,6 +10440,19 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * Taban olcek snapshot'ta hesaplaniyor; nabiz ve inis karede degisiyor.
    * Ikisi ayri tutuluyor ki gelen snapshot suren bir inisi sifirlamasin.
    */
+  /** Atisin geri tepmesi: govde atisin tersine kisa bir kayma, sonra yerine (`weapon-feel`). */
+  private applyTowerRecoil(rendered: RenderTower, now: number) {
+    if (rendered.recoilAt === undefined || rendered.homeX === undefined || rendered.homeY === undefined) return;
+    const elapsed = now - rendered.recoilAt;
+    if (elapsed >= RECOIL_MS) {
+      rendered.recoilAt = undefined;
+      rendered.base.setPosition(rendered.homeX, rendered.homeY);
+      return;
+    }
+    const amount = getRecoilAmount(elapsed);
+    rendered.base.setPosition(rendered.homeX + (rendered.recoilX ?? 0) * amount, rendered.homeY + (rendered.recoilY ?? 0) * amount);
+  }
+
   private applyTowerScale(rendered: RenderTower, now: number) {
     const landing = rendered.landingAt === undefined ? 1 : getTowerLandingScale(now - rendered.landingAt);
     const multiplier = rendered.punch.value * landing;
@@ -10122,7 +10476,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         rendered.landingAt = undefined;
       }
       this.applyTowerScale(rendered, now);
-      if (rendered.landingAt === undefined && !this.tweens.isTweening(rendered.punch)) {
+      this.applyTowerRecoil(rendered, now);
+      if (rendered.landingAt === undefined && rendered.recoilAt === undefined && !this.tweens.isTweening(rendered.punch)) {
         this.animatedTowers.delete(rendered);
       }
     }
@@ -11720,7 +12075,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
     const tier = getBladeHitTier(event, this.towerSnapshots.values(), ownerId);
     if (tier === undefined) return;
-    this.feedback?.playHit(BLADE_HIT_VOICE, tier, slot === localSlot, event.id);
+    this.feedback?.playHit(BLADE_HIT_VOICE, tier, slot === localSlot, event.id, false, this.getStereoPan(event.x));
   }
 
   /**
@@ -11758,6 +12113,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const lifetimeMs = FEEDBACK_KIND_RULES[kind].visualMs;
     const key = own ? kind : `${kind}:team`;
     const decision = this.feedback?.emit(kind, { own, x: event.x, y: event.y, lifetimeMs });
+    if (own && crit) this.punchCrit(event.x, event.y, now);
     if (own && crit && event.j) {
       this.showJackpotStamp(event);
     }
@@ -12131,7 +12487,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       return;
     }
 
+    // Olumun bicimi son vuran silahtan (1.5 sn icinde): kinetik parcalar vurusun
+    // yonunde, enerji kul, cokus ice. Bilinmiyorsa eski radyal dagilma.
+    const lastHit = this.lastEnemyHits.get(event.enemyId);
+    this.lastEnemyHits.delete(event.enemyId);
+    const recentHit = lastHit && now - lastHit.at <= 1500 ? lastHit : undefined;
     this.combatVfx?.emitDeath({
+      style: recentHit?.death,
+      heading: recentHit?.angle,
       x: trace.x,
       y: trace.y,
       size: trace.size,
@@ -14110,6 +14473,10 @@ function getBackgroundMusicPath(_characterId: CharacterId): string {
 
 /** Kimligi bilinmeyen carpmanin itecegi dusmanin aranacagi yaricap (harita olcegi 1'de): en buyuk govdenin erisimi. */
 const KNOCK_SEARCH_RADIUS = 32;
+/** Kin dalgasinin cephesinin govdeye degmesi icin pay (dunya birimi; govde yaricapi kadar). */
+const KIN_FRONT_SLACK = 10;
+/** Kendi kritiginin beyaz cakmasi en fazla bu aralikta (isiga duyarlilik). */
+const CRIT_FLASH_GAP_MS = 250;
 
 /** Ayni tikin mesajlari ayni soket kumesinde: temas ile kaldirma bu kadar ms icinde geliyorsa ayni tik. */
 const SAME_TICK_MESSAGE_MS = 8;

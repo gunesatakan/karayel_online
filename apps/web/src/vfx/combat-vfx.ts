@@ -1,3 +1,4 @@
+import type { DeathStyle } from "./weapon-feel";
 import {
   COMBAT_BODY,
   KIN_WAVE_STROKES,
@@ -72,6 +73,14 @@ export type DeathBurst = {
   air?: boolean;
   /** Yere indirilmis vurgu (emit aninda bir kez hesaplaniyor). */
   accent?: number;
+  /**
+   * Oldurenin silahindan olumun bicimi (`weapon-feel`): kinetik parcalar
+   * vurusun yonunde savruluyor, enerji govdeyi kul ediyor, cokus once ice
+   * cekiyor. Yoksa eski radyal dagilma.
+   */
+  style?: DeathStyle;
+  /** Son vurusun yonu (radyan): "shards" parcalari bu yone. */
+  heading?: number;
 };
 /**
  * Kule ani ("tower" turu): kademe toreni, yerlestirmenin inisi ya da sunucu
@@ -291,6 +300,11 @@ export const DEATH_DECAL_MS = 1100;
 /* Karede yerinde yazilan secenekler: olum basina nesne literali yok. */
 const DEATH_DEBRIS: DebrisOptions = { seed: 0, count: 0, speed: 0, heading: undefined, fan: 0, gravity: 0, lifeMs: 0, color: 0, edge: 0, size: 0, alpha: 0, floor: 0 };
 const DEATH_SPARKS: BallisticSparkOptions = { seed: 0, count: 0, speed: 0, heading: undefined, fan: 0, gravity: 0, lifeMs: 0, hue: 0, width: 0, alpha: 0, streak: 0 };
+/** Cokusun ice cekilme payi (olumun suresinin orani). */
+const IMPLODE_SPLIT = 0.35;
+/** Kul olumunun yukselen korlarinin omru. */
+const DEATH_ASH_MS = 760;
+const DEATH_ASH: BallisticSparkOptions = { seed: 0, count: 0, speed: 0, heading: undefined, fan: 0, gravity: 0, lifeMs: 0, hue: 0, width: 0, alpha: 0, streak: 0 };
 const DEATH_SMOKE: SmokeOptions = { seed: 0, count: 0, radius: 0, grow: 0, rise: 0, lifeMs: 0, color: 0, alpha: 0, still: false };
 const DEATH_CRACKLE: CrackleOptions = { seed: 0, count: 0, reach: 0, hue: 0, width: 0, alpha: 0, heading: undefined, fan: 0 };
 
@@ -299,12 +313,17 @@ const DEATH_CRACKLE: CrackleOptions = { seed: 0, count: 0, reach: 0, hue: 0, wid
  * yuzeyi var, ucmuyor, LOD izin veriyor) ~1.1 sn, duman ~0.65 sn, kirinti ve
  * kivilcim (hareket azaltmada yok) ~0.4-0.7 sn; hicbiri yoksa cekirdek patlama.
  */
-export function getDeathLifeMs(burst: Pick<DeathBurst, "durationMs" | "still" | "air" | "heavy" | "texture">, hasGround: boolean, lod?: VfxLod) {
+export function getDeathLifeMs(burst: Pick<DeathBurst, "durationMs" | "still" | "air" | "heavy" | "texture" | "style">, hasGround: boolean, lod?: VfxLod) {
   const look = DEATH_LOOKS[getDeathMaterial(burst.texture)];
   let life = burst.durationMs;
   if (!burst.still) {
-    life = Math.max(life, burst.heavy ? 620 : 520);
-    if (!lod || lod.sparks) life = Math.max(life, look.sparks === "embers" ? 700 : look.sparks === "sparks" ? 420 : 140);
+    // Cokuste parcalar ice cekilme bittikten sonra cikiyor.
+    const debrisAt = burst.style === "implode" ? burst.durationMs * IMPLODE_SPLIT : 0;
+    life = Math.max(life, debrisAt + (burst.heavy ? 620 : 520));
+    if (!lod || lod.sparks) {
+      life = Math.max(life, look.sparks === "embers" ? 700 : look.sparks === "sparks" ? 420 : 140);
+      if (burst.style === "ash") life = Math.max(life, DEATH_ASH_MS);
+    }
   }
   if (look.smoke !== 0 && (!lod || lod.smoke)) life = Math.max(life, DEATH_SMOKE_MS);
   if (hasGround && !burst.air && (!lod || lod.decals)) life = Math.max(life, DEATH_DECAL_MS);
@@ -323,12 +342,18 @@ export function getDeathLifeMs(burst: Pick<DeathBurst, "durationMs" | "still" | 
  *
  * `ground` yer izinin yuzeyi (dusmanlarin altinda); yoksa iz cizilmiyor.
  */
+
 export function drawDeathBurst(g: Graphics, burst: DeathBurst, now: number, scale: number, ground?: Graphics, lod?: VfxLod) {
   const elapsed = now - burst.bornAt;
   if (elapsed < 0) return;
   const t = clamp(elapsed / burst.durationMs);
   const pose = getDeathBurstPose(t, burst.still);
   const { x, y, intensity, seed } = burst;
+  const style = burst.style;
+  // Cokus: govde once ice cekiliyor (ilk %35), sonra dagiliyor; parcalar o anda.
+  const implode = style === "implode" && !burst.still;
+  const pinch = implode ? (t < IMPLODE_SPLIT ? 1 - 0.45 * (t / IMPLODE_SPLIT) : 0.55 + 0.45 * ((t - IMPLODE_SPLIT) / (1 - IMPLODE_SPLIT))) : 1;
+  const ash = style === "ash";
   const material = getDeathMaterial(burst.texture);
   const look = DEATH_LOOKS[material];
   const accent = burst.accent ?? burst.color;
@@ -347,8 +372,9 @@ export function drawDeathBurst(g: Graphics, burst: DeathBurst, now: number, scal
   }
 
   if (pose.alpha > 0) {
-    g.fillStyle(look.body, clamp(pose.alpha * 0.85 * intensity));
-    fillFan(g, x, y, radius * pose.scaleX, radius * pose.scaleY, 8);
+    // Kul: govde koyulasarak soner (yanmis); diger bicimler govdenin rengi.
+    g.fillStyle(ash ? darken(look.body, 0.55) : look.body, clamp(pose.alpha * 0.85 * intensity));
+    fillFan(g, x, y, radius * pose.scaleX * pinch, radius * pose.scaleY * pinch, 8);
   }
   if (pose.flash > 0) {
     // Sert parlama: kucuk ve beyaz-sicak, govdenin ortasinda (1-3 kare).
@@ -371,11 +397,15 @@ export function drawDeathBurst(g: Graphics, burst: DeathBurst, now: number, scal
 
   // Parcalar ve kivilcimlar hareket: hareket azaltmada yok.
   if (burst.still) return;
+  // Cokuste parcalar ice cekilme bitince cikiyor.
+  const debrisElapsed = implode ? elapsed - burst.durationMs * IMPLODE_SPLIT : elapsed;
+  const directed = style === "shards" && burst.heading !== undefined && Number.isFinite(burst.heading);
   DEATH_DEBRIS.seed = seed * 13 + 1;
-  DEATH_DEBRIS.count = burst.shards;
-  DEATH_DEBRIS.speed = (heavy ? 95 : 80) * look.chunk * scale;
-  DEATH_DEBRIS.heading = undefined;
-  DEATH_DEBRIS.fan = 0;
+  // Kul: govde parcalanmiyor, dagiliyor -- parca yarisi.
+  DEATH_DEBRIS.count = ash ? Math.max(2, Math.ceil(burst.shards / 2)) : burst.shards;
+  DEATH_DEBRIS.speed = (heavy ? 95 : 80) * look.chunk * scale * (directed ? 1.25 : implode ? 1.15 : 1);
+  DEATH_DEBRIS.heading = directed ? burst.heading : undefined;
+  DEATH_DEBRIS.fan = directed ? 1.7 : 0;
   DEATH_DEBRIS.gravity = 320 * scale;
   DEATH_DEBRIS.lifeMs = heavy ? 620 : 520;
   DEATH_DEBRIS.color = material === "chitin" ? darken(accent, 0.7) : look.debris;
@@ -384,9 +414,24 @@ export function drawDeathBurst(g: Graphics, burst: DeathBurst, now: number, scal
   DEATH_DEBRIS.alpha = 0.95 * intensity;
   DEATH_DEBRIS.floor = burst.air ? 0 : radius * 0.7;
   // Yere inen parca zemin yuzeyinde (dusmanlarin altinda).
-  drawDebris(g, x, y, elapsed, DEATH_DEBRIS, ground);
+  if (debrisElapsed >= 0) drawDebris(g, x, y, debrisElapsed, DEATH_DEBRIS, ground);
 
   if (!sparks) return;
+  if (ash) {
+    // Kul: malzemeden bagimsiz yukselen korlar (isinin ve enerjinin izi).
+    DEATH_ASH.seed = seed * 17 + 9;
+    DEATH_ASH.count = heavy ? 7 : 5;
+    DEATH_ASH.speed = 30 * scale;
+    DEATH_ASH.heading = -Math.PI / 2;
+    DEATH_ASH.fan = 2.4;
+    DEATH_ASH.gravity = -26 * scale;
+    DEATH_ASH.lifeMs = DEATH_ASH_MS;
+    DEATH_ASH.hue = EMBER;
+    DEATH_ASH.width = Math.max(0.7, 1.2 * scale);
+    DEATH_ASH.alpha = 0.9 * intensity;
+    DEATH_ASH.streak = 0.02;
+    drawBallisticSparks(g, x, y - radius * 0.2, elapsed, DEATH_ASH);
+  }
   if (look.sparks === "sparks" || look.sparks === "embers") {
     const embers = look.sparks === "embers";
     DEATH_SPARKS.seed = seed * 11 + 5;

@@ -28,7 +28,9 @@ const samples = await importWebModule("apps/web/src/sfx-samples.ts");
 const hit = await importWebModule("apps/web/src/hit-sounds.ts");
 const director = await importWebModule("apps/web/src/feedback-director.ts");
 const profiles = await importWebModule("apps/web/src/vfx/vfx-profiles.ts");
-const { RECIPES, SFX_BUDGET, MAX_HIT_SECONDS, MAX_PORTAL_SECONDS, MAX_SMALL_SWELL_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MIN_MID_BAND_DB } = await import("../tools/build-sfx.mjs");
+const { RECIPES, SFX_BUDGET, MAX_HIT_SECONDS, MAX_PORTAL_SECONDS, MAX_SMALL_SWELL_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MAX_FIRE_SECONDS, MIN_MID_BAND_DB } = await import("../tools/build-sfx.mjs");
+const feel = await importWebModule("apps/web/src/vfx/weapon-feel.ts");
+const fire = await importWebModule("apps/web/src/fire-sounds.ts");
 const portal = await import("../tools/sfx-portal.mjs");
 const { towerCatalog, FEEDBACK_KIND_RULES, FEEDBACK_LIMITS, FeedbackGovernor } = await import("../packages/shared/dist/index.js");
 
@@ -106,6 +108,11 @@ class FakeContext {
     const node = new FakeSource(this, "bufferSource");
     node.buffer = null;
     node.playbackRate = new FakeParam(1);
+    return node;
+  }
+  createStereoPanner() {
+    const node = new FakeNode(this, "panner");
+    node.pan = new FakeParam(0);
     return node;
   }
   createDynamicsCompressor() {
@@ -610,7 +617,7 @@ test("manifestteki her dosya diskte, sure ve boyut butcesinin altinda; lisans ya
     assert.equal(bytes, entry.bytes, `${entry.file} manifestle ayni boyutta degil (yeniden uretin)`);
     const kill = entry.kill !== undefined;
     assert.ok(bytes <= (kill ? SFX_BUDGET.killBytes : SFX_BUDGET.hitBytes), `${entry.file} ${bytes} bayt`);
-    const limit = kill ? MAX_PORTAL_SECONDS[entry.size] : entry.tick ? MAX_TICK_SECONDS : entry.cue ? MAX_CUE_SECONDS : MAX_HIT_SECONDS;
+    const limit = kill ? MAX_PORTAL_SECONDS[entry.size] : entry.tick ? MAX_TICK_SECONDS : entry.cue ? MAX_CUE_SECONDS : entry.fire ? MAX_FIRE_SECONDS : MAX_HIT_SECONDS;
     assert.ok(entry.durationMs / 1000 <= limit + 0.005, `${entry.file} ${entry.durationMs} ms`);
     assert.ok(entry.midBandDb >= MIN_MID_BAND_DB, `${entry.file} telefon bandinda enerji yok (${entry.midBandDb} dB)`);
     assert.ok(entry.peakDb <= -0.5, `${entry.file} tepe ${entry.peakDb} dBFS`);
@@ -1147,4 +1154,85 @@ test("oyun ve galeri baglantisi: oldurme ailesi dusmandan, kaydirici onizlemesi,
   const gallery = read("apps/web/src/scenes/VfxGalleryScene.ts");
   assert.ok(gallery.includes("GALLERY_KILL_CUES"), "secicide oldurme portal sesleri");
   assert.ok(gallery.includes("previewKill("), "Sv dugmeleri oldurme sesini caliyor");
+});
+
+/* ------------------------------------------------------------------ */
+/* Atis sesleri (vfx/weapon-feel.ts)                                    */
+/* ------------------------------------------------------------------ */
+
+test("atis aileleri: her biri iki cesit, kisa, vuruslarin altinda; tablodaki her atis sesi bir aileye", () => {
+  const minHitPeak = Math.min(...hit.HIT_VOICE_IDS.filter((voice) => !["focus", "aura", "contamination", "curse"].includes(voice)).map((voice) => effectivePeak(voice)));
+  for (const voice of feel.FIRE_VOICE_IDS) {
+    const family = samples.SAMPLE_FAMILIES[voice];
+    assert.ok(family && family.files.length >= 2, `${voice} en az iki cesit`);
+    for (const file of family.files) {
+      const entry = manifestByFile.get(file);
+      assert.equal(entry.fire, true, `${file} atis isaretli`);
+      assert.ok(entry.durationMs / 1000 <= MAX_FIRE_SECONDS + 0.005, `${file} ${entry.durationMs} ms`);
+    }
+    const peak = effectivePeak(voice);
+    assert.ok(peak >= 0.06 && peak <= 0.22, `${voice} etkin tepe ${peak.toFixed(3)}`);
+    assert.ok(peak < minHitPeak + 0.06, `${voice} vuruslarin onune gecmemeli`);
+  }
+  for (const [id, entry] of Object.entries(feel.WEAPON_FEELS)) {
+    if (entry.fire) assert.ok(samples.SAMPLE_FAMILIES[entry.fire], `${id}: ${entry.fire} ailesi yok`);
+  }
+});
+
+test("atis sesi: vurus kanalinda, ailesinden bir ornek; arkadasinki kisik; sag-sol yeri; ayni aile 55 ms'de bir", async () => {
+  advance();
+  const { instance, context } = await makeDirector();
+  const before = sources(context).length;
+  assert.equal(instance.playFire("fireHeavy", 1, true, "s1", 0.4), true);
+  const played = sources(context).slice(before);
+  assert.equal(played.length, 1);
+  assert.equal(familyOf(played[0].buffer.file), "fireHeavy");
+  const gain = played[0].connections[0];
+  assert.ok(Math.abs(gain.gain.value - samples.SAMPLE_FAMILIES.fireHeavy.gain) < 1e-9, "kendi atisin tam seviyede");
+  const panner = gain.connections[0];
+  assert.equal(panner.kind, "panner");
+  assert.ok(Math.abs(panner.pan.value - 0.4) < 1e-9);
+  assert.equal(instance.playFire("fireHeavy", 1, true, "s2"), false, "ayni aile 55 ms icinde dusuyor");
+  advance(100);
+  assert.equal(instance.playFire("fireLight", 3, false, "t1"), true);
+  const mate = sources(context).at(-1).connections[0];
+  const shape = fire.getFireTier(3);
+  assert.ok(Math.abs(mate.gain.value - samples.SAMPLE_FAMILIES.fireLight.gain * shape.gain * fire.FIRE_SOUND_LIMITS.teammateGain) < 1e-9, "arkadasin atisi x0.3");
+  assert.notEqual(mate.connections[0].kind, "panner", "ortadaki ses panner'siz");
+  instance.setHitVolume(0);
+  advance(1000);
+  assert.equal(instance.playFire("fireLance", 1, true, "m"), false, "vurus kanali kapaliysa atis da sessiz");
+  instance.destroy();
+});
+
+test("vurus sesi de sag-sol yeriyle; yer verilmezse eskisi gibi dogrudan otobuse", async () => {
+  advance();
+  const { instance, context } = await makeDirector();
+  const before = sources(context).length;
+  assert.equal(instance.playHit("impact", 1, true, "p1", false, -0.5), true);
+  const gain = sources(context)[before].connections[0];
+  assert.equal(gain.connections[0].kind, "panner");
+  assert.ok(Math.abs(gain.connections[0].pan.value + 0.5) < 1e-9);
+  advance(500);
+  assert.equal(instance.playHit("projectile", 1, true, "p2"), true);
+  assert.notEqual(sources(context).at(-1).connections[0].connections[0].kind, "panner");
+  instance.destroy();
+});
+
+test("atis butcesi: en fazla 4 ses, arkadas 1; aile araligi kendi 55, arkadas 140 ms", () => {
+  const governor = new fire.FireSoundGovernor();
+  let now = 0;
+  assert.equal(governor.admit("fireLight", false, 80, now), true);
+  assert.equal(governor.admit("fireHeavy", false, 80, now), false, "arkadasin ikinci sesi yok");
+  assert.equal(governor.admit("fireHeavy", true, 80, now), true);
+  assert.equal(governor.admit("fireBolt", true, 80, now), true);
+  assert.equal(governor.admit("fireLance", true, 80, now), true);
+  assert.equal(governor.admit("fireHoming", true, 80, now), false, "dort yuva dolu");
+  now = 60;
+  assert.equal(governor.admit("fireHeavy", true, 80, now), false, "yuvalar hala dolu");
+  now = 200;
+  assert.equal(governor.admit("fireHeavy", true, 80, now), true);
+  assert.equal(governor.admit("fireLight", false, 80, now), true, "arkadasin araligi doldu");
+  now = 250;
+  assert.equal(governor.admit("fireLight", false, 10, now), false, "arkadas 140 ms");
 });

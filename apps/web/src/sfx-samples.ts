@@ -26,6 +26,7 @@
  */
 import { isHeavyEnemyType, type EnemyType } from "@karayel/shared";
 import type { HitVoiceId } from "./hit-sounds";
+import type { FireVoiceId } from "./vfx/weapon-feel";
 import { fnvUnit, toTier } from "./vfx/kit";
 import { assetUrl } from "./asset-url";
 
@@ -39,7 +40,7 @@ export type KillSoundFamily = "portalSmall" | "portalNormal" | "portalLarge";
  * Efektler kanalindan caliyor (yeni dosya yok).
  */
 export type SfxSampleFamily = KillSoundFamily | "crit" | "execute" | "ball";
-export type SampleFamilyId = HitVoiceId | SfxSampleFamily | "heft";
+export type SampleFamilyId = HitVoiceId | SfxSampleFamily | FireVoiceId | "heft";
 
 /** Dosyalarin sunuldugu yer (vite `public/`). */
 export const SFX_SAMPLE_BASE_URL = assetUrl("audio/sfx/");
@@ -104,6 +105,15 @@ export const SAMPLE_FAMILIES: Readonly<Record<SampleFamilyId, SampleFamily>> = O
   // Execute infazi: hafif metalin kilit tiki + agir yumruk darbesi (Kenney).
   // Etkin tepe ~0.22-0.26: eski agir oldurme govdesinin seviyesi.
   execute: family("execute", 2, 0.34, "Execute infazı"),
+  // Atis sesleri (vfx/weapon-feel.ts): namlunun kisa vurusu, vuruslardan kisik.
+  // Etkin tepe 0.06-0.2: atis vurusun onunde degil, altinda; kulenin kutlesi
+  // seviyeden de okunuyor (topcu en yuksek, seri atan en kisik).
+  fireLight: family("fire-light", 2, 0.16, "Atış: hafif"),
+  fireHeavy: family("fire-heavy", 2, 0.27, "Atış: topçu"),
+  fireHoming: family("fire-homing", 2, 0.19, "Atış: güdüm"),
+  fireCollapse: family("fire-collapse", 2, 0.26, "Atış: çöküş"),
+  fireBolt: family("fire-bolt", 2, 0.17, "Atış: elektrik"),
+  fireLance: family("fire-lance", 2, 0.2, "Atış: mızrak"),
   // Oldurme portali. Dosyalar -20 LUFS; kazanc eski govde + olum sesi
   // karisiminin algilanan seviyesine gore (100 ms'lik pencerede en yuksek
   // K-agirlikli RMS ve 400 ms'lik anlik yukseklik, ikisi de olculdu): eski

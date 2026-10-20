@@ -32,6 +32,8 @@ import {
   type SfxSampleFamily
 } from "./sfx-samples";
 import { fnvUnit } from "./vfx/kit";
+import { FireSoundGovernor, FIRE_SOUND_LIMITS, getFireTier } from "./fire-sounds";
+import type { FireVoiceId } from "./vfx/weapon-feel";
 
 export type { FeedbackDecision, FeedbackInput, FeedbackKind, FeedbackPriority } from "@karayel/shared";
 
@@ -360,6 +362,7 @@ export class FeedbackDirector {
   private hitBus?: GainNode;
   private noiseBuffer?: AudioBuffer;
   private readonly hitGovernor = new HitSoundGovernor();
+  private readonly fireGovernor = new FireSoundGovernor();
   private readonly hitSlots: HitVoiceHandle[] = [];
   /** Kaldirilan (sonen) vurus seslerinin dugumleri; ayrilmayi bekliyor. */
   private readonly hitGraveyard: HitVoiceHandle[] = [];
@@ -662,7 +665,7 @@ export class FeedbackDirector {
    * `HitSoundGovernor` tutuyor; dolu butcede takim arkadasinin sesi kisilip
    * yer aciliyor ya da gelen ses dusuyor.
    */
-  playHit(voice: HitVoiceId, tier: number | undefined, own: boolean, key?: string, tick = false) {
+  playHit(voice: HitVoiceId, tier: number | undefined, own: boolean, key?: string, tick = false, pan = 0, rate = 1) {
     if (this.hitVolume <= 0 || this.sfxVolume <= 0) {
       return false;
     }
@@ -697,7 +700,7 @@ export class FeedbackDirector {
 
     const now = context.currentTime;
     this.sweepHitVoices(now);
-    this.synthesizeHit(context, this.hitSlots[slot], voice, tier, own, key, this.hitGovernor.stole);
+    this.synthesizeHit(context, this.hitSlots[slot], voice, tier, own, key, this.hitGovernor.stole, pan, rate);
     return true;
   }
 
@@ -738,7 +741,7 @@ export class FeedbackDirector {
    * saati; iOS askidan donunce ayrisiyor) once sonduruluyor -- kesilen ses tik
    * yapar. Bitmisse dugumleri hemen ayriliyor.
    */
-  private synthesizeHit(context: AudioContext, handle: HitVoiceHandle, voice: HitVoiceId, tier: number | undefined, own: boolean, key: string | undefined, stole: boolean) {
+  private synthesizeHit(context: AudioContext, handle: HitVoiceHandle, voice: HitVoiceId, tier: number | undefined, own: boolean, key: string | undefined, stole: boolean, pan = 0, rate = 1) {
     const now = context.currentTime;
     if (handle.gain) {
       if (stole || handle.endsAt > now) {
@@ -750,7 +753,7 @@ export class FeedbackDirector {
 
     const buffer = this.samples.pick(voice, key);
     if (buffer) {
-      return this.playHitSample(context, handle, voice, buffer, tier, own, key, now);
+      return this.playHitSample(context, handle, voice, buffer, tier, own, key, now, pan, rate);
     }
 
     const recipe = getHitVoiceRecipe(voice, tier);
@@ -758,7 +761,7 @@ export class FeedbackDirector {
     const noiseOffset = key ? fnvUnit(key, 0x9e) * (HIT_NOISE_SECONDS - 0.3) : 0;
     const voiceGain = context.createGain();
     voiceGain.gain.value = own ? 1 : HIT_SOUND_LIMITS.teammateGain;
-    voiceGain.connect(this.getHitBus(context));
+    this.connectPanned(context, voiceGain, this.getHitBus(context), pan, handle.nodes);
     handle.gain = voiceGain;
     let endsAt = now;
     for (const layer of recipe) {
@@ -813,12 +816,12 @@ export class FeedbackDirector {
    * (takim arkadasi kisik); hiz olay kimliginden +-4%, kademede biraz yavas.
    * Ornekler zaten sonumlu kesildi, zarf dugumu yok.
    */
-  private playHitSample(context: AudioContext, handle: HitVoiceHandle, voice: HitVoiceId, buffer: AudioBuffer, tier: number | undefined, own: boolean, key: string | undefined, now: number) {
+  private playHitSample(context: AudioContext, handle: HitVoiceHandle, voice: HitVoiceId, buffer: AudioBuffer, tier: number | undefined, own: boolean, key: string | undefined, now: number, pan = 0, rateScale = 1) {
     const shape = getSampleTier(tier);
-    const rate = getSampleRateJitter(key) * shape.rate;
+    const rate = getSampleRateJitter(key) * shape.rate * (rateScale > 0 ? rateScale : 1);
     const voiceGain = context.createGain();
     voiceGain.gain.value = SAMPLE_FAMILIES[voice].gain * shape.gain * (own ? 1 : HIT_SOUND_LIMITS.teammateGain);
-    voiceGain.connect(this.getHitBus(context));
+    this.connectPanned(context, voiceGain, this.getHitBus(context), pan, handle.nodes);
     handle.gain = voiceGain;
     let endsAt = now + this.startHitSource(context, handle, buffer, rate, voiceGain, now);
     if (shape.heft) {
@@ -857,6 +860,76 @@ export class FeedbackDirector {
       }
     };
     return handle;
+  }
+
+  /**
+   * Kulenin atis sesi: namlunun kisa vurusu (vfx/weapon-feel.ts).
+   *
+   * Vurus kanalinda (kaydirici "Vuruş sesleri" onu da kisiyor); kendi
+   * butcesiyle (`FireSoundGovernor`), vuruslarin yuvalarina dokunmadan.
+   * Sentez yedegi yok: ornek yoksa ya da cozuluyorsa atis sessiz. `pan`
+   * sesin sag-sol yeri (-1..1), ekrandaki konumdan.
+   */
+  playFire(voice: FireVoiceId, tier: number | undefined, own: boolean, key?: string, pan = 0, gainScale = 1) {
+    if (this.hitVolume <= 0 || this.sfxVolume <= 0 || !(gainScale > 0)) {
+      return false;
+    }
+    const context = this.context;
+    if (!context || context.state !== "running") {
+      return false;
+    }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return false;
+    }
+    if (!this.samples.has(voice)) {
+      return false;
+    }
+    const shape = getFireTier(tier);
+    const rate = getSampleRateJitter(key) * shape.rate;
+    const seconds = this.samples.duration(voice) / (shape.rate * (1 - SAMPLE_RATE_SPREAD));
+    if (!this.fireGovernor.admit(voice, own, seconds * 1000, performance.now())) {
+      return false;
+    }
+    const buffer = this.samples.pick(voice, key);
+    if (!buffer) {
+      return false;
+    }
+    const voiceGain = context.createGain();
+    voiceGain.gain.value = SAMPLE_FAMILIES[voice].gain * shape.gain * gainScale * (own ? 1 : FIRE_SOUND_LIMITS.teammateGain);
+    const nodes: AudioNode[] = [];
+    this.connectPanned(context, voiceGain, this.getHitBus(context), pan, nodes);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    source.connect(voiceGain);
+    source.onended = () => {
+      try {
+        source.disconnect();
+        voiceGain.disconnect();
+        for (const node of nodes) node.disconnect();
+      } catch {
+        // Ayrilmis dugum; zarari yok.
+      }
+    };
+    source.start(context.currentTime, this.samples.lead(buffer));
+    return true;
+  }
+
+  /**
+   * Sesi otobuse bagla; `pan` sifir degilse arada bir StereoPannerNode
+   * (eski tarayicida yoksa dogrudan). Panner `nodes`a ekleniyor: yuva
+   * birakilinca onu da ayiriyor.
+   */
+  private connectPanned(context: AudioContext, node: AudioNode, bus: AudioNode, pan: number, nodes: AudioNode[]) {
+    if (pan !== 0 && Number.isFinite(pan) && typeof context.createStereoPanner === "function") {
+      const panner = context.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, pan));
+      node.connect(panner);
+      panner.connect(bus);
+      nodes.push(panner);
+      return;
+    }
+    node.connect(bus);
   }
 
   setVibration(on: boolean) {
@@ -1008,6 +1081,7 @@ export class FeedbackDirector {
     for (const handle of this.hitGraveyard) this.releaseHitVoice(handle);
     this.releaseHitVoice(this.previewHandle);
     this.hitGovernor.reset();
+    this.fireGovernor.reset();
     this.hitBus = undefined;
     this.noiseBuffer = undefined;
     this.pendingSfx = undefined;

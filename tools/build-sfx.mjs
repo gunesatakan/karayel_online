@@ -70,6 +70,11 @@ const MAX_TICK_SECONDS = 0.12;
  * kendi sectigi seyrek bir an; kilit tiki + agir darbe sigsin, uzamasin.
  */
 const MAX_CUE_SECONDS = 0.4;
+/**
+ * Atis seslerinin (`fire`) en uzun suresi: namlunun kisa vurusu. Hizli atan
+ * kulelerde (Takipci) bir sonraki atisa tasmasin; vurus sesinden kisa.
+ */
+const MAX_FIRE_SECONDS = 0.17;
 /** Dosya basina ve toplam boyut butcesi (bayt); testler de ayni sayilari okuyor. */
 export const SFX_BUDGET = { hitBytes: 8 * 1024, killBytes: 12 * 1024, totalBytes: 400 * 1024 };
 /** 500 Hz - 5 kHz bandinin toplam enerjiye gore en az payi (dB). */
@@ -129,6 +134,26 @@ const RECIPES = [
   // yavaslatilmis. Parilti ya da nota yok; kisa ve sert.
   { family: "execute", id: "execute-1", src: "impact/impactPunch_heavy_000", delay: 50, layers: [{ src: "impact/impactMetal_light_001", gain: -9 }], dur: 0.32, rate: 0.9, hp: 140, eq: [[1500, 4]], fadeOut: 0.14, cue: true },
   { family: "execute", id: "execute-2", src: "impact/impactPunch_heavy_001", delay: 50, layers: [{ src: "impact/impactMetal_light_003", gain: -9 }], dur: 0.32, rate: 0.9, hp: 140, eq: [[1500, 4]], fadeOut: 0.14, cue: true },
+  // ---- Atis: namlunun sesi (vfx/weapon-feel.ts). Vurus seslerinden kisa ve
+  // kisik; kulenin kutlesini soyluyor. Kaynaklar vurus ailelerinden ayri.
+  // Hafif (Takipci): patlama kaydinin ilk kuru catirtisi, hizlandirilmis.
+  { family: "fireLight", id: "fire-light-1", src: "scifi/explosionCrunch_000", dur: 0.07, rate: 1.3, hp: 450, eq: [[2600, 3]], fadeOut: 0.045, fire: true },
+  { family: "fireLight", id: "fire-light-2", src: "scifi/explosionCrunch_002", dur: 0.07, rate: 1.3, hp: 450, eq: [[2600, 3]], fadeOut: 0.045, fire: true },
+  // Agir (Sunucu, topcu): yavaslatilmis patlama catlamasi + alcak patlamanin govdesi.
+  { family: "fireHeavy", id: "fire-heavy-1", src: "scifi/explosionCrunch_001", layers: [{ src: "scifi/lowFrequency_explosion_001", gain: -2 }], dur: 0.17, rate: 0.72, hp: 120, eq: [[1100, 5]], fadeOut: 0.1, fire: true },
+  { family: "fireHeavy", id: "fire-heavy-2", src: "scifi/explosionCrunch_003", layers: [{ src: "scifi/lowFrequency_explosion_000", at: 0.12, gain: -3 }], dur: 0.17, rate: 0.72, hp: 120, eq: [[1100, 5]], fadeOut: 0.1, fire: true },
+  // Gudum (Izolasyon): firlatma tiki + iticinin kisa nefesi.
+  { family: "fireHoming", id: "fire-homing-1", src: "impact/impactGeneric_light_000", layers: [{ src: "scifi/thrusterFire_000", at: 1, gain: -7 }], dur: 0.13, rate: 0.9, hp: 300, lp: 7000, fadeOut: 0.08, fire: true },
+  { family: "fireHoming", id: "fire-homing-2", src: "impact/impactMetal_light_004", layers: [{ src: "scifi/thrusterFire_002", at: 1, gain: -7 }], dur: 0.13, rate: 0.85, hp: 300, lp: 7000, fadeOut: 0.08, fire: true },
+  // Cokus (Obsesyon): kucuk lazerin cok yavaslatilmis, koyu cekisi.
+  { family: "fireCollapse", id: "fire-collapse-1", src: "scifi/laserSmall_001", dur: 0.14, rate: 0.6, hp: 200, lp: 3800, fadeOut: 0.08, fire: true },
+  { family: "fireCollapse", id: "fire-collapse-2", src: "scifi/laserSmall_002", dur: 0.14, rate: 0.6, hp: 200, lp: 3800, fadeOut: 0.08, fire: true },
+  // Elektrik (Ucube): ezilmis kisa catirti.
+  { family: "fireBolt", id: "fire-bolt-1", src: "scifi/explosionCrunch_004", at: 0.03, dur: 0.09, rate: 1.4, hp: 500, crush: true, fadeOut: 0.05, fire: true },
+  { family: "fireBolt", id: "fire-bolt-2", src: "scifi/laserSmall_004", dur: 0.09, rate: 1.2, hp: 500, crush: true, fadeOut: 0.05, fire: true },
+  // Mizrak (Hiza, Taht): buyuk lazerin parlak, kuru "sink"i; tizi yumusatilmis.
+  { family: "fireLance", id: "fire-lance-1", src: "scifi/laserLarge_002", dur: 0.12, rate: 1.15, hp: 600, lp: 9000, eq: [[3000, 5]], fadeOut: 0.07, fire: true },
+  { family: "fireLance", id: "fire-lance-2", src: "scifi/laserLarge_003", dur: 0.12, rate: 1.15, hp: 600, lp: 9000, eq: [[3000, 5]], fadeOut: 0.07, fire: true },
   // ---- Oldurme: portal (tools/sfx-portal.mjs). Boy basina bir aile, iki
   // cesit: A "rift whoosh" ve D "pulse thrum"; istemci ikisini sirayla caliyor.
   // small: siradan ve ucan dusman, normal: agir (kaba, kusatma), large: sampiyon.
@@ -159,7 +184,7 @@ geldigi manifest.json'da):
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/sci-fi-sounds
 
-Vurus, kritik ve beceri (Execute infazi) sesleri bu iki paketten kesildi.
+Vurus, atis, kritik ve beceri (Execute infazi) sesleri bu iki paketten kesildi.
 
 Dusman oldurme sesleri ("portal"; death-portal-*.mp3) bu iki paketin su
 dosyalarinin katmanli karisimi (impact/ = Impact Sounds, scifi/ = Sci-Fi
@@ -415,10 +440,11 @@ function build() {
       ]);
 
       // 5: denetim.
-      const limit = recipe.tick ? MAX_TICK_SECONDS : recipe.cue ? MAX_CUE_SECONDS : MAX_HIT_SECONDS;
+      const limit = recipe.tick ? MAX_TICK_SECONDS : recipe.cue ? MAX_CUE_SECONDS : recipe.fire ? MAX_FIRE_SECONDS : MAX_HIT_SECONDS;
       files.push(audit(ffmpeg, recipe, output, length, limit, problems, {
         ...(recipe.tick ? { tick: true } : {}),
         ...(recipe.cue ? { cue: true } : {}),
+        ...(recipe.fire ? { fire: true } : {}),
         source: sourceName(packs, recipe.src),
         ...(recipe.layers ? { layers: recipe.layers.map((part) => sourceName(packs, part.src)) } : {})
       }));
@@ -454,4 +480,4 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 }
 
 // Testler tarifleri okuyabilsin diye (dosyayi calistirmadan).
-export { RECIPES, MAX_HIT_SECONDS, MAX_PORTAL_SECONDS, MAX_SMALL_SWELL_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MIN_MID_BAND_DB };
+export { RECIPES, MAX_HIT_SECONDS, MAX_PORTAL_SECONDS, MAX_SMALL_SWELL_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MAX_FIRE_SECONDS, MIN_MID_BAND_DB };

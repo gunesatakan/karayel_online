@@ -133,10 +133,7 @@ export type VfxTierRecipe = {
     pinpoint: boolean;
     durationMs: number;
   };
-  /** Yonetilen mikro sarsinti (yalnizca agir tek vurus, yerel oyuncu). */
-  shake: boolean;
-  /** Dusmanin kozmetik itilmesi (piksel); 0 yok. */
-  knock: number;
+  // Itme, duraklama, ezilme ve sarsinti silahin hissinde (`weapon-feel.ts`).
 };
 
 /** Kulenin mekanigini gosteren dunya ici isaret (Atakan). */
@@ -289,10 +286,7 @@ function makeTiers(
         shockRing: index === 2 && (heavy || aoe),
         pinpoint: index === 2,
         durationMs: 340 + index * 50
-      },
-      shake: index === 2 && heavy,
-      // Yalnizca agir tek vurus (Sunucu, Jackpot, Omer): hizli atan kuleler dusmani titretmesin.
-      knock: heavy && index >= 1 ? index : 0
+      }
     };
   };
   return [recipe(0), recipe(1), recipe(2)];

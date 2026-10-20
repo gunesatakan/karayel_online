@@ -56,6 +56,7 @@ import {
 import type { FlashSink, GlowStampSink } from "./flash-pool";
 import { VfxLod } from "./lod";
 import { getVfxProfile, getVfxTier, type VfxProfile, type VfxTierRecipe } from "./vfx-profiles";
+import { getFeelTierIndex, getWeaponFeel, type DeathStyle } from "./weapon-feel";
 import { COURT_FLASH_GAP_MS, LANCE_OPTIONS, drawDecreeTick, drawZeynepLance, getLanceMode, getZeynepBodyColor } from "./zeynep-signatures";
 import { TAHT_DUAL_LANCE_GOLD } from "./taht-tiers";
 import { PROJECTILE_VISUAL_SCALE } from "../visual-scale";
@@ -70,8 +71,11 @@ export const MUZZLE_MS = 90;
 export const HARD_FLASH_MS = 50;
 /** Yanik izinin omru. */
 export const IMPACT_DECAL_MS = 900;
+/** Isin temasinin omru (kivilcim) ve lazerin kucuk yanik izi. */
+export const BEAM_HIT_MS = 180;
+export const BEAM_SCORCH_MS = 600;
 
-type AttackEventKind = "muzzle" | "anticipation" | "impact";
+type AttackEventKind = "muzzle" | "anticipation" | "impact" | "beamHit";
 
 type AttackEvent = {
   kind: AttackEventKind;
@@ -122,13 +126,22 @@ export type AttackVfxOptions = {
   lod: VfxLod;
   /** Hareket azaltma: donme, sacilma ve titreme yok; sekil yerinde soner. */
   reducedMotion?: () => boolean;
-  /** Agir tek vurus (yalnizca yerel, kademe 3): yonetilen mikro sarsinti. */
-  onHeavyImpact?: (x: number, y: number) => void;
   /**
-   * Kozmetik itme (yalnizca yerel oyuncunun agir ya da kinetik kademe 2+
-   * vurusu; hareket azaltmada hic): vurulan dusman `px` piksel, vurus yonunde.
+   * Kendi agir vurusun (silahin hissi, `weapon-feel`): yonetilen mikro
+   * sarsinti, `px` kadar. Aralik ve ust sinir yonetmende; hareket azaltmada yok.
+   */
+  onHeavyImpact?: (x: number, y: number, px: number) => void;
+  /**
+   * Kozmetik itme (yalnizca kendi vurusun, silahin kutlesi kadar; hareket
+   * azaltmada hic): vurulan dusman `px` piksel, vurus yonunde.
    */
   onKnock?: (x: number, y: number, angle: number, px: number, enemyId?: string) => void;
+  /**
+   * Vurusun dusmana etkisi (her carpmada, takim arkadasininki dahil): sahne
+   * olumun bicimi icin son vuran silahi kaydediyor; kendi vurusunda ve
+   * hareket azaltma kapaliyken duraklama, ezilme ve titreme uyguluyor.
+   */
+  onEnemyHit?: (hit: EnemyHitFeel) => void;
   /**
    * Mermilerin isisi icin tek dortgenlik ADD damgalar. Verilmezse ayni sey
    * `glow` Graphics'ine tek daireyle ciziliyor (testler ve yedek).
@@ -136,6 +149,22 @@ export type AttackVfxOptions = {
   stamps?: GlowStampSink;
   /** Yanik izlerinin yuzeyi (dusmanlarin altinda); yoksa iz cizilmiyor. */
   ground?: VfxGraphics & { clear(): unknown };
+};
+
+/** Carpmanin dusmana etkisi; olay basina yeniden kullanilan tek nesne. */
+export type EnemyHitFeel = {
+  x: number;
+  y: number;
+  angle: number;
+  enemyId?: string;
+  own: boolean;
+  /** Hareket azaltma ya da yalnizca kayit: hareket yok. */
+  still: boolean;
+  hitStopMs: number;
+  /** Ezilme orani (0 yok). */
+  squash: number;
+  shiverPx: number;
+  death: DeathStyle;
 };
 
 /**
@@ -170,6 +199,8 @@ export function findHomingMuzzleOrigin<T extends { definitionId: string; x: numb
 }
 
 const NO_FLASHES: FlashSink = { flash() {} };
+/** Carpmanin dusmana etkisi: olay basina yerinde yaziliyor (nesne yok). */
+const ENEMY_HIT: EnemyHitFeel = { x: 0, y: 0, angle: 0, own: true, still: false, hitStopMs: 0, squash: 0, shiverPx: 0, death: "shards" };
 
 /**
  * Tek karelik beyaz igne ucunun genel siniri: saniyede en fazla 3 (isiga
@@ -524,12 +555,75 @@ export class AttackVfx {
       this.lastPinpointAt = input.bornAt;
       this.flashes.flash({ x: input.x, y: input.y, texture: "glow", tint: 0xffffff, alpha: extra, sizeFrom: 8, sizeTo: 8, durationMs: 34, bornAt: input.bornAt });
     }
-    if (recipe.shake && event.own && event.profile.heavy) {
-      this.options.onHeavyImpact?.(input.x, input.y);
+    this.applyFeel(input, event.profile, recipe.tier, event.own, still);
+  }
+
+  /**
+   * Silahin hissi (`weapon-feel`): kendi vurusunda sarsinti ve itme; her
+   * vurusta dusmana etkisi (sahne kendi kurallariyla uyguluyor). `scale` 0
+   * ise yalnizca kayit (lazerin surekli nabzi: hareket yok).
+   */
+  private applyFeel(input: AttackEventInput, profile: VfxProfile, tier: number, own: boolean, still: boolean, scale = 1) {
+    const feel = getWeaponFeel(profile.id);
+    const index = getFeelTierIndex(tier);
+    if (own && !still && scale > 0) {
+      const shake = feel.shake[index] * scale;
+      if (shake > 0) this.options.onHeavyImpact?.(input.x, input.y, shake);
+      const knock = feel.knock[index] * scale;
+      if (knock > 0) this.options.onKnock?.(input.x, input.y, input.angle, knock, input.enemyId);
     }
-    if (recipe.knock > 0 && event.own && !still) {
-      this.options.onKnock?.(input.x, input.y, input.angle, recipe.knock, input.enemyId);
+    const sink = this.options.onEnemyHit;
+    if (!sink) return;
+    const hit = ENEMY_HIT;
+    hit.x = input.x;
+    hit.y = input.y;
+    hit.angle = input.angle;
+    hit.enemyId = input.enemyId;
+    hit.own = own;
+    hit.still = still || scale <= 0;
+    hit.hitStopMs = feel.hitStopMs[index] * scale;
+    hit.squash = feel.squash * (0.6 + index * 0.2) * scale;
+    hit.shiverPx = feel.shiver[index] * scale;
+    hit.death = feel.death;
+    sink(hit);
+  }
+
+  /**
+   * Isinin dusmana degdigi yer (Debug Lazer nabzi, Gosteri ve Kin ucu): kisa
+   * sert parlama, kaynaga dogru geri sacilan birkac kivilcim ve isi; lazerde
+   * kucuk bir yanik izi. Isinlarin temas mesaji yok: nokta isinin ucu.
+   * `feelScale` hissin carpani (surekli lazer nabzinda 0: yalnizca kayit).
+   */
+  emitBeamContact(input: AttackEventInput, feelScale = 1) {
+    const event = this.push("beamHit", input, BEAM_HIT_MS);
+    if (!event) return;
+    const still = this.still;
+    const flash = (6 + event.tier * 2) * event.recipe.weight;
+    this.flashes.flash({
+      x: input.x,
+      y: input.y,
+      texture: "glow",
+      tint: whiteHot(event.body, 0.5),
+      alpha: event.own ? 0.85 : 0.6,
+      sizeFrom: flash,
+      sizeTo: still ? flash : flash * 0.7,
+      durationMs: HARD_FLASH_MS,
+      bornAt: input.bornAt
+    });
+    if (this.options.lod.smoke) {
+      this.flashes.flash({
+        x: input.x,
+        y: input.y,
+        texture: "glow",
+        tint: event.body,
+        alpha: 0.3,
+        sizeFrom: flash * 1.4,
+        sizeTo: flash * 1.4,
+        durationMs: 120,
+        bornAt: input.bornAt
+      });
     }
+    this.applyFeel(input, event.profile, event.recipe.tier, event.own, still, feelScale);
   }
 
   /** Sok halkasinin kare siniri (LOD 2'de dort, 3+'te iki); ayni kare = 1/60 sn. */
@@ -576,6 +670,7 @@ export class AttackVfx {
       }
       if (event.kind === "anticipation") this.drawAnticipation(g, event, elapsed / event.durationMs, scale, still);
       else if (event.kind === "muzzle") this.drawMuzzle(g, event, elapsed, scale, still);
+      else if (event.kind === "beamHit") this.drawBeamHit(g, event, elapsed, scale, still);
       else this.drawImpact(g, event, elapsed, scale, still);
     }
   }
@@ -610,7 +705,11 @@ export class AttackVfx {
     event.bornAt = input.bornAt;
     event.durationMs = durationOverride ?? (kind === "muzzle" ? MUZZLE_MS + recipe.tier * 10 : recipe.impact.durationMs);
     // Yer izi cizilecekse (zemin yuzeyi var, LOD izin veriyor) olay iz kadar yasiyor; yoksa ana cizim kadar.
-    event.lifeMs = kind === "impact" && recipe.impact.scorch && this.options.ground && this.options.lod.decals ? Math.max(event.durationMs, IMPACT_DECAL_MS) : event.durationMs;
+    event.lifeMs = kind === "impact" && recipe.impact.scorch && this.options.ground && this.options.lod.decals
+      ? Math.max(event.durationMs, IMPACT_DECAL_MS)
+      : kind === "beamHit" && profile.delivery === "laser" && this.options.ground && this.options.lod.decals
+        ? BEAM_SCORCH_MS
+        : event.durationMs;
     event.seed = input.key ? fnvHash(input.key) % 100003 : fnvHash(`${Math.round(input.x)}:${Math.round(input.y)}:${Math.round(input.bornAt)}`) % 100003;
     event.own = input.own ?? true;
     event.radius = input.radius ?? 0;
@@ -678,6 +777,37 @@ export class AttackVfx {
       SPARKS.alpha = 0.9 * (event.own ? 1 : TEAMMATE_EXTRA_ALPHA);
       drawBallisticSparks(g, event.x, event.y, elapsed, SPARKS);
     }
+  }
+
+  /** Isinin temasi: beyaz-sicak nokta, kaynaga geri sacilan kivilcim; lazerde yanik. */
+  private drawBeamHit(g: VfxGraphics, event: AttackEvent, elapsed: number, scale: number, still: boolean) {
+    const ground = this.options.ground;
+    const lod = this.options.lod;
+    const { x, y } = event;
+    if (ground && lod.decals && event.lifeMs > event.durationMs && elapsed < BEAM_SCORCH_MS) {
+      const rx = (2 + event.tier * 0.6) * scale;
+      drawScorch(ground, x, y + 1.5 * scale, elapsed / BEAM_SCORCH_MS, rx, rx * 0.5, SCORCH, 0.42, event.seed);
+    }
+    if (elapsed >= event.durationMs) return;
+    const hue = event.body;
+    const extra = event.own ? 1 : TEAMMATE_EXTRA_ALPHA;
+    if (elapsed < 50) {
+      g.fillStyle(liftToWhite(hue, 0.9), clamp01(1 - elapsed / 50));
+      fillDisc(g, x, y, (1.2 + event.tier * 0.5) * scale);
+    }
+    if (still || !lod.sparks) return;
+    SPARKS.seed = event.seed;
+    SPARKS.count = 2 + event.tier;
+    SPARKS.speed = (110 + event.tier * 25) * scale;
+    // Kivilcim kaynaga dogru geri sekiyor: isin govdeye carpip dagiliyor.
+    SPARKS.heading = event.angle + Math.PI;
+    SPARKS.fan = 1.3;
+    SPARKS.gravity = 380 * scale;
+    SPARKS.lifeMs = event.durationMs;
+    SPARKS.hue = hue;
+    SPARKS.width = Math.max(0.6, (0.75 + event.tier * 0.12) * scale);
+    SPARKS.alpha = 0.9 * extra;
+    drawBallisticSparks(g, x, y, elapsed, SPARKS);
   }
 
   private drawImpact(g: VfxGraphics, event: AttackEvent, elapsed: number, scale: number, still: boolean) {

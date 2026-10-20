@@ -25,7 +25,7 @@ Oyunun kendi kodunda üretilenler (üçüncü taraf kaynak yok):
 
 ### Ses efektleri
 
-Vuruş, kritik, infaz ve öldürme sesleri (`apps/web/public/audio/sfx/*.mp3`).
+Vuruş, kule atışı, kritik, infaz ve öldürme sesleri (`apps/web/public/audio/sfx/*.mp3`).
 Öldürme sesi bir "portal": yarık açılıp düşmanı yutuyor; Sci-Fi gürültü ve
 uğultu kayıtları ile Impact darbelerinin katmanlı karışımı
 (`tools/sfx-portal.mjs`). `tools/build-sfx.mjs` bu paketlerden kesiyor; dosya
@@ -254,7 +254,7 @@ manifest.
 
 **Third-party, known licence:**
 
-- Sound effects: Kenney "Impact Sounds" and "Sci-Fi Sounds" (hits, crits,
+- Sound effects: Kenney "Impact Sounds" and "Sci-Fi Sounds" (hits, tower shots, crits,
   the execute cue and the "portal" enemy death sound, layered from Sci-Fi noise
   and hum recordings and Impact thumps). Both CC0 1.0 (see `apps/web/public/audio/sfx/LICENSE.txt`).
 - Typefaces (loaded from Google Fonts): Cinzel (Natanael Gama), Rajdhani

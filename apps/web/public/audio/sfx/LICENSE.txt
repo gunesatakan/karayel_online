@@ -10,7 +10,7 @@ geldigi manifest.json'da):
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/sci-fi-sounds
 
-Vurus, kritik ve beceri (Execute infazi) sesleri bu iki paketten kesildi.
+Vurus, atis, kritik ve beceri (Execute infazi) sesleri bu iki paketten kesildi.
 
 Dusman oldurme sesleri ("portal"; death-portal-*.mp3) bu iki paketin su
 dosyalarinin katmanli karisimi (impact/ = Impact Sounds, scifi/ = Sci-Fi

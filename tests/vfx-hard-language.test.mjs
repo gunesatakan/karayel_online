@@ -196,7 +196,7 @@ test("hareket azaltmada çarpma yerinde: kıvılcım ve kırıntı yok, şekil z
   }
 });
 
-test("kozmetik itme yalnızca kendi ağır tek vuruşunda (kademe 2+), 1-2 px; hızlı atan kuleler titretmiyor; hareket azaltmada hiç", () => {
+test("kozmetik itme silahin kutlesinden (weapon-feel): agir cok, orta az, hafif hic; yalnizca kendi vurusun; hareket azaltmada hic", () => {
   const knocks = [];
   const make = (reducedMotion = false) => new AttackVfx(createRecorder(), createRecorder(), createRecorder(), undefined, {
     lod: lodAt(0),
@@ -204,21 +204,22 @@ test("kozmetik itme yalnızca kendi ağır tek vuruşunda (kademe 2+), 1-2 px; h
     onKnock: (x, y, angle, px) => knocks.push(px)
   });
   const vfx = make();
-  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "onur-3", tier: 1, own: true, bornAt: 0 });
-  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "onur-3", tier: 3, own: false, bornAt: 0 });
-  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-6", tier: 3, own: true, bornAt: 0 });
-  assert.deepEqual(knocks, [], "kademe 1, takim arkadasi ve enerji vurusu itmiyor");
-  // Hizli atan kinetik kuleler (Onur oklari, Melis kirigi, Hiza, Takipci) itmiyor.
-  for (const id of ["onur-3", "onur-5", "archer-2", "zeynep-1", "warrior-1"]) {
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 3, own: false, bornAt: 0 });
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "onur-2", tier: 1, own: true, bornAt: 0 });
+  assert.deepEqual(knocks, [], "takim arkadasi ve agirin kademe 1'i (eski agir) itmiyor");
+  // Hizli atan hafif kuleler (Takipci, Onur oklari, Melis kirigi) itmiyor.
+  for (const id of ["warrior-1", "onur-3", "onur-5", "archer-2"]) {
     vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: id, tier: 3, own: true, bornAt: 0 });
   }
-  assert.deepEqual(knocks, [], "hafif kinetik vurus itmiyor");
+  assert.deepEqual(knocks, [], "hafif vurus itmiyor");
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 2, own: true, bornAt: 0 });
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 3, own: true, bornAt: 0 });
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "zeynep-1", tier: 3, own: true, bornAt: 0 });
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-6", tier: 3, own: true, bornAt: 0 });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "onur-2", tier: 3, own: true, bornAt: 0 });
-  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "tank-1", tier: 3, own: true, bornAt: 0 });
-  assert.deepEqual(knocks, [1, 2, 2]);
-  make(true).emitImpact({ x: 0, y: 0, angle: 0, definitionId: "onur-2", tier: 3, own: true, bornAt: 0 });
-  assert.deepEqual(knocks, [1, 2, 2], "hareket azaltmada itme yok");
+  assert.deepEqual(knocks, [3, 4, 1.5, 1, 2], "Sunucu 3-4, Hiza 1.5, Ucube 1, Jackpot 2");
+  make(true).emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 3, own: true, bornAt: 0 });
+  assert.equal(knocks.length, 5, "hareket azaltmada itme yok");
 });
 
 /* ------------------------------------------------------------------ */
