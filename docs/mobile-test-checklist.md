@@ -19,7 +19,7 @@ Her maddenin sonuna ✅ / ❌ ve kısa bir not yaz. ❌ için cihaz modelini, ta
 
 ## 2. Ses
 
-- [ ] Menüde ilk dokunuştan sonra lobi müziği çalıyor (bekleme odasında da sürüyor); alt çubuktaki ♪ düğmesi onu kapatıp açıyor ve seçim yenilemede korunuyor. Maç başlayınca müzik kısa bir geçişle susuyor; maçta yalnızca efekt sesleri var. iOS'ta sessiz mod anahtarı kapalıyken dene.
+- [ ] Menüde ilk dokunuştan sonra lobi müziği çalıyor (bekleme odasında da sürüyor); alt çubuktaki ♪ düğmesi onu kapatıp açıyor ve seçim yenilemede korunuyor. Maç başlayınca müzik kısa bir geçişle susuyor. Dalga 4, 6, 9, 10, 14, 16 ve 18'in savaşında dalga müziği yavaşça açılıp boşluksuz döngüde çalıyor, dalga temizlenince sönüyor; müzik kaydırıcısı onu da kısıyor. iOS'ta sessiz mod anahtarı kapalıyken dene.
 - [ ] Uygulama arka plana alınıp geri dönülünce ses geri geliyor.
 - [ ] Maç içi menü (☰) panelinde ses ayarları çalışıyor; titreşim yalnızca Android'de görünüyor. Panelin en üstündeki "Menüye dön" onay sorup ana menüye dönüyor.
 

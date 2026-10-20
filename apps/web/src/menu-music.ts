@@ -3,8 +3,9 @@ import { assetUrl } from "./asset-url";
 /**
  * Lobi muzigi: menude ve co-op bekleme odasinda calan tek parca.
  *
- * Mac muziksiz kaliyor (GameScene `getBackgroundMusicPath` bos yol donduruyor);
- * bu parca yalnizca mactan onceki ekranlarda. Akis:
+ * Mac icinde bu parca calmiyor (GameScene `getBackgroundMusicPath` bos yol
+ * donduruyor); bu parca yalnizca mactan onceki ekranlarda. Mactaki dalga
+ * muzigi ayri: `wave-music.ts`. Akis:
  *
  * - Menu gorununce kaynak baglaniyor (`attach`, preload "auto"). Tarayicilar
  *   kendiliginden calmayi engelliyor; ilk dokunusta / tusta (`handleGesture`)

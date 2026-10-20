@@ -104,7 +104,7 @@ test("yapay zeka beyani CREDITS.md'de Turkce ve Ingilizce, ekran metinlerinde ik
   assert.match(credits, /### Yapay zekâ beyanı/);
   assert.match(credits.slice(0, credits.indexOf("## English summary")), /üretken yapay zekâ araçlarıyla/);
   assert.match(english, /\*\*AI disclosure:\*\*[\s\S]*generative AI/);
-  assert.match(english, /matches have no music/);
+  assert.match(english, /two of the developer's own tracks loop during the fights of waves 4, 6, 9, 10, 14, 16 and 18/);
   assert.match(english, /\*\*AI disclosure:\*\*[\s\S]*Suno AI[\s\S]*ElevenLabs[\s\S]*graphics, music and voice/);
   assert.match(credits.slice(0, credits.indexOf("## English summary")), /### Yapay zekâ beyanı[\s\S]*Suno[\s\S]*ElevenLabs[\s\S]*"evet,\s+grafik, müzik ve ses"/);
   assert.match(i18n.tr["credits.game.body"], /yapay zekâ/);
@@ -135,12 +135,13 @@ test("itch sayfasi beyani ve mobil test listesi lobi muzigini anlatiyor", () => 
   const page = read("docs/itch-page/README.md");
   const declarations = page.slice(page.indexOf("## Beyanlar"), page.indexOf("## Sayfa düzeni"));
   assert.match(declarations, /AI disclosure: yes \(graphics, music and voice\)/);
-  assert.match(declarations, /yalnızca lobi müziği/);
+  assert.match(declarations, /lobi müziği ana menüde/);
+  assert.match(declarations, /TRACK_01: 6, 10, 14, 18; TRACK_02: 4, 9, 16/);
   assert.doesNotMatch(declarations, /oyun şu an müziksiz/);
   const checklist = read("docs/mobile-test-checklist.md");
   assert.doesNotMatch(checklist, /Oyunda şu an müzik yok/);
   assert.match(checklist, /ilk dokunuştan sonra lobi müziği/);
-  assert.match(checklist, /maçta yalnızca efekt sesleri/);
+  assert.match(checklist, /dalga müziği yavaşça açılıp boşluksuz döngüde çalıyor/);
 });
 
 test("AttackLord ikonu: gelistirici yapimi, uretken yapay zekayla; modulde, CREDITS.md'de ve pakette", () => {

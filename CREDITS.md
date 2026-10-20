@@ -99,8 +99,8 @@ grafik, müzik ve ses" olarak doldurulur.
 ### Müzik: Last Stand (lobi)
 
 Ana menüde (alt ekranlar dahil) ve co-op bekleme odasında, ilk dokunuştan sonra
-döngüde çalan tek parça. Maç başlarken ~600 ms'de susuyor; maçın kendisi
-müziksiz. Çalma mantığı `apps/web/src/menu-music.ts`.
+döngüde çalan tek parça. Maç başlarken ~600 ms'de susuyor; maçta yalnızca
+aşağıdaki dalga müziği var. Çalma mantığı `apps/web/src/menu-music.ts`.
 
 | Eser | Yazar | Lisans | Bağlantı |
 |---|---|---|---|
@@ -118,10 +118,27 @@ müziksiz. Çalma mantığı `apps/web/src/menu-music.ts`.
   kullanılır. Reklamlı ya da ücretli yayından (CrazyGames, Steam, Google Play)
   önce ücretli planla yeniden üretilmeli ya da CC0 bir parçayla değiştirilmeli.
 
+### Müzik: dalga parçaları (maç)
+
+Geliştiricinin kendi yaptığı iki parça (lisanslı, kullanım sınırı yok). Yalnızca
+belirli dalgaların savaşında, müzik kaydırıcısı varsayılandayken %30 seste
+boşluksuz döngüde çalıyor; dalga temizlenince ve maç bitince sönüyor. Diğer
+dalgalar müziksiz. Çalma mantığı `apps/web/src/wave-music.ts` (WebAudio döngüsü).
+
+| Parça | Dalgalar | Dosya |
+|---|---|---|
+| TRACK_01 | 6, 10, 14, 18 | `apps/web/public/audio/music/track-01.mp3` (25,7 sn; döngü 1,712–25,713 sn) |
+| TRACK_02 | 4, 9, 16 | `apps/web/public/audio/music/track-02.mp3` (26,7 sn; döngü 4,678–26,734 sn) |
+
+- Döngü noktaları müziğin kendi tekrarından ölçüldü (tizgesel benzerlik ve vuruş
+  hizası); dosya döngü sonunda bitiyor, son 0,18 sn döngü başından önceki
+  0,18 sn ile eşit güçte harmanlandı. Döngü başından öncesi giriş, bir kez çalar.
+  44,1 kHz stereo, 160 kb/s.
+
 ### Müzik: ticari kayıtlar (kaldırıldı)
 
-İki arka plan parçası lisanssız ticari kayıttı ve oyundan kaldırıldı. Maç hâlâ
-müziksiz; yalnızca menüde yukarıdaki lobi müziği çalıyor.
+İki arka plan parçası lisanssız ticari kayıttı ve oyundan kaldırıldı. Yerlerine
+yukarıdaki dalga parçaları geldi.
 
 | Dosya | Not | Durum |
 |---|---|---|
@@ -282,9 +299,13 @@ it may ship only in free builds with payments and donations off (the itch.io
 closed test) and must be regenerated on a paid plan or replaced before any
 ad-supported or paid release.
 
+**Wave music:** in matches, two of the developer's own tracks loop during the fights of waves 4, 6, 9, 10, 14, 16 and 18
+(TRACK_01 on waves 6, 10, 14, 18; TRACK_02 on waves 4, 9, 16;
+`apps/web/public/audio/music/track-01.mp3`, `track-02.mp3`). Made and licensed
+by the developer, no usage limit. Other waves have no music.
+
 **Removed:** the two commercial music tracks (Chipzel "Courtesy"; Dynoro
-"Zver") are no longer shipped; matches have no music, only the lobby track
-above plays on the menu.
+"Zver") are no longer shipped.
 
 **AI disclosure:** some of the game's artwork (enemy and tower sprites, menu
 and operator images) was created with generative AI tools, including OpenAI

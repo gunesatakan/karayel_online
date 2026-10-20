@@ -434,7 +434,7 @@ export function setupMenuUi(game: Phaser.Game) {
     onlineGameStarting = true;
     // Her solo baslatma yolu (Savaşa Gir, Eğitim, yaratici, harita, Tekrar) buradan.
     ensurePlayableSelection();
-    // Sahne devraliyor: lobi muzigi ~600 ms'de susup kaynagini birakiyor, mac muziksiz.
+    // Sahne devraliyor: lobi muzigi ~600 ms'de susup kaynagini birakiyor (mactaki dalga muzigi `wave-music.ts`).
     menuMusic.stop();
     root.classList.add("menu-root--hidden");
     gameRoot.classList.remove("game-root--hidden");

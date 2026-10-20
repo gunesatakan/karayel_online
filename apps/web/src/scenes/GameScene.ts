@@ -449,6 +449,7 @@ import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
+import { getWaveMusicLevel, getWaveMusicTrackForState, WAVE_MUSIC_TRACKS, WaveMusicPlayer } from "../wave-music";
 import { getLocale, t, tMaybe, upper } from "../i18n";
 import type { MessageKey } from "../locales/tr";
 import { describeServerError, localizeDefenseSummary, localizeRunSummary, localizeServerText, localizeTowerPreview } from "../server-text";
@@ -1530,8 +1531,10 @@ export class GameScene extends Phaser.Scene {
   private readonly atlasTowerWatch = new AtlasTowerWatch();
   private readonly atlasWaveWatch = new AtlasWaveWatch();
   private readonly atlasSurgeCuts = new AtlasOnceSet();
-  /** ATLAS konusurken muzigin carpani (mac muziksiz; muzik donerse hazir). */
+  /** ATLAS konusurken muzigin carpani (dalga muzigi de kisiliyor). */
   private atlasMusicDuck = 1;
+  /** Muzikli dalgalarin dongusu (`wave-music.ts`); efekt baglamini paylasiyor. */
+  private waveMusic?: WaveMusicPlayer;
   /** ATLAS-VESAYET konusmalarinin olay izcileri (`atlas-dialogue.ts`). */
   private readonly atlasNexusDropWatch = new AtlasNexusDropWatch();
   private readonly atlasComboWatch = new AtlasSkillComboWatch();
@@ -1991,6 +1994,9 @@ export class GameScene extends Phaser.Scene {
       vibration: this.vibrationEnabled,
       getCamera: () => this.cameras.main
     });
+    const feedback = this.feedback;
+    this.waveMusic = new WaveMusicPlayer({ getContext: () => feedback.getSharedAudioContext() });
+    this.waveMusic.setLevel(getWaveMusicLevel(this.musicVolume, this.atlasMusicDuck));
     this.createAtlasVoice();
     this.createHeader();
     window.addEventListener("karayel:control-action", this.handleControlAction);
@@ -2243,6 +2249,9 @@ export class GameScene extends Phaser.Scene {
       this.matchEndReport = undefined;
       this.matchEndStage?.destroy();
       this.matchEndStage = undefined;
+      // Dalga muzigi de ayni baglamda: kapanmadan once birakiliyor.
+      this.waveMusic?.destroy();
+      this.waveMusic = undefined;
       // ATLAS baglami geri bildirimden aliyor: baglam kapanmadan once sussun.
       this.atlas?.destroy();
       this.atlas = undefined;
@@ -2748,10 +2757,32 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Muzikli dalganin savasi suruyorsa dongu caliyor; kurulum, temizlenme ve
+   * mac sonu solduruyor (`wave-music.ts`). Ogreticide muzik yok. Bir sonraki
+   * muzikli dalga yaklasinca dosya onceden indiriliyor.
+   */
+  private updateWaveMusic(snapshot: GameSnapshot) {
+    const music = this.waveMusic;
+    if (!music) return;
+    const wave = snapshot.team.wave;
+    const over = Boolean(snapshot.result) || this.matchResultShown || this.tutorialMode;
+    for (const track of WAVE_MUSIC_TRACKS) {
+      if (!over && track.waves.some((musicWave) => musicWave - 1 === wave || musicWave === wave)) music.prefetch(track);
+    }
+    music.update(getWaveMusicTrackForState({
+      wave,
+      setupPhase: Boolean(snapshot.setupPhase),
+      enemiesLeft: snapshot.team.enemiesLeft,
+      over
+    }));
+  }
+
   private handleAtlasSpeaking(speaking: boolean) {
     this.feedback?.setDuck(speaking ? ATLAS_DUCK_GAIN : 1, ATLAS_DUCK_TIME_CONSTANT);
     this.atlasMusicDuck = speaking ? ATLAS_DUCK_GAIN : 1;
     if (this.backgroundMusic) this.backgroundMusic.volume = this.musicVolume * this.atlasMusicDuck;
+    this.waveMusic?.setLevel(getWaveMusicLevel(this.musicVolume, this.atlasMusicDuck));
     if (speaking && this.streakVoice && !this.streakVoice.audio.paused) {
       this.streakVoice.audio.pause();
     }
@@ -2861,6 +2892,7 @@ export class GameScene extends Phaser.Scene {
     if (this.backgroundMusic) {
       this.backgroundMusic.volume = this.musicVolume * this.atlasMusicDuck;
     }
+    this.waveMusic?.setLevel(getWaveMusicLevel(this.musicVolume, this.atlasMusicDuck));
 
     for (const audio of Object.values(this.killStreakSounds).flat()) {
       // Calan takim arkadasi klibi kisik kalir; kaydirici onu tam sese cekmesin.
@@ -7447,6 +7479,7 @@ export class GameScene extends Phaser.Scene {
     this.renderHud(snapshot);
     this.watchWaveClear(snapshot);
     this.observeAtlas(snapshot);
+    this.updateWaveMusic(snapshot);
     this.refreshUpgradeReady(snapshot);
     this.recordClientPerfSection("hud", performance.now() - sectionStart);
     if (now - this.lastShopEventAt > 250) {
@@ -14063,8 +14096,8 @@ function getZeynepCommandButtonState(authorityChain: number) {
 }
 
 /**
- * Mac muziksiz: eski iki parca lisanssiz ticari kayitti ve kaldirildi (bkz.
- * CREDITS.md). Lobi muzigi ("Last Stand") yalnizca menude calar ve mac
+ * Operator muzigi yok: eski iki parca lisanssiz ticari kayitti ve kaldirildi
+ * (bkz. CREDITS.md). Dalga muzigi ayri (`wave-music.ts`, WebAudio). Lobi muzigi ("Last Stand") yalnizca menude calar ve mac
  * baslarken susar (menu-music.ts); maca bilerek tasinmiyor. Mac icin parca
  * gelince operatore gore yol burada dondurulur; bos yol "muzik yok" demek.
  */
