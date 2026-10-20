@@ -155,15 +155,16 @@ const RECIPES = [
   // Gudum (Izolasyon): roket ateslemesinin nefesi + firlatma tiki.
   { family: "fireHoming", id: "fire-homing-1", src: "scifi50/rocket_01", at: 0.3, layers: [{ src: "impact/impactGeneric_light_000", gain: -6 }], dur: 0.2, rate: 1.1, hp: 160, lp: 7000, fadeIn: 0.01, fadeOut: 0.1, fire: true },
   { family: "fireHoming", id: "fire-homing-2", src: "impact/impactMetal_light_004", layers: [{ src: "scifi/thrusterFire_002", at: 1, gain: -7 }], dur: 0.16, rate: 0.85, hp: 300, lp: 7000, fadeOut: 0.08, fire: true },
-  // Cokus (Obsesyon): kucuk lazerin cok yavaslatilmis, koyu cekisi.
-  { family: "fireCollapse", id: "fire-collapse-1", src: "scifi/laserSmall_001", dur: 0.14, rate: 0.6, hp: 200, lp: 3800, fadeOut: 0.08, fire: true },
-  { family: "fireCollapse", id: "fire-collapse-2", src: "scifi/laserSmall_002", dur: 0.14, rate: 0.6, hp: 200, lp: 3800, fadeOut: 0.08, fire: true },
-  // Elektrik (Ucube): ezilmis kisa catirti.
-  { family: "fireBolt", id: "fire-bolt-1", src: "scifi/explosionCrunch_004", at: 0.03, dur: 0.09, rate: 1.4, hp: 500, crush: true, fadeOut: 0.05, fire: true },
-  { family: "fireBolt", id: "fire-bolt-2", src: "scifi/laserSmall_004", dur: 0.09, rate: 1.2, hp: 500, crush: true, fadeOut: 0.05, fire: true },
-  // Mizrak (Hiza, Taht): buyuk lazerin parlak, kuru "sink"i; tizi yumusatilmis.
-  { family: "fireLance", id: "fire-lance-1", src: "scifi/laserLarge_002", dur: 0.12, rate: 1.15, hp: 600, lp: 9000, eq: [[3000, 5]], fadeOut: 0.07, fire: true },
-  { family: "fireLance", id: "fire-lance-2", src: "scifi/laserLarge_003", dur: 0.12, rate: 1.15, hp: 600, lp: 9000, eq: [[3000, 5]], fadeOut: 0.07, fire: true },
+  // Cokus (Obsesyon): ters cevrilmis patlama -- hava ice cekiliyor, atis
+  // aninda kesiliyor (`reverse`: kaynagin ilk N saniyesi tersten).
+  { family: "fireCollapse", id: "fire-collapse-1", src: "bang/bang_03", reverse: 0.18, dur: 0.22, rate: 0.9, hp: 320, eq: [[1500, 9]], drive: 0.85, fadeIn: 0.03, fadeOut: 0.03, fire: true },
+  { family: "fireCollapse", id: "fire-collapse-2", src: "bang/fw_06", reverse: 0.18, dur: 0.22, rate: 0.9, hp: 120, eq: [[1200, 6]], drive: 0.85, fadeIn: 0.03, fadeOut: 0.03, fire: true },
+  // Elektrik (Ucube): ezilmis kisa catirti, kisa yanki.
+  { family: "fireBolt", id: "fire-bolt-1", src: "scifi/explosionCrunch_004", at: 0.03, dur: 0.14, rate: 1.25, hp: 300, crush: true, tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.07, fire: true },
+  { family: "fireBolt", id: "fire-bolt-2", src: "scifi/laserSmall_004", dur: 0.14, rate: 1.05, hp: 300, crush: true, tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.07, fire: true },
+  // Mizrak (Hiza, Taht): kuru catlama + celik levha; parlak lazer "sink"i yok.
+  { family: "fireLance", id: "fire-lance-1", src: "bang/fw_05", layers: [{ src: "impact/impactPlate_medium_002", gain: -8 }], dur: 0.16, rate: 1.15, hp: 200, eq: [[2600, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.08, fire: true },
+  { family: "fireLance", id: "fire-lance-2", src: "scifi50/misc_04", layers: [{ src: "impact/impactPlate_medium_004", gain: -8 }], dur: 0.16, rate: 1.0, hp: 200, eq: [[2600, 3]], tail: { delays: [19, 41, 73], decays: [0.34, 0.22, 0.12] }, fadeOut: 0.08, fire: true },
   // ---- Oldurme: portal (tools/sfx-portal.mjs). Boy basina bir aile, iki
   // cesit: A "rift whoosh" ve D "pulse thrum"; istemci ikisini sirayla caliyor.
   // small: siradan ve ucan dusman, normal: agir (kaba, kusatma), large: sampiyon.
@@ -426,6 +427,8 @@ function build() {
         `atrim=start=${start}`,
         "asetpts=PTS-STARTPTS",
         "silenceremove=start_periods=1:start_threshold=-50dB",
+        // Ters tarif: kaynagin ilk `reverse` saniyesi tersten (patlama -> emme).
+        ...(recipe.reverse ? [`atrim=duration=${recipe.reverse}`, "areverse"] : []),
         `asetrate=${Math.round(44100 * rate)}`,
         "aresample=44100",
         `highpass=f=${recipe.hp ?? 150}`,

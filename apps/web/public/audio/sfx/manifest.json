@@ -43,7 +43,7 @@
     "killBytes": 12288,
     "totalBytes": 409600
   },
-  "totalBytes": 188098,
+  "totalBytes": 191860,
   "files": [
     {
       "file": "projectile-1.mp3",
@@ -504,67 +504,73 @@
       "file": "fire-collapse-1.mp3",
       "family": "fireCollapse",
       "fire": true,
-      "source": "scifi/laserSmall_001.ogg",
-      "bytes": 2527,
-      "durationMs": 140,
-      "rmsDb": -18.5,
-      "peakDb": -6.9,
-      "midBandDb": -1.7
+      "source": "bang/bang_03.ogg",
+      "bytes": 3154,
+      "durationMs": 200,
+      "rmsDb": -18.4,
+      "peakDb": -3.7,
+      "midBandDb": -10.3
     },
     {
       "file": "fire-collapse-2.mp3",
       "family": "fireCollapse",
       "fire": true,
-      "source": "scifi/laserSmall_002.ogg",
-      "bytes": 2527,
-      "durationMs": 140,
+      "source": "bang/fw_06.ogg",
+      "bytes": 3154,
+      "durationMs": 200,
       "rmsDb": -18.5,
-      "peakDb": -8.5,
-      "midBandDb": -1.3
+      "peakDb": -6.7,
+      "midBandDb": -5.2
     },
     {
       "file": "fire-bolt-1.mp3",
       "family": "fireBolt",
       "fire": true,
       "source": "scifi/explosionCrunch_004.ogg",
-      "bytes": 1900,
-      "durationMs": 90,
-      "rmsDb": -22.5,
-      "peakDb": -1.6,
-      "midBandDb": -2
+      "bytes": 2527,
+      "durationMs": 140,
+      "rmsDb": -23.5,
+      "peakDb": -1.4,
+      "midBandDb": -3.5
     },
     {
       "file": "fire-bolt-2.mp3",
       "family": "fireBolt",
       "fire": true,
       "source": "scifi/laserSmall_004.ogg",
-      "bytes": 1900,
-      "durationMs": 90,
-      "rmsDb": -18.5,
-      "peakDb": -4.5,
-      "midBandDb": -2
+      "bytes": 2527,
+      "durationMs": 140,
+      "rmsDb": -18.6,
+      "peakDb": -4.4,
+      "midBandDb": -1.3
     },
     {
       "file": "fire-lance-1.mp3",
       "family": "fireLance",
       "fire": true,
-      "source": "scifi/laserLarge_002.ogg",
-      "bytes": 2214,
-      "durationMs": 120,
-      "rmsDb": -18.4,
-      "peakDb": -2.5,
-      "midBandDb": -3.4
+      "source": "bang/fw_05.ogg",
+      "layers": [
+        "impact/impactPlate_medium_002.ogg"
+      ],
+      "bytes": 2841,
+      "durationMs": 160,
+      "rmsDb": -24.5,
+      "peakDb": -1.5,
+      "midBandDb": -2.7
     },
     {
       "file": "fire-lance-2.mp3",
       "family": "fireLance",
       "fire": true,
-      "source": "scifi/laserLarge_003.ogg",
-      "bytes": 2214,
-      "durationMs": 120,
+      "source": "scifi50/misc_04.ogg",
+      "layers": [
+        "impact/impactPlate_medium_004.ogg"
+      ],
+      "bytes": 2841,
+      "durationMs": 160,
       "rmsDb": -18.4,
-      "peakDb": -4.1,
-      "midBandDb": -5.2
+      "peakDb": -6.7,
+      "midBandDb": -5.1
     },
     {
       "file": "death-portal-a-small.mp3",

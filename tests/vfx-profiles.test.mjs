@@ -189,7 +189,7 @@ test("takım arkadaşının kademe 3 eklentileri soluk, kendi kulen tam", () => 
   assert.ok(alphaSum(false) < alphaSum(true), "takim arkadasinin eklentileri soluk degil");
 });
 
-test("sarsinti yalnizca kendi agir vurusunda (Sunucu, Obsesyon her kademede; eski agir kademe 3); px silahin hissinden", () => {
+test("sarsinti yalnizca kendi agir vurusunda (Obsesyon her kademede; eski agir kademe 3); Sunucu ates etmiyor; px silahin hissinden", () => {
   const shakes = [];
   const vfx = new AttackVfx(createRecorder(), createRecorder(), createRecorder(), undefined, { lod: new VfxLod(), onHeavyImpact: (x, y, px) => shakes.push(px) });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 3, own: false, bornAt: 0 });
@@ -197,8 +197,9 @@ test("sarsinti yalnizca kendi agir vurusunda (Sunucu, Obsesyon her kademede; esk
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "zeynep-1", tier: 3, own: true, bornAt: 0 });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "onur-2", tier: 2, own: true, bornAt: 0 });
   assert.deepEqual(shakes, [], "takim arkadasi, hafif ve orta silah sarsmiyor");
-  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 1, own: true, bornAt: 0 });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 3, own: true, bornAt: 0 });
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-4", tier: 1, own: true, bornAt: 0 });
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-4", tier: 3, own: true, bornAt: 0 });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-4", tier: 2, own: true, bornAt: 0 });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "onur-2", tier: 3, own: true, bornAt: 0 });
   assert.deepEqual(shakes, [1, 2, 1.5, 1.5]);

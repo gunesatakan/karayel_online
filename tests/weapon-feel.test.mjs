@@ -46,12 +46,16 @@ test("kutle kurali: hafif itmiyor, durmuyor, sarsmiyor; agir hepsini yapiyor; sa
   assert.equal(takipci.mass, "light");
   assert.deepEqual([...takipci.knock, ...takipci.hitStopMs, ...takipci.shake], [0, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.equal(takipci.fire, "fireLight");
+  const obsesyon = feel.WEAPON_FEELS["warrior-4"];
+  assert.equal(obsesyon.mass, "heavy");
+  assert.ok(obsesyon.knock[0] >= 1.5 && obsesyon.hitStopMs[0] >= 30 && obsesyon.squash > 0 && obsesyon.shake[0] >= 1);
+  assert.ok(obsesyon.recoil[2] > takipci.recoil[2] * 1.5, "agir silah daha cok geri tepiyor");
+  // Sunucu ates etmiyor: sesi, itmesi, sarsintisi yok.
   const sunucu = feel.WEAPON_FEELS["warrior-2"];
-  assert.equal(sunucu.mass, "heavy");
-  assert.ok(sunucu.knock[0] >= 2 && sunucu.hitStopMs[0] >= 30 && sunucu.squash > 0 && sunucu.shake[0] >= 1);
-  assert.ok(sunucu.recoil[2] > takipci.recoil[2] * 2, "topcu daha cok geri tepiyor");
+  assert.equal(sunucu.fire, undefined);
+  assert.deepEqual([...sunucu.recoil, ...sunucu.knock, ...sunucu.shake], [0, 0, 0, 0, 0, 0, 0, 0, 0]);
   const shakers = Object.entries(feel.WEAPON_FEELS).filter(([, entry]) => entry.shake.some((px) => px > 0)).map(([id]) => id).sort();
-  assert.deepEqual(shakers, ["warrior-2", "warrior-4", "zeynep-6"]);
+  assert.deepEqual(shakers, ["warrior-4", "zeynep-6"]);
   assert.ok(feel.WEAPON_FEELS["warrior-6"].shiver[0] > 0, "Ucube titretiyor");
   assert.equal(feel.WEAPON_FEELS["warrior-4"].death, "implode", "Obsesyon ice cokertiyor");
   assert.equal(feel.WEAPON_FEELS["warrior-5"].death, "ash", "lazer kul ediyor");
@@ -172,9 +176,9 @@ test("isin temasi ve olumun bicimleri ciziliyor; hareket azaltmada kivilcim ve p
   }
 });
 
-test("merminin sonu: carpma mermisi (Sunucu, Obsesyon, Ucube) govdenin cevresinde kayboluyor, digerleri govdeye gomuluyor", async () => {
+test("merminin sonu: carpma mermisi (Obsesyon, Ucube) govdenin cevresinde kayboluyor, digerleri govdeye gomuluyor", async () => {
   const bursts = Object.entries(feel.WEAPON_FEELS).filter(([, entry]) => entry.end === "burst").map(([id]) => id).sort();
-  assert.deepEqual(bursts, ["warrior-2", "warrior-4", "warrior-6"]);
+  assert.deepEqual(bursts, ["warrior-4", "warrior-6"]);
   assert.equal(feel.getWeaponFeel("warrior-1").end, "sink");
   assert.equal(feel.getWeaponFeel("zeynep-1").end, "sink");
   assert.equal(feel.getWeaponFeel("mage-1").end, "burst", "alan mermisi govdeye gomulmuyor");

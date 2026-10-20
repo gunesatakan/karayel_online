@@ -8,7 +8,7 @@
  *   ve isabeti degismiyor. Sunucuya yuk yok.
  * - Hafif silah sayiyla ve hizla hissettiriyor (itme, duraklama yok); agir
  *   silah tek vurusla (itme, kisa duraklama, ezilme, kendi vurusunda hafif
- *   sarsinti). Sarsinti yalnizca kendi agir vurusun (Sunucu, Obsesyon, Kin)
+ *   sarsinti). Sarsinti yalnizca kendi agir vurusun (Obsesyon, Kin)
  *   ve kendi kritigin; takim arkadasi kamerana dokunmuyor.
  * - Itme, duraklama, ezilme, titreme ve sarsinti yalnizca kendi vurusunda;
  *   takim arkadasinin kulesi senin ekraninda dusmani oynatmiyor (co-op'ta
@@ -47,7 +47,7 @@ export type DeathStyle = "shards" | "ash" | "implode";
  * Merminin sonu (sahibin karari, 2026-10-20: "tas atilmis gibi olmasin"):
  * - "sink": mermi dusmana degince durmuyor; ucus yonunde govdenin icine
  *   birkac birim daha girip kuculerek ve sonerek kayboluyor;
- * - "burst": carpma mermisi (Sunucu, Obsesyon, Ucube) degdigi anda
+ * - "burst": carpma mermisi (Obsesyon, Ucube) degdigi anda
  *   kayboluyor, yerine dusmanin govdesini saran kisa bir carpma halkasi.
  */
 export type ProjectileEnd = "sink" | "burst";
@@ -99,11 +99,9 @@ const feel = (overrides: Partial<WeaponFeel> & Pick<WeaponFeel, "mass" | "death"
 export const WEAPON_FEELS: Readonly<Record<string, WeaponFeel>> = Object.freeze({
   // Takipci: hafif ve seri. Kuru tik, kucuk kivilcim; itme yok.
   "warrior-1": feel({ mass: "light", fire: "fireLight", fireGain: 0.85, recoil: tiers(0.6, 0.8, 1), death: "shards" }),
-  // Sunucu: topcu. Tok gumbur, kule geri tepiyor; dusman itiliyor, kisa duruyor, eziliyor.
-  "warrior-2": feel({
-    mass: "heavy", fire: "fireHeavy", recoil: tiers(2, 2.5, 3), knock: tiers(2, 3, 4), hitStopMs: tiers(35, 45, 55),
-    squash: 0.12, shake: tiers(1, 1.5, 2), death: "shards", end: "burst"
-  }),
+  // Sunucu ates etmiyor (destek: bag ve bilgi); hissi yok. Saldiri dongusunde
+  // atlanmasi MatchRoom'da (`warrior-2` -> continue).
+  "warrior-2": feel({ mass: "light", death: "shards" }),
   // Izolasyon: kilitlenme. Gudum sesi; dusman kisa bir an tutuluyor, itilmiyor.
   "warrior-3": feel({ mass: "medium", fire: "fireHoming", recoil: tiers(0.8, 1, 1.2), hitStopMs: tiers(25, 30, 35), squash: 0.04, death: "ash" }),
   // Obsesyon: cokus. Ice cekme sesi; agir: itme, duraklama, sarsinti.

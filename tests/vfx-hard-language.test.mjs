@@ -212,13 +212,13 @@ test("kozmetik itme silahin kutlesinden (weapon-feel): agir cok, orta az, hafif 
     vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: id, tier: 3, own: true, bornAt: 0 });
   }
   assert.deepEqual(knocks, [], "hafif vurus itmiyor");
-  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 2, own: true, bornAt: 0 });
-  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 3, own: true, bornAt: 0 });
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-4", tier: 2, own: true, bornAt: 0 });
+  vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-4", tier: 3, own: true, bornAt: 0 });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "zeynep-1", tier: 3, own: true, bornAt: 0 });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-6", tier: 3, own: true, bornAt: 0 });
   vfx.emitImpact({ x: 0, y: 0, angle: 0, definitionId: "onur-2", tier: 3, own: true, bornAt: 0 });
-  assert.deepEqual(knocks, [3, 4, 1.5, 1, 2], "Sunucu 3-4, Hiza 1.5, Ucube 1, Jackpot 2");
-  make(true).emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-2", tier: 3, own: true, bornAt: 0 });
+  assert.deepEqual(knocks, [2, 2.5, 1.5, 1, 2], "Obsesyon 2-2.5, Hiza 1.5, Ucube 1, Jackpot 2");
+  make(true).emitImpact({ x: 0, y: 0, angle: 0, definitionId: "warrior-4", tier: 3, own: true, bornAt: 0 });
   assert.equal(knocks.length, 5, "hareket azaltmada itme yok");
 });
 
