@@ -76,8 +76,14 @@ export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATI
  * kendi tutarlarinda.
  */
 export const GOLD_INCOME_MULTIPLIER = 1.8;
+/**
+ * Dusman oldurmenin altininin ek carpani. Sahibin istegi (2026-10): "Para
+ * asla yetmiyor. Dusmanlardan kazanilan parayi 1.2 kat yap." Sampiyon ve ozel
+ * dusman paylari da buradan turuyor; dalga sonu altini degismiyor.
+ */
+export const ENEMY_KILL_GOLD_BOOST = 1.2;
 /** Dusman oldurmenin altin odulu. Dalga sonu altini bundan bagimsizdir. */
-export const ENEMY_REWARD_MULTIPLIER = 1.5 * GOLD_INCOME_MULTIPLIER;
+export const ENEMY_REWARD_MULTIPLIER = 1.5 * GOLD_INCOME_MULTIPLIER * ENEMY_KILL_GOLD_BOOST;
 
 /**
  * Dusman oldurmenin deneyim odulu.

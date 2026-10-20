@@ -2655,6 +2655,12 @@ type ProjectileModel = {
 
 type DroneModel = DroneSnapshot & {
   pendingAssignment?: WorkerAssignment;
+  /**
+   * Tamircinin su anki hedefine baglandigi an (oyun saati). Ayni kuleye
+   * gerekenden fazla tamirci duserse once gelenler kaliyor
+   * (`getRepairWorkerTarget`); sonradan gelen eskisini yerinden etmiyor.
+   */
+  repairLockedAt?: number;
   ownerId: string;
   targetId?: string;
   vx: number;
@@ -14100,6 +14106,7 @@ export class MatchRoom extends Room<MatchState> {
       }
       return;
     }
+    if (worker.targetTowerId !== target.id) worker.repairLockedAt = this.runtime.now();
     worker.targetTowerId = target.id;
     if (!this.moveLogisticsWorker(worker, target.x, target.y, seconds)) {
       return;
@@ -14160,12 +14167,56 @@ export class MatchRoom extends Room<MatchState> {
    * cevabi oluyor.
    */
   private getRepairWorkerTarget(worker: DroneModel) {
+    // Kuleye eksik caninin gerektirdigi kadar tamirci: yuklu tamircilerin
+    // tasidigi parca (can karsiligi) eksik cani karsiliyorsa kule dolu,
+    // siradaki tamirci baska yapiya gidiyor. Sahibin istegi (2026-10): "o
+    // kulenin onarimi icin o an 2 isci yetiyorsa 2 tane gitmeli".
+    const plan = this.getRepairPlan(worker.ownerId);
     const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
     if (locked && locked.ownerId === worker.ownerId && locked.hp > 0 && locked.hp < locked.maxHp) {
-      return locked;
+      // Once gelenler kaliyor: bu tamirciden once baglananlar eksigi zaten
+      // karsiliyorsa bu fazlalik, ayriliyor.
+      if (this.getRepairCoverBefore(plan, locked.id, worker) < locked.maxHp - locked.hp) return locked;
     }
     const depot = this.getRepairDepot(worker);
-    return (depot && this.findWorstStructure(worker, depot)) ?? this.findWorstStructure(worker);
+    return (depot && this.findWorstStructure(worker, depot, plan)) ?? this.findWorstStructure(worker, undefined, plan);
+  }
+
+  /**
+   * Sahibin yuklu tamircileri, hedeflerine gore, baglanma sirasiyla
+   * (`repairLockedAt`, esitlikte isci sirasi). Tik basina tamirci basina bir
+   * kez kuruluyor; tamirci az, liste kisa.
+   */
+  private getRepairPlan(ownerId: string) {
+    const plan = new Map<string, DroneModel[]>();
+    for (const drone of this.drones.values()) {
+      if (drone.mode !== "repairer" || drone.ownerId !== ownerId || !drone.targetTowerId || !((drone.cargo ?? 0) > 0)) continue;
+      const list = plan.get(drone.targetTowerId);
+      if (list) list.push(drone);
+      else plan.set(drone.targetTowerId, [drone]);
+    }
+    for (const list of plan.values()) {
+      if (list.length > 1) list.sort((a, b) => (a.repairLockedAt ?? 0) - (b.repairLockedAt ?? 0));
+    }
+    return plan;
+  }
+
+  /** Tamircinin tasidigi onarim (can): yuku; bos tamircide doldurabilecegi kadar. */
+  private getRepairCommitment(worker: DroneModel) {
+    const cargo = worker.cargo ?? 0;
+    return (cargo > 0 ? cargo : this.getWorkerCapacity(worker)) * REPAIR_HP_PER_PART;
+  }
+
+  /** Kuleye bu tamirciden once baglanmis (`worker` yoksa hepsi) tamircilerin tasidigi can. */
+  private getRepairCoverBefore(plan: Map<string, DroneModel[]>, towerId: string, worker?: DroneModel) {
+    const list = plan.get(towerId);
+    if (!list) return 0;
+    let cover = 0;
+    for (const other of list) {
+      if (other === worker) break;
+      cover += this.getRepairCommitment(other);
+    }
+    return cover;
   }
 
   /**
@@ -14175,7 +14226,7 @@ export class MatchRoom extends Room<MatchState> {
    * merkezden olculur -- cemberin icinde "yakin" demek iscinin o anda
    * nerede durdugu degil, merkeze ne kadar yakin oldugu demek.
    */
-  private findWorstStructure(worker: DroneModel, depot?: TowerModel) {
+  private findWorstStructure(worker: DroneModel, depot?: TowerModel, plan?: Map<string, DroneModel[]>) {
     const origin = depot ?? worker;
     const rangeSq = depot ? this.getTowerRange(depot) ** 2 : Number.POSITIVE_INFINITY;
     let best: TowerModel | undefined;
@@ -14183,6 +14234,8 @@ export class MatchRoom extends Room<MatchState> {
     let bestDistanceSq = Number.POSITIVE_INFINITY;
     for (const tower of this.towers.values()) {
       if (tower.ownerId !== worker.ownerId || tower.hp <= 0 || tower.hp >= tower.maxHp) continue;
+      // Eksigi baska tamircilerin yuku zaten karsiliyorsa kule dolu.
+      if (plan && this.getRepairCoverBefore(plan, tower.id, worker) >= tower.maxHp - tower.hp) continue;
       const distance = distanceSq(origin.x, origin.y, tower.x, tower.y);
       if (distance > rangeSq) continue;
       const ratio = tower.hp / Math.max(1, tower.maxHp);

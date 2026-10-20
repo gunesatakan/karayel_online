@@ -183,7 +183,7 @@ test("düşman sayısı harita ölçeği ve oyuncu sayısıyla çarpılır", () 
 });
 
 test("dalga ekonomisini ve rejenerasyon ölçeklemesini sabitler", () => {
-  assert.ok(Math.abs(ENEMY_REWARD_MULTIPLIER - 2.7) < 1e-9, "oldurme altini 1,5 x 1,8");
+  assert.ok(Math.abs(ENEMY_REWARD_MULTIPLIER - 3.24) < 1e-9, "oldurme altini 1,5 x 1,8 x 1,2");
   assert.equal(getWaveCompletionGold(1), 47);
   assert.equal(getWaveCompletionGold(19), 144);
 
