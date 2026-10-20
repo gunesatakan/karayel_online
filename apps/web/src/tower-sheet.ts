@@ -203,6 +203,28 @@ export type TowerSheetStockGroup = {
 
 export type TowerSheetStock = { kind: TowerSheetStockKind; groups: TowerSheetStockGroup[] };
 
+/**
+ * Gelismis sekmesinin kaynak karti (isi, enerji, mühimmat): buyuk deger,
+ * cubuk ve alttaki birkac olcu ("Atış başına +10", "Soğuma 2,4/sn"). Kartin
+ * ve olculerin varligi yapiya giriyor; degerler yerinde yaziliyor.
+ */
+export type TowerSheetSpecItem = { key: string; label: string; value: string; tone?: "up" | "down" | "warn" };
+
+export type TowerSheetSpecCard = {
+  key: "heat" | "energy" | "ammo";
+  title: string;
+  value: string;
+  /** 0..1 */
+  ratio: number;
+  marker?: number;
+  markerLabel?: string;
+  tone?: "ok" | "warn" | "hot";
+  /** Mühimmat kartinda turun isareti ve adi. */
+  ammoMarker?: TowerAmmoKey;
+  caption?: string;
+  items: TowerSheetSpecItem[];
+};
+
 export type TowerSheetModel = {
   towerId: string;
   title: string;
@@ -223,6 +245,8 @@ export type TowerSheetModel = {
   stock?: TowerSheetStock;
   figures: TowerSheetRow[];
   sections: TowerSheetSection[];
+  /** Gelismis sekmesi: isi, enerji ve mühimmat kartlari (savas kulesi; binada yok). */
+  specs: TowerSheetSpecCard[];
 };
 
 const PENDING = "—";
@@ -704,6 +728,79 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   if (relevance.operational) {
     if (live.performance !== undefined) resourceRows.push({ key: "perf", label: t("sheet.performance"), value: t("format.percent", { v: Math.round(live.performance * 100) }), detail: [] });
   }
+  // Gelismis sekmesinin kartlari: ayni sayilar, cubugun alt metni yerine
+  // ayri olculer. Isi: atis basina ne kadar isiniyor, saniyede ne kadar
+  // soguyor, frene kac atis kaldi, surekli atis hizi. Enerji ve mühimmat:
+  // atis basina harcama, calisma gideri, dolu deponun kac atis ettigi.
+  const specs: TowerSheetSpecCard[] = [];
+  if (!stock && relevance.operational) {
+    const temperature = Math.max(0, Math.min(100, live.temperature ?? 0));
+    const brakeAt = stats?.nb ? undefined : TOWER_HEAT_BRAKE_TEMPERATURE;
+    const perShot = stats?.hs;
+    const heatItems: TowerSheetSpecItem[] = [
+      { key: "hs", label: t("sheet.spec.perShot"), value: perShot !== undefined ? `+${formatSmart(perShot)}` : PENDING },
+      { key: "hc", label: t("sheet.spec.cooling"), value: stats?.hc !== undefined ? t("sheet.unit.perSecond", { v: formatSmart(realRate(stats.hc)) }) : PENDING },
+      {
+        key: "brake",
+        label: t("sheet.spec.toBrake"),
+        value: brakeAt === undefined
+          ? t("sheet.spec.noBrake")
+          : temperature >= brakeAt
+            ? t("sheet.spec.braking")
+            : perShot !== undefined && perShot > 0
+              ? t("sheet.spec.shots", { n: Math.max(1, Math.ceil((brakeAt - temperature) / perShot)) })
+              : PENDING,
+        tone: brakeAt !== undefined && temperature >= brakeAt ? "warn" : undefined
+      }
+    ];
+    if (stats?.su !== undefined) heatItems.push({ key: "su", label: t("sheet.spec.sustained"), value: t("sheet.unit.perSecond", { v: formatNumber(realRate(stats.su), 2) }) });
+    const coolingSources = (stats?.hcs ?? []).map(([source, add]) => `${sourceLabel(source)} +${formatPercent(add)}`);
+    specs.push({
+      key: "heat",
+      title: t("sheet.heat"),
+      value: t("format.percent", { v: Math.round(temperature) }),
+      ratio: temperature / 100,
+      marker: brakeAt !== undefined ? brakeAt / 100 : undefined,
+      markerLabel: t("sheet.heatBrakeMarker"),
+      tone: temperature >= (stats?.hl ?? 100) - 5 ? "hot" : brakeAt !== undefined && temperature > brakeAt ? "warn" : "ok",
+      caption: [
+        coolingSources.length > 0 ? coolingSources.join(" · ") : undefined,
+        stats?.hl !== undefined && stats.hl < 100 ? t("sheet.heat.lock", { v: stats.hl }) : undefined
+      ].filter(Boolean).join(" · ") || undefined,
+      items: heatItems
+    });
+  }
+  if (!stock && (live.maxEnergy ?? 0) > 0) {
+    specs.push({
+      key: "energy",
+      title: t("sheet.energy"),
+      value: `${Math.floor(live.energy ?? 0)}/${live.maxEnergy ?? 0}`,
+      ratio: ratioOf(live.energy, live.maxEnergy),
+      tone: ratioOf(live.energy, live.maxEnergy) < 0.15 ? "hot" : ratioOf(live.energy, live.maxEnergy) < 0.35 ? "warn" : "ok",
+      items: [
+        { key: "ec", label: t("sheet.spec.perShot"), value: stats?.ec !== undefined ? formatSmart(stats.ec) : stats ? t("sheet.spec.none") : PENDING },
+        { key: "oe", label: t("sheet.spec.upkeep"), value: stats?.oe !== undefined ? t("sheet.unit.perSecond", { v: formatNumber(realRate(stats.oe), 2) }) : stats ? t("sheet.spec.none") : PENDING }
+      ]
+    });
+  }
+  if (!stock && definition && relevance.operational && live.shotFuel !== "energy" && (live.maxAmmo ?? 0) > 0) {
+    const ammo = describeTowerAmmo(definition);
+    const perShotAmmo = stats?.am;
+    specs.push({
+      key: "ammo",
+      title: t("sheet.ammo"),
+      value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`,
+      ratio: ratioOf(live.ammo, live.maxAmmo),
+      tone: ratioOf(live.ammo, live.maxAmmo) < 0.15 ? "hot" : ratioOf(live.ammo, live.maxAmmo) < 0.35 ? "warn" : "ok",
+      ammoMarker: ammo.key,
+      caption: ammo.key === "none" ? t("sheet.ammoNone") : ammo.label,
+      items: [
+        { key: "am", label: t("sheet.spec.perShot"), value: perShotAmmo !== undefined ? formatSmart(perShotAmmo) : PENDING },
+        { key: "full", label: t("sheet.spec.fullStore"), value: perShotAmmo !== undefined && perShotAmmo > 0 ? t("sheet.spec.shots", { n: Math.floor((live.maxAmmo ?? 0) / perShotAmmo) }) : PENDING }
+      ]
+    });
+  }
+
   const resourceNotes = notesFor("resources");
   if (bars.length > 0 || resourceNotes.length > 0) {
     // Ana sayilarin hemen altinda: isi, mühimmat ve enerji ayrintidan once okunuyor.
@@ -773,7 +870,8 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     insight,
     stock,
     figures,
-    sections
+    sections,
+    specs
   };
 }
 
@@ -1042,7 +1140,9 @@ export function getTowerSheetStructureKey(model: TowerSheetModel) {
     // Stok: tur ve kalemler; sayi, secili uretim ve aciklama yerinde yaziliyor.
     model.stock ? `${model.stock.kind}{${model.stock.groups.map((group) => `${group.key}:${group.items.map((item) => item.key).join(",")}`).join(";")}}` : "",
     model.figures.map(rowKey).join(";"),
-    model.sections.map((section) => `${section.id}[${section.rows.map(rowKey).join(";")}|${section.bars.map((bar) => `${bar.key}${bar.marker === undefined ? "" : "^"}`).join(",")}|${section.notes.length}]`).join("")
+    model.sections.map((section) => `${section.id}[${section.rows.map(rowKey).join(";")}|${section.bars.map((bar) => `${bar.key}${bar.marker === undefined ? "" : "^"}`).join(",")}|${section.notes.length}]`).join(""),
+    // Kaynak kartlari: kart, olcu ve isaret varligi; degerler yerinde.
+    model.specs.map((card) => `${card.key}${card.marker === undefined ? "" : "^"}${card.ammoMarker ?? ""}:${card.items.map((item) => item.key).join(",")}`).join(";")
   ].join("|");
 }
 
@@ -1052,7 +1152,8 @@ const SECTION_STORAGE_KEY = "uzay_tower_sheet_sections_v1";
 // Kaynak (isi, mühimmat, enerji) varsayilan acik: harita paneli kule
 // paneliyle ortusecekken gizleniyor ve ayni sayilar burada okunuyor. Nisan
 // ayrinti: varsayilan kapali, ozeti basliginda.
-const DEFAULT_OPEN: Readonly<Record<string, boolean>> = { attack: true, aim: false, effects: true, resources: true, progress: false, cards: false, controls: true };
+// Kartlar ve esyalar artik kendi sekmesinde (Etkiler): varsayilan acik.
+const DEFAULT_OPEN: Readonly<Record<string, boolean>> = { attack: true, aim: false, effects: true, resources: true, progress: false, cards: true, controls: true };
 let sectionState: Record<string, boolean> | undefined;
 
 /** Bolumlerin acik/kapali durumu; depo yoksa (gizli pencere) varsayilan. */
@@ -1237,21 +1338,33 @@ export function renderTowerSheet(sheet: HTMLElement, model: TowerSheetModel, han
   close.setAttribute("aria-label", t("sheet.aria.close"));
   onActivate(close, handlers.close);
   head.append(grip, portrait, titles, expand, close);
+  sheet.append(head);
 
-  // Govde
+  // Govde: sekmeler. Genel (ana sayilar ve canli kaynaklar) kaydirmadan
+  // okunuyor; ayrinti Gelismis'te kartlar halinde, etkiler ve ayarlar kendi
+  // sekmelerinde. Eskiden yedi katlanir bolum alt alta, panelin alti kati
+  // kaydirma istiyordu.
   const body = el("div", "tower-sheet__body");
-  body.append(...(slots.lead ?? []));
+  const panes: Record<TowerSheetTab, HTMLElement> = {
+    basic: el("div", "ts-pane ts-pane--basic"),
+    advanced: el("div", "ts-pane ts-pane--advanced"),
+    effects: el("div", "ts-pane ts-pane--effects"),
+    settings: el("div", "ts-pane ts-pane--settings")
+  };
+  const basic = panes.basic;
+  basic.append(...(slots.lead ?? []));
   // Binanin stoku: basligin (ve cephanelikte uretim secicisinin) hemen altinda.
-  if (model.stock) body.append(buildStockBlock(model, model.stock, keep));
+  if (model.stock) basic.append(buildStockBlock(model, model.stock, keep));
   // Canli bolge degil: sayilar saniyede birkac kez degisiyor ve ekran
-  // okuyucu her birini okurdu. Oyuncu baktiginda okunuyor.
+  // okuyucu her birini okurdu. Oyuncu baktiginda okunuyor. Durum ve okuma
+  // tek satirda: okuma durumu zaten tekrar ediyorsa durum gizli.
   const status = keep("status", el("p", "tower-sheet__status", model.status));
   status.setAttribute("aria-live", "off");
-  status.hidden = !model.status;
+  status.hidden = !model.status || isStatusInInsight(model);
   const insight = keep("insight", el("p", "tower-sheet__insight", model.insight));
   insight.setAttribute("aria-live", "off");
   insight.hidden = !model.insight;
-  body.append(status, insight);
+  basic.append(status, insight);
 
   if (model.figures.length > 0) {
     const figures = el("div", "ts-figures");
@@ -1262,20 +1375,236 @@ export function renderTowerSheet(sheet: HTMLElement, model: TowerSheetModel, han
       figures.append(cell.row);
       if (cell.detail) details.push(cell.detail);
     }
-    // Hucreler dar: aciklamalari tek satirda, izgaranin altinda.
-    const note = keep("fignote", el("p", "ts-figures__note", getFigureNote(model)));
-    note.hidden = !note.textContent;
-    body.append(figures, note, ...details);
+    basic.append(figures, ...details);
+  }
+  // Canli kaynaklar tek sirada: govde, isi, mühimmat, enerji. Ayrintisi Gelismis'te.
+  const resources = model.sections.find((section) => section.id === "resources");
+  if (resources && resources.bars.length > 0) {
+    const vitals = el("div", "ts-vitals");
+    vitals.dataset.count = String(resources.bars.length);
+    for (const bar of resources.bars) vitals.append(buildBar(bar, keep, true));
+    basic.append(vitals);
   }
 
+  // Gelismis: ana sayilarin aciklamasi, kaynak kartlari, saldiri, nisan, gelisim.
+  const advanced = panes.advanced;
+  const figureNote = keep("fignote", el("p", "ts-pane__lead", getFigureNote(model)));
+  figureNote.hidden = !figureNote.textContent;
+  advanced.append(figureNote);
+  if (model.specs.length > 0) {
+    const specs = el("div", "ts-specs");
+    for (const card of model.specs) specs.append(buildSpecCard(card, keep));
+    advanced.append(specs);
+  }
+  // Kaynak bolumunun satirlari: mühimmat turu mühimmat kartinda, performans
+  // Ayarlar'daki kolda; kartsiz binada (duvar) turu yine yaziliyor.
+  if (resources && model.specs.length === 0) {
+    const rows = resources.rows.filter((row) => row.key !== "perf");
+    if (rows.length > 0) advanced.append(buildCard(model, { ...resources, rows, bars: [], notes: [] }, keep, "grid"));
+  }
   for (const section of model.sections) {
-    body.append(buildSection(model, section, keep));
+    if (section.id === "resources") continue;
+    if (section.id === "knowledge") {
+      // Sunucu'nun kendi bilgisi isi: Genel'de. Bagli kulede etkilerin yaninda.
+      const own = section.title === t("sheet.section.knowledge");
+      (own ? basic : panes.effects).append(buildCard(model, section, keep, "list"));
+      // Sunucu'nun Genel'i bilgiyle uzun: ayrinti sekmeleri gibi uzayabiliyor.
+      if (own) sheet.dataset.tall = "1";
+      continue;
+    }
+    if (section.id === "effects") {
+      panes.effects.append(buildCard(model, section, keep, "list"));
+      continue;
+    }
+    // Nisan Saldiri kartinin icinde (tek baslik): asagida birlikte.
+    if (section.id === "aim" && model.sections.some((other) => other.id === "attack")) continue;
+    let rows = section.rows;
+    let title = section.title;
+    if (section.id === "attack") {
+      // Hasar tipi basligin alt satirinda zaten yaziyor.
+      rows = rows.filter((row) => row.key !== "type");
+      const aim = model.sections.find((other) => other.id === "aim");
+      if (aim) {
+        rows = [...rows, ...aim.rows];
+        title = t("sheet.section.attackAim");
+      }
+    }
+    // Gelisim: gelistirme bedeli ve iade alttaki seritte zaten yaziyor.
+    if (section.id === "progress") rows = rows.filter((row) => row.key !== "next" && row.key !== "refund");
+    if (rows.length === 0 && section.bars.length === 0 && section.notes.length === 0) continue;
+    advanced.append(buildCard(model, { ...section, title, rows }, keep, "grid"));
   }
-  body.append(...(slots.tail ?? []));
+  // Sahnenin eklentileri (kartlar ve esyalar, ayarlar) kendi sekmelerine.
+  for (const element of slots.tail ?? []) {
+    const tab = element.dataset.sheetTab as TowerSheetTab | undefined;
+    (tab && panes[tab] ? panes[tab] : basic).append(element);
+  }
 
-  sheet.append(head, body);
+  const available = TOWER_SHEET_TABS.filter((tab) => panes[tab].childElementCount > 0 && hasVisibleContent(panes[tab]));
+  let active = readTowerSheetTab();
+  if (!available.includes(active)) active = available[0] ?? "basic";
+  if (available.length > 1) {
+    const bar = el("div", "ts-tabs");
+    bar.setAttribute("role", "tablist");
+    const buttons = new Map<TowerSheetTab, HTMLButtonElement>();
+    const select = (tab: TowerSheetTab) => {
+      for (const [id, button] of buttons) {
+        const on = id === tab;
+        button.setAttribute("aria-selected", String(on));
+        button.tabIndex = on ? 0 : -1;
+        panes[id].hidden = !on;
+      }
+      writeTowerSheetTab(tab);
+      sheet.dataset.tab = tab;
+      body.scrollTop = 0;
+      handlers.resize?.(sheet.classList.contains("tower-sheet--expanded"));
+    };
+    for (const tab of available) {
+      const button = el("button", "ts-tab", t(`sheet.tab.${tab}`));
+      button.type = "button";
+      button.setAttribute("role", "tab");
+      button.id = domId(model, `tab-${tab}`);
+      button.setAttribute("aria-controls", domId(model, `pane-${tab}`));
+      onActivate(button, () => select(tab));
+      buttons.set(tab, button);
+      bar.append(button);
+    }
+    sheet.dataset.tabs = "1";
+    sheet.dataset.tab = active;
+    for (const tab of TOWER_SHEET_TABS) {
+      panes[tab].id = domId(model, `pane-${tab}`);
+      panes[tab].setAttribute("role", "tabpanel");
+      panes[tab].hidden = tab !== active;
+    }
+    for (const [id, button] of buttons) {
+      button.setAttribute("aria-selected", String(id === active));
+      button.tabIndex = id === active ? 0 : -1;
+    }
+    head.after(bar);
+    body.append(...TOWER_SHEET_TABS.filter((tab) => available.includes(tab)).map((tab) => panes[tab]));
+  } else {
+    body.append(...TOWER_SHEET_TABS.filter((tab) => available.includes(tab)).map((tab) => panes[tab]));
+  }
+
+  sheet.append(body);
   if (slots.footer) sheet.append(slots.footer);
   return body;
+}
+
+/** Panelin sekmeleri; sira gosterim sirasi. */
+export const TOWER_SHEET_TABS = ["basic", "advanced", "effects", "settings"] as const;
+export type TowerSheetTab = (typeof TOWER_SHEET_TABS)[number];
+
+const TAB_STORAGE_KEY = "uzay_tower_sheet_tab_v1";
+let tabState: TowerSheetTab | undefined;
+
+/** Son secilen sekme (kuleden kuleye kaliyor); depo yoksa Genel. */
+export function readTowerSheetTab(): TowerSheetTab {
+  if (tabState) return tabState;
+  tabState = "basic";
+  try {
+    const raw = window.localStorage.getItem(TAB_STORAGE_KEY);
+    if (raw && (TOWER_SHEET_TABS as readonly string[]).includes(raw)) tabState = raw as TowerSheetTab;
+  } catch {
+    // Depo kapali: Genel.
+  }
+  return tabState;
+}
+
+function writeTowerSheetTab(tab: TowerSheetTab) {
+  tabState = tab;
+  try {
+    window.localStorage.setItem(TAB_STORAGE_KEY, tab);
+  } catch {
+    // Kaydedilemedi; bu oturumda yine de hatirlaniyor.
+  }
+}
+
+/** Sekmede gizli olmayan bir sey var mi (yalnizca gizli durum satiri bos sayiliyor). */
+function hasVisibleContent(pane: HTMLElement) {
+  for (const child of Array.from(pane.children)) {
+    if (!(child as HTMLElement).hidden) return true;
+  }
+  return false;
+}
+
+/** Durum satiri okumanin icinde zaten geciyor mu ("Pasif" ve "Pasif | Yalnızlık açık"). */
+function isStatusInInsight(model: TowerSheetModel) {
+  const status = model.status.trim();
+  return Boolean(status && model.insight && model.insight.includes(status));
+}
+
+/**
+ * Bolumun kart hali (sekmelerin icinde katlanmiyor): baslik ve ozet, sonra
+ * satirlar -- "grid" iki sutunlu olcu kutulari (saldiri, nisan, gelisim),
+ * "list" tam genislikte satirlar (etkiler, bilgi) -- cubuklar ve notlar.
+ */
+function buildCard(model: TowerSheetModel, section: TowerSheetSection, keep: (key: string, element: HTMLElement) => HTMLElement, layout: "grid" | "list") {
+  const card = el("section", `ts-card ts-card--${section.id}`);
+  const head = el("header", "ts-card__head");
+  head.append(el("h3", "ts-card__title", section.title), keep(`sum:${section.id}`, el("span", "ts-card__summary", section.summary)));
+  card.append(head);
+  if (section.rows.length > 0) {
+    const rows = el("div", layout === "grid" ? "ts-metrics" : "ts-list");
+    const details: HTMLElement[] = [];
+    for (const row of section.rows) {
+      const built = buildRow(model, row, layout === "grid" ? "ts-metric" : "ts-row", keep);
+      // Uzun deger ("Fiziksel mermi", alt metinli satir) iki kutu genisliginde.
+      if (layout === "grid" && (row.value.length > 11 || row.sub)) built.row.classList.add("is-wide");
+      rows.append(built.row);
+      if (built.detail) details.push(built.detail);
+    }
+    card.append(rows, ...details);
+  }
+  for (const bar of section.bars) card.append(buildBar(bar, keep));
+  const notes = section.notes.map((note, index) => keep(`n:${section.id}:${index}`, el("p", "ts-note", note)));
+  if (section.id === "knowledge" && notes.length > 1) {
+    // Bilginin nasil toplandigi ve islendigi uzun: varsayilan kapali tek satir.
+    const more = el("details", "ts-card__more");
+    more.append(el("summary", "ts-card__more-toggle", t("sheet.knowledge.how")), ...notes);
+    card.append(more);
+  } else {
+    card.append(...notes);
+  }
+  return card;
+}
+
+/** Kaynak karti: baslik ve buyuk deger, cubuk (isi freni cizgisi), olculer. */
+function buildSpecCard(card: TowerSheetSpecCard, keep: (key: string, element: HTMLElement) => HTMLElement) {
+  const wrapper = el("section", `ts-spec ts-spec--${card.key}`);
+  const head = el("header", "ts-spec__head");
+  const title = el("h3", "ts-spec__title", card.title);
+  head.append(title, keep(`spv:${card.key}`, el("span", "ts-spec__value", card.value)));
+  const track = keep(`spt:${card.key}`, el("div", "ts-spec__track"));
+  track.setAttribute("role", "meter");
+  track.setAttribute("aria-label", card.title);
+  track.setAttribute("aria-valuemin", "0");
+  track.setAttribute("aria-valuemax", "100");
+  track.setAttribute("aria-valuenow", String(Math.round(card.ratio * 100)));
+  const fill = keep(`spf:${card.key}`, el("span", "ts-spec__fill"));
+  fill.style.setProperty("--fill", card.ratio.toFixed(3));
+  setTone(fill, card.tone);
+  track.append(fill);
+  if (card.marker !== undefined) {
+    const marker = el("span", "ts-spec__marker");
+    marker.style.left = `${(card.marker * 100).toFixed(1)}%`;
+    marker.title = card.markerLabel ?? "";
+    track.append(marker);
+  }
+  wrapper.append(head, track);
+  const caption = keep(`spc:${card.key}`, el("p", "ts-spec__caption", card.caption ?? ""));
+  if (card.ammoMarker) caption.prepend(makeAmmoMarker(card.ammoMarker));
+  caption.hidden = !card.caption;
+  const items = el("dl", "ts-spec__items");
+  for (const item of card.items) {
+    const cell = el("div", "ts-spec__item");
+    const value = keep(`spi:${card.key}:${item.key}`, el("dd", "ts-spec__item-value", item.value));
+    setTone(value, item.tone);
+    cell.append(el("dt", "ts-spec__item-label", item.label), value);
+    items.append(cell);
+  }
+  wrapper.append(items, caption);
+  return wrapper;
 }
 
 /**
@@ -1389,8 +1718,8 @@ function buildSection(model: TowerSheetModel, section: TowerSheetSection, keep: 
   return wrapper;
 }
 
-function buildBar(bar: TowerSheetBar, keep: (key: string, element: HTMLElement) => HTMLElement) {
-  const wrapper = el("div", "ts-bar");
+function buildBar(bar: TowerSheetBar, keep: (key: string, element: HTMLElement) => HTMLElement, compact = false) {
+  const wrapper = el("div", compact ? "ts-bar ts-bar--compact" : "ts-bar");
   wrapper.dataset.key = bar.key;
   const top = el("div", "ts-bar__top");
   top.append(el("span", "ts-bar__label", bar.label), keep(`bv:${bar.key}`, el("span", "ts-bar__value", bar.value)));
@@ -1411,7 +1740,8 @@ function buildBar(bar: TowerSheetBar, keep: (key: string, element: HTMLElement) 
     track.append(marker);
   }
   const sub = keep(`bs:${bar.key}`, el("small", "ts-bar__sub", bar.sub ?? ""));
-  sub.hidden = !bar.sub;
+  // Kucuk hal (Genel'deki canli sira): alt metin Gelismis'in kartinda.
+  sub.hidden = compact || !bar.sub;
   wrapper.append(top, track, sub);
   return wrapper;
 }
@@ -1497,7 +1827,7 @@ export function patchTowerSheet(sheet: HTMLElement, model: TowerSheetModel) {
   setText(registry.get("subtitle"), model.subtitle);
   const status = registry.get("status");
   setText(status, model.status);
-  setHidden(status, !model.status);
+  setHidden(status, !model.status || isStatusInInsight(model));
   const insight = registry.get("insight");
   setText(insight, model.insight);
   setHidden(insight, !model.insight);
@@ -1533,8 +1863,26 @@ export function patchTowerSheet(sheet: HTMLElement, model: TowerSheetModel) {
       if (track && track.getAttribute("aria-valuenow") !== now) track.setAttribute("aria-valuenow", now);
       const sub = registry.get(`bs:${bar.key}`);
       setText(sub, bar.sub ?? "");
-      setHidden(sub, !bar.sub);
+      setHidden(sub, !bar.sub || Boolean(sub?.closest(".ts-bar--compact")));
     }
     section.notes.forEach((note, index) => setText(registry.get(`n:${section.id}:${index}`), note));
+  }
+  for (const card of model.specs) {
+    setText(registry.get(`spv:${card.key}`), card.value);
+    const fill = registry.get(`spf:${card.key}`);
+    const ratio = card.ratio.toFixed(3);
+    if (fill && fill.style.getPropertyValue("--fill") !== ratio) fill.style.setProperty("--fill", ratio);
+    setTone(fill, card.tone);
+    const track = registry.get(`spt:${card.key}`);
+    const now = String(Math.round(card.ratio * 100));
+    if (track && track.getAttribute("aria-valuenow") !== now) track.setAttribute("aria-valuenow", now);
+    const caption = registry.get(`spc:${card.key}`);
+    if (caption && caption.lastChild && caption.lastChild.nodeType === 3 && caption.lastChild.textContent !== (card.caption ?? "")) caption.lastChild.textContent = card.caption ?? "";
+    setHidden(caption, !card.caption);
+    for (const item of card.items) {
+      const value = registry.get(`spi:${card.key}:${item.key}`);
+      setText(value, item.value);
+      setTone(value, item.tone);
+    }
   }
 }

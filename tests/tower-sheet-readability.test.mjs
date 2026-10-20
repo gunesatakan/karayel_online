@@ -141,7 +141,8 @@ test("stok: canli sayi ve uretim secimi paneli yeniden kurdurmuyor; stok govdede
   assert.equal(first, later);
   const sheet = read("apps/web/src/tower-sheet.ts");
   assert.match(sheet, /patchStock\(registry, model\.stock\);/, "stok yerinde yazilmiyor");
-  assert.match(sheet, /if \(model\.stock\) body\.append\(buildStockBlock\(model, model\.stock, keep\)\);/);
+  // Stok Genel sekmesinin en ustunde (uretim secicisinden hemen sonra).
+  assert.match(sheet, /if \(model\.stock\) basic\.append\(buildStockBlock\(model, model\.stock, keep\)\);/);
   const css = read("apps/web/src/style.css");
   const sheetCss = css.slice(css.indexOf("/* Kule paneli"), css.indexOf("/* Kule paneli sonu */"));
   for (const selector of [".ts-stock {", ".ts-tile__number {", ".ts-production {"]) assert.ok(sheetCss.includes(selector), selector);

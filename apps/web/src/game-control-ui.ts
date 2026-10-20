@@ -1744,9 +1744,15 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     // Takili esyalar da burada: takilan esya sokulemedigi icin liste salt
     // okunur, yalnizca aciklamasi acilir.
-    const tail: HTMLElement[] = [buildTowerEffects(state)];
+    // Kartlar ve esyalar Etkiler sekmesinde, ayarlar Ayarlar sekmesinde (`tower-sheet`).
+    const effects = buildTowerEffects(state);
+    effects.dataset.sheetTab = "effects";
+    const tail: HTMLElement[] = [effects];
     const controls = buildTowerControls(state);
-    if (controls) tail.push(controls);
+    if (controls) {
+      controls.dataset.sheetTab = "settings";
+      tail.push(controls);
+    }
 
     // Satis haritadaki kule panelinde de duruyor ama tek yeri orasi olamaz:
     // haritanin alt sirasindaki bir kulenin paneli tam bu panelin altina

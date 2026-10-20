@@ -7641,6 +7641,358 @@ button.wave-report:active { transform: scale(0.99); }
   .ts-stock__grid[data-cols="4"] .ts-tile__name { white-space: normal; }
 }
 
+/* Sekmeler: Genel, Gelismis, Etkiler, Ayarlar. Basligin hemen altinda,
+   kaydirmanin disinda; secili sekme kule renginde alt cizgiyle. */
+.ts-tabs {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--ts-line);
+  background: rgba(2, 6, 23, 0.55);
+}
+
+.ts-tab,
+.game-controls .tower-sheet button.ts-tab {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 4px;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ts-ink-3);
+  font: 700 12px/1 Rajdhani, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-tab[aria-selected="true"],
+.game-controls .tower-sheet button.ts-tab[aria-selected="true"] {
+  border-bottom-color: var(--tower-color, var(--ts-accent));
+  color: #f1f5f9;
+}
+
+.ts-pane[hidden] { display: none; }
+
+/* Ayrinti sekmelerinde panel uzayabiliyor (ekranin %62'sine kadar): Genel kisa
+   kalip haritayi gosteriyor, ayrintiya bakan oyuncu kaydirmiyor. */
+.tower-sheet[data-tab="advanced"]:not(.tower-sheet--expanded),
+.tower-sheet[data-tab="effects"]:not(.tower-sheet--expanded),
+.tower-sheet[data-tab="settings"]:not(.tower-sheet--expanded),
+.tower-sheet[data-tall="1"]:not(.tower-sheet--expanded) {
+  max-height: min(62vh, var(--tower-sheet-room, 62vh));
+}
+
+/* Ayarlar sekmesinde ayarlar bolumu katlanmiyor: sekmenin adi basligi. */
+.ts-pane--settings > .ts-section { margin-top: 2px; border-top: 0; }
+.ts-pane--settings > .ts-section > .ts-section__heading { display: none; }
+.ts-pane--settings > .ts-section > .ts-section__body[hidden] { display: block; }
+
+/* Gelismis sekmesinin ilk satiri: ana sayilarin aciklamasi. */
+.ts-pane__lead {
+  margin: 6px 0 0;
+  color: var(--ts-ink-3);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.ts-pane__lead[hidden] { display: none; }
+
+/* Genel: canli kaynaklar tek sirada (govde, isi, mühimmat, enerji). */
+.ts-vitals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ts-vitals[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ts-vitals[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ts-vitals[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
+
+.ts-bar--compact {
+  min-width: 0;
+  padding: 5px 6px 6px;
+  border: 1px solid var(--ts-line);
+  background: var(--ts-surface);
+}
+
+.ts-bar--compact .ts-bar__top {
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 4px;
+}
+
+.ts-bar--compact .ts-bar__label {
+  overflow: hidden;
+  color: var(--ts-ink-3);
+  font: 700 10px/1.1 Rajdhani, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-bar--compact .ts-bar__value {
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-bar--compact .ts-bar__track { height: 4px; }
+
+/* Gelismis: kaynak kartlari. Isi tam genislikte (dort olcu), enerji ve
+   mühimmat yan yana. Renk yalnizca cubukta ve basligin isaretinde. */
+.ts-specs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ts-spec {
+  --spec-color: var(--ts-accent);
+  min-width: 0;
+  padding: 7px 8px 8px;
+  border: 1px solid var(--ts-line);
+  border-left: 2px solid var(--spec-color);
+  background: var(--ts-surface);
+}
+
+.ts-spec--heat { grid-column: 1 / -1; --spec-color: #e0a84a; }
+.ts-spec--energy { --spec-color: #38bdf8; }
+.ts-spec--ammo { --spec-color: #c9a46a; }
+.ts-specs > .ts-spec:only-child,
+.ts-specs > .ts-spec--energy:last-child:nth-child(2) { grid-column: 1 / -1; }
+
+.ts-spec__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ts-spec__title {
+  margin: 0;
+  color: var(--ts-ink-2);
+  font: 700 12px/1.1 Rajdhani, sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ts-spec__value {
+  color: #f8fafc;
+  font: 400 17px/1.1 var(--ts-mono);
+}
+
+.ts-spec__track {
+  position: relative;
+  height: 6px;
+  margin-top: 6px;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.ts-spec__fill {
+  position: absolute;
+  inset: 0;
+  background: var(--spec-color);
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  transition: transform 180ms linear;
+}
+
+.ts-spec__fill[data-tone="warn"] { background: var(--ts-warn); }
+.ts-spec__fill[data-tone="hot"] { background: var(--ts-hot); }
+
+.ts-spec__marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(241, 245, 249, 0.8);
+}
+
+.ts-spec__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 6px 8px;
+  margin: 7px 0 0;
+}
+
+.ts-spec__item { min-width: 0; }
+
+.ts-spec__item-label {
+  overflow: hidden;
+  color: var(--ts-ink-3);
+  font: 700 10px/1.15 Rajdhani, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-spec__item-value {
+  margin: 2px 0 0;
+  color: #f1f5f9;
+  font: 400 14px/1.15 var(--ts-mono);
+  white-space: nowrap;
+}
+
+.ts-spec__item-value[data-tone="warn"] { color: var(--ts-warn); }
+
+.ts-spec__caption {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 0;
+  color: var(--ts-ink-2);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.ts-spec__caption[hidden] { display: none; }
+
+/* Sekmelerin icindeki bolumler kart: baslik ve ozet tek satirda, katlanmiyor. */
+.ts-card {
+  margin-top: 6px;
+  padding: 6px 8px 7px;
+  border: 1px solid var(--ts-line);
+  background: rgba(13, 22, 40, 0.6);
+}
+
+.ts-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ts-card__title {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--ts-accent);
+  font: 700 12px/1.1 Rajdhani, sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ts-card__summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ts-ink-3);
+  font: 400 11px/1.1 var(--ts-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Olcu kutulari (saldiri, nisan, gelisim): iki sutun, etiket ustte, deger altta. */
+.ts-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  grid-auto-flow: row dense;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.ts-metric,
+.game-controls .tower-sheet button.ts-metric {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label label" "value bonus" "sub sub";
+  align-items: baseline;
+  column-gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 5px 7px;
+  box-sizing: border-box;
+  border: 1px solid var(--ts-line);
+  background: var(--ts-surface);
+  box-shadow: none;
+  color: var(--ts-ink);
+  text-align: left;
+}
+
+.ts-metric.is-wide { grid-column: span 2; }
+
+.ts-metric__label {
+  grid-area: label;
+  overflow: hidden;
+  color: var(--ts-ink-3);
+  font: 700 10px/1.15 Rajdhani, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-metric__value {
+  grid-area: value;
+  min-width: 0;
+  overflow: hidden;
+  color: #f1f5f9;
+  font: 400 14px/1.2 var(--ts-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-metric__bonus {
+  grid-area: bonus;
+  font: 400 11px/1.1 var(--ts-mono);
+  white-space: nowrap;
+}
+
+.ts-metric__bonus[hidden] { display: none; }
+.ts-metric__bonus[data-tone="up"] { color: var(--ts-up); }
+.ts-metric__bonus[data-tone="down"] { color: var(--ts-down); }
+
+.ts-metric__sub {
+  grid-area: sub;
+  margin-top: 2px;
+  color: var(--ts-ink-3);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.ts-metric__sub[hidden] { display: none; }
+
+.is-expandable > .ts-metric__label {
+  text-decoration: underline dotted rgba(148, 163, 184, 0.5);
+  text-underline-offset: 3px;
+}
+
+.ts-list > .ts-row:first-child { border-top: 0; }
+
+/* Bilgi karti: bes cubuk sik; aciklama varsayilan kapali. */
+.ts-card--knowledge .ts-bar { padding: 5px 0 2px; }
+.ts-card--knowledge .ts-bar__top { margin-bottom: 3px; }
+.ts-card--knowledge .ts-bar__label { font-size: 13px; }
+.ts-card--knowledge .ts-bar__value { font-size: 14px; }
+.ts-card--knowledge .ts-bar__track { height: 5px; }
+.ts-card--knowledge .ts-bar__sub { margin-top: 2px; font-size: 11px; }
+
+.ts-card__more { margin-top: 4px; }
+
+.ts-card__more-toggle {
+  min-height: 28px;
+  padding: 6px 0 2px;
+  color: var(--ts-accent);
+  font: 600 12px/1.2 Rajdhani, sans-serif;
+  cursor: pointer;
+}
+
+/* Etki kartinda ozet satirin kendisini tekrar ediyor. */
+.ts-card--effects .ts-card__summary { display: none; }
+
+/* Sahnenin eklentileri (kartlar ve esyalar, ayarlar) sekmelerinde ust bolum. */
+.ts-pane > .ts-section:first-child { margin-top: 4px; }
+
 @media (prefers-reduced-motion: reduce) {
   .tower-sheet,
   .tower-sheet *,
