@@ -45,7 +45,7 @@ import { getTieredTowerArtPath, getSupplyTowerArtPath } from "./tower-art";
  * oyuncunun hissettigi saniye ondan uzun. Kule Kodeksi de boyle yaziyor.
  */
 
-export type TowerSheetSectionId = "attack" | "aim" | "effects" | "resources" | "progress";
+export type TowerSheetSectionId = "knowledge" | "attack" | "aim" | "effects" | "resources" | "progress";
 
 /** Sahnenin metin notlari; ait olduklari bolumun altinda duruyor. */
 export type TowerSheetNote = { section: TowerSheetSectionId | "status"; text: string };
@@ -82,6 +82,28 @@ export type TowerSheetProgress = {
   refund?: { amount: number; undoable: boolean };
 };
 
+/**
+ * Sunucu bilgisi (`server-knowledge`): tur basina biriken bilgi ve verdigi artis.
+ * `bonus` simdiki artis (0..1), `next` bir oldurme daha gelirse artis.
+ */
+export type TowerSheetKnowledgeEntry = {
+  type: KnowledgeEnemyType;
+  effect: "slow" | "shieldDamage" | "armorBreak" | "damage";
+  kills: number;
+  bonus: number;
+  next: number;
+  /** Bagli kulede: artisi veren Sunucu'nun seviyesi. */
+  serverLevel?: number;
+};
+
+export type TowerSheetKnowledge =
+  /** Sunucu'nun kendi paneli: bes turun hepsi (sifirlar dahil), seviyenin agirligi, bag sayisi. */
+  | { role: "server"; level: number; weight: number; links: number; linkLimit: number; entries: TowerSheetKnowledgeEntry[] }
+  /** Sunucu'ya bagli kulenin paneli: bu kulenin aldigi artislar (en bilgili Sunucu'dan). */
+  | { role: "linked"; entries: TowerSheetKnowledgeEntry[] };
+
+type KnowledgeEnemyType = "runner" | "shooter" | "brute" | "grunt" | "siege";
+
 export type TowerSheetInput = {
   towerId: string;
   definitionId: string;
@@ -98,6 +120,8 @@ export type TowerSheetInput = {
   live: TowerSheetLive;
   notes: TowerSheetNote[];
   progress?: TowerSheetProgress;
+  /** Sunucu bilgisi: Sunucu'nun kendisi ya da ona bagli kule. */
+  knowledge?: TowerSheetKnowledge;
 };
 
 export type TowerSheetLine = { label: string; value: string };
@@ -126,6 +150,8 @@ export type TowerSheetBar = {
   ratio: number;
   /** Esik cizgisi (0..1), isi freninin basladigi yer gibi. */
   marker?: number;
+  /** Esik cizgisinin adi (ipucu); yoksa isi freni. */
+  markerLabel?: string;
   tone?: "ok" | "warn" | "hot";
   sub?: string;
 };
@@ -607,6 +633,22 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     });
   }
 
+  // -------------------------------------------------------------- Bilgi
+  // Sunucu'nun bilgisi panelin en ustunde (kaynak bolumunden de once):
+  // Sunucu ates etmiyor, isi bu sayi. Bagli kulede de ayni yerde.
+  // Bagli kulede artisin isleyip islemedigi kulenin kendi etkisinden (sunucuyla
+  // ayni kural): yavaslatma yavaslatan, zirh kirma zirh kiran, hasar ve kalkan
+  // hasari hasar veren kuleye. Blok henuz gelmediyse bilinmiyor: hepsi gosteriliyor.
+  const effectKinds = new Set((stats?.fe ?? []).map(([kind]) => kind));
+  const knowledgeApplies = (effect: TowerSheetKnowledgeEntry["effect"]) => {
+    if (!stats) return true;
+    if (effect === "slow") return effectKinds.has("slow") || effectKinds.has("aslow");
+    if (effect === "armorBreak") return effectKinds.has("armor") || effectKinds.has("armorAura");
+    return definition ? towerDealsDamage(definition) : true;
+  };
+  const knowledge = input.knowledge ? buildKnowledgeSection(input.knowledge, notesFor("knowledge"), knowledgeApplies) : undefined;
+  if (knowledge?.figures) figures.push(...knowledge.figures);
+
   // -------------------------------------------------------------- Kaynak
   const bars: TowerSheetBar[] = [];
   const resourceRows: TowerSheetRow[] = [];
@@ -709,6 +751,8 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
       notes: notesFor("progress")
     });
   }
+
+  if (knowledge) sections.unshift(knowledge.section);
 
   // Durum ve ozet sunucunun Turkce metni; Ingilizcede kaliplardan cevriliyor.
   const status = [localizeTowerStatusText(live.status), ...notesFor("status")].filter((text) => Boolean(text && text.trim())).join(" · ");
@@ -883,6 +927,94 @@ function buildStock(input: TowerSheetInput, definition: TowerDefinition | undefi
 }
 
 /** Ust satirdaki sayilarin aciklamalari: "DPS: tek hedef · Atış hızı: ısı sınırı …". */
+/**
+ * Sunucu bilgisinin bolumu.
+ *
+ * Sunucu'nun panelinde bes turun hepsi bir cubuk: tur -> buyuttugu etki,
+ * simdiki artis, oldurme sayisi ve bir oldurmenin daha katacagi pay; +%50'de
+ * "Bilgi Bankasi" nisaninin cizgisi. Sifir olan tur de gorunuyor: oyuncu neyi
+ * toplayabilecegini goruyor. Cubugun doluluğu artisin kendisi (+%20 = beste bir);
+ * artis hicbir zaman +%100'e varmiyor. Altta nasil toplandigi ve seviyenin
+ * agirligi. Bagli kulenin panelinde yalnizca bu kulenin aldigi artislar.
+ */
+function buildKnowledgeSection(knowledge: TowerSheetKnowledge, extraNotes: string[], applies: (effect: TowerSheetKnowledgeEntry["effect"]) => boolean) {
+  const label = (entry: TowerSheetKnowledgeEntry) => t("sheet.knowledge.bar", { type: t(`menu.enemy.type.${entry.type}`), effect: t(`scene.sheet.knowledge.${entry.effect}`) });
+  const plus = (fraction: number) => `+${formatPercent(fraction)}`;
+  // Bagli kulede "en yuksek" yalnizca bu kulede isleyen artislar arasindan.
+  const counts = (entry: TowerSheetKnowledgeEntry) => knowledge.role === "server" || applies(entry.effect);
+  let best: TowerSheetKnowledgeEntry | undefined;
+  for (const entry of knowledge.entries) {
+    if (entry.bonus > 0 && counts(entry) && (!best || entry.bonus > best.bonus)) best = entry;
+  }
+  const summary = best ? t("sheet.knowledge.summary", { what: label(best), v: plus(best.bonus) }) : t("sheet.knowledge.summaryEmpty");
+  const bars: TowerSheetBar[] = [];
+  const notes: string[] = [];
+  let figures: TowerSheetRow[] | undefined;
+  if (knowledge.role === "server") {
+    for (const entry of knowledge.entries) {
+      bars.push({
+        key: `kn:${entry.type}`,
+        label: label(entry),
+        value: plus(entry.bonus),
+        ratio: Math.max(0, Math.min(1, entry.bonus)),
+        marker: KNOWLEDGE_BADGE_MARK,
+        markerLabel: t("sheet.knowledge.marker"),
+        tone: entry === best ? "ok" : undefined,
+        sub: entry.kills > 0
+          ? t("sheet.knowledge.kills", { n: formatNumber(entry.kills, 0), v: plus(entry.next - entry.bonus) })
+          : t("sheet.knowledge.noKills", { v: plus(entry.next) })
+      });
+    }
+    figures = [
+      {
+        key: "kn",
+        label: t("sheet.knowledge.best"),
+        value: best ? plus(best.bonus) : plus(0),
+        // Bos bilgide alt satir yok: bolumun ozeti zaten "henuz bilgi yok" diyor.
+        sub: best ? label(best) : undefined,
+        detail: []
+      },
+      { key: "links", label: t("sheet.knowledge.links"), value: `${knowledge.links}/${knowledge.linkLimit}`, detail: [] }
+    ];
+    notes.push(...extraNotes);
+    notes.push(t("sheet.knowledge.howGather"));
+    notes.push(t("sheet.knowledge.howApply"));
+    notes.push(t("sheet.knowledge.weight", { level: knowledge.level, w: formatNumber(knowledge.weight, 2) }));
+  } else {
+    // Bu kulede isleyen artislar once; islemeyenler altta, nedeniyle.
+    const ordered = [...knowledge.entries].sort((a, b) => Number(applies(b.effect)) - Number(applies(a.effect)));
+    for (const entry of ordered) {
+      if (entry.bonus <= 0) continue;
+      const active = applies(entry.effect);
+      bars.push({
+        key: `kn:${entry.type}`,
+        label: label(entry),
+        // Islemeyen artis sifir cubuk ve neden: kule o etkiyi yapmiyor.
+        value: active ? plus(entry.bonus) : t("sheet.knowledge.inactiveValue"),
+        ratio: active ? Math.max(0, Math.min(1, entry.bonus)) : 0,
+        tone: entry === best ? "ok" : undefined,
+        sub: active
+          ? t("sheet.knowledge.linkedSub", { level: entry.serverLevel ?? 1, n: formatNumber(entry.kills, 0) })
+          : t("sheet.knowledge.inactive", { effect: t(`scene.sheet.knowledge.${entry.effect}`), v: plus(entry.bonus) })
+      });
+    }
+    notes.push(...extraNotes);
+    notes.push(bars.length > 0 ? t("sheet.knowledge.linkedApply") : t("sheet.knowledge.linkedEmpty"));
+  }
+  const section: TowerSheetSection = {
+    id: "knowledge",
+    title: knowledge.role === "server" ? t("sheet.section.knowledge") : t("sheet.section.serverKnowledge"),
+    summary,
+    rows: [],
+    bars,
+    notes
+  };
+  return { section, figures };
+}
+
+/** "Bilgi Bankasi" nisaninin esigi (+%50) cubukta. */
+const KNOWLEDGE_BADGE_MARK = 0.5;
+
 export function getFigureNote(model: TowerSheetModel) {
   return model.figures.filter((figure) => figure.sub).map((figure) => `${figure.label}: ${figure.sub}`).join(" · ");
 }
@@ -1275,7 +1407,7 @@ function buildBar(bar: TowerSheetBar, keep: (key: string, element: HTMLElement) 
   if (bar.marker !== undefined) {
     const marker = el("span", "ts-bar__marker");
     marker.style.left = `${(bar.marker * 100).toFixed(1)}%`;
-    marker.title = t("sheet.heatBrakeMarker");
+    marker.title = bar.markerLabel ?? t("sheet.heatBrakeMarker");
     track.append(marker);
   }
   const sub = keep(`bs:${bar.key}`, el("small", "ts-bar__sub", bar.sub ?? ""));

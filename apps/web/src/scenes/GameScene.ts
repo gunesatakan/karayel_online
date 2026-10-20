@@ -7,7 +7,7 @@ import { openChoiceDialog, openConfirmDialog, openDefenseDialog, defenseSummaryL
 import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
 import { isTutorialPrepareId, type TutorialProgressMessage } from "@karayel/shared";
 import type { TutorialCommand, TutorialFacts } from "../tutorial";
-import type { TowerSheetInput, TowerSheetNote } from "../tower-sheet";
+import type { TowerSheetInput, TowerSheetKnowledge, TowerSheetNote } from "../tower-sheet";
 import type { TowerSheetRect, TowerSheetReport } from "../game-control-ui";
 import { placeSelectedPanel, screenRatioRectToWorld, type PlacementSide } from "../selected-panel-placement";
 import type { DefenseSummary, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
@@ -234,6 +234,8 @@ import {
   getRiskyInvestmentNoticeText,
   getServerKnowledgeBonus,
   getServerKnowledgeTopBonus,
+  getServerKnowledgeWeight,
+  SERVER_LINK_LIMIT,
   SERVER_KNOWLEDGE_EFFECTS,
   SERVER_KNOWLEDGE_TYPES,
   ATAKAN_EXECUTE_SLOT,
@@ -13810,23 +13812,46 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * hepsi tek satirlik `selectedStats` metniydi.
    */
   /**
-   * Sunucu'nun bilgi satirlari: tur basina oldurme ve bagli kulelere verdigi
-   * artis ("Koşucu bilgisi 12 · yavaşlatma +%7"). Bilgi yoksa nasil
-   * toplandigini soyleyen tek satir.
+   * Kule panelinin Sunucu bilgisi (`tower-sheet` "Bilgi birikimi"): Sunucu'nun
+   * kendisinde bes turun hepsi (sifirlar dahil) ve bag sayisi; Sunucu'ya bagli
+   * kulede bu kulenin tur basina aldigi artis. Kurallar sunucuyla ayni:
+   * birden cok Sunucu bagliyorsa her turde en bilgilisi sayiliyor, toplanmiyor.
    */
-  private getServerKnowledgeLines(tower: TowerSnapshot) {
-    const lines: string[] = [];
-    for (const type of SERVER_KNOWLEDGE_TYPES) {
-      const kills = tower.serverKnowledge?.[type] ?? 0;
-      if (kills <= 0) continue;
-      lines.push(t("scene.sheet.knowledge", {
-        type: t(`menu.enemy.type.${type}`),
-        n: kills,
-        effect: t(`scene.sheet.knowledge.${SERVER_KNOWLEDGE_EFFECTS[type]}`),
-        v: t("format.percent", { v: Math.round(getServerKnowledgeBonus(kills, tower.level) * 100) })
-      }));
+  private getTowerSheetKnowledge(tower: TowerSnapshot): TowerSheetKnowledge | undefined {
+    const entry = (type: (typeof SERVER_KNOWLEDGE_TYPES)[number], kills: number, level: number, serverLevel?: number) => ({
+      type,
+      effect: SERVER_KNOWLEDGE_EFFECTS[type],
+      kills,
+      bonus: getServerKnowledgeBonus(kills, level),
+      next: getServerKnowledgeBonus(kills + 1, level),
+      serverLevel
+    });
+    if (tower.definitionId === "warrior-2") {
+      return {
+        role: "server",
+        level: tower.level,
+        weight: getServerKnowledgeWeight(tower.level),
+        links: tower.linkedTowerIds?.length ?? 0,
+        linkLimit: SERVER_LINK_LIMIT,
+        entries: SERVER_KNOWLEDGE_TYPES.map((type) => entry(type, tower.serverKnowledge?.[type] ?? 0, tower.level))
+      };
     }
-    return lines.length > 0 ? lines : [t("scene.sheet.knowledgeEmpty")];
+    const servers: TowerSnapshot[] = [];
+    for (const candidate of this.towerSnapshots.values()) {
+      if (candidate.definitionId === "warrior-2" && candidate.linkedTowerIds?.includes(tower.id)) servers.push(candidate);
+    }
+    if (servers.length === 0) return undefined;
+    return {
+      role: "linked",
+      entries: SERVER_KNOWLEDGE_TYPES.map((type) => {
+        let best = entry(type, 0, 1);
+        for (const server of servers) {
+          const candidate = entry(type, server.serverKnowledge?.[type] ?? 0, server.level, server.level);
+          if (candidate.bonus > best.bonus) best = candidate;
+        }
+        return best;
+      })
+    };
   }
 
   /** Kuleyi bir Sunucu bagliyor mu (anlik goruntudeki baglar). */
@@ -13860,11 +13885,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (context.towerOperations && tower.definitionId !== "warrior-2") notes.push({ section: "resources", text: this.getHeatBrakeLine(tower, definition) });
     if (context.towerOperations && tower.energyState && tower.energyState !== "powered") notes.push({ section: "status", text: t("scene.sheet.noEnergy") });
     if (tower.definitionId === WALL_TOWER_ID) notes.push({ section: "status", text: tower.gate ? t("scene.sheet.gateOpen") : t("scene.sheet.gateClosed") });
+    // Sunucu bilgisi kendi bolumunde (`getTowerSheetKnowledge`); bagin ne yaptigi da orada.
     if (tower.definitionId === "warrior-2") {
-      notes.push({ section: "effects", text: t("scene.sheet.linked", { n: tower.linkedTowerIds?.length ?? 0 }) });
-      for (const text of this.getServerKnowledgeLines(tower)) notes.push({ section: "effects", text });
+      notes.push({ section: "knowledge", text: t("scene.sheet.linked", { n: tower.linkedTowerIds?.length ?? 0 }) });
     } else if (this.isServerLinkedTower(tower.id)) {
-      notes.push({ section: "effects", text: t("scene.sheet.serverLinked") });
+      notes.push({ section: "knowledge", text: t("scene.sheet.serverLinked") });
     }
     const owner = ownsTower ? undefined : this.playerSnapshots.find((player) => player.id === tower.ownerId)?.name ?? tower.ownerName;
     return {
@@ -13902,6 +13927,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         insight: tower.insight
       },
       notes,
+      knowledge: this.getTowerSheetKnowledge(tower),
       progress: {
         maxed: tower.level >= getTowerMaxLevel(definition ?? { resourceProvider: tower.resourceProvider }),
         upgradeXp: context.upgradeXp,

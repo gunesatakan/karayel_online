@@ -292,7 +292,25 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "sheet.aria.expand": "Expand panel",
   "sheet.aria.close": "Close panel",
   "sheet.aria.breakdown": "{label} breakdown",
-  "sheet.heatBrakeMarker": "Heat brake threshold"
+  "sheet.heatBrakeMarker": "Heat brake threshold",
+  "sheet.section.knowledge": "Knowledge",
+  "sheet.section.serverKnowledge": "Server knowledge",
+  "sheet.knowledge.bar": "{type} → {effect}",
+  "sheet.knowledge.best": "Top knowledge",
+  "sheet.knowledge.links": "Links",
+  "sheet.knowledge.summary": "top: {what} {v}",
+  "sheet.knowledge.summaryEmpty": "no knowledge yet",
+  "sheet.knowledge.kills": "{n} knowledge · next kill adds {v}",
+  "sheet.knowledge.noKills": "no kills yet · first kill gives {v}",
+  "sheet.knowledge.marker": "+50%: Knowledge Bank badge",
+  "sheet.knowledge.howGather": "Every enemy a linked tower finishes adds +1 to that type's knowledge. Knowledge stays on the Server, even if the link is removed.",
+  "sheet.knowledge.howApply": "The bonus boosts what linked towers already do against that type. A tower without that effect (one that doesn't slow, say) gains nothing.",
+  "sheet.knowledge.weight": "Level {level}: each kill counts ×{w} (×2 at level 10). Returns diminish: 40 knowledge ≈ +20%, 160 = +50%; it never reaches +100%.",
+  "sheet.knowledge.linkedSub": "Server lv {level} · {n} knowledge",
+  "sheet.knowledge.linkedApply": "The bonus applies to what this tower already does against that type. With several Servers linked, the most knowledgeable one counts.",
+  "sheet.knowledge.linkedEmpty": "The linked Server has no knowledge yet. This tower's killing blows gather it.",
+  "sheet.knowledge.inactiveValue": "no effect",
+  "sheet.knowledge.inactive": "this tower has no {effect} · the Server's {v} does nothing here"
 };
 
 export const en: Partial<Record<MessageKey, string>> = { ...enCore, ...enMenu, ...enControls, ...enScene, ...enReports, ...enConsent, ...enCredits, ...enServer };

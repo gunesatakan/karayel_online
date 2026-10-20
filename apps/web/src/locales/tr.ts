@@ -293,7 +293,25 @@ export const trCore = {
   "sheet.aria.expand": "Paneli genişlet",
   "sheet.aria.close": "Paneli kapat",
   "sheet.aria.breakdown": "{label} dökümü",
-  "sheet.heatBrakeMarker": "Isı freni eşiği"
+  "sheet.heatBrakeMarker": "Isı freni eşiği",
+  "sheet.section.knowledge": "Bilgi birikimi",
+  "sheet.section.serverKnowledge": "Sunucu bilgisi",
+  "sheet.knowledge.bar": "{type} → {effect}",
+  "sheet.knowledge.best": "En yüksek bilgi",
+  "sheet.knowledge.links": "Bağ",
+  "sheet.knowledge.summary": "en yüksek: {what} {v}",
+  "sheet.knowledge.summaryEmpty": "henüz bilgi yok",
+  "sheet.knowledge.kills": "{n} bilgi · sonraki öldürme {v} ekler",
+  "sheet.knowledge.noKills": "henüz öldürme yok · ilk öldürme {v} verir",
+  "sheet.knowledge.marker": "+%50: Bilgi Bankası nişanı",
+  "sheet.knowledge.howGather": "Bağlı kulelerin son vurduğu her düşman, o türün bilgisine +1 yazar. Bilgi Sunucu'da kalır; bağ kalksa da silinmez.",
+  "sheet.knowledge.howApply": "Artış, bağlı kulelerin o türe karşı zaten yaptığı etkiyi büyütür. O etkisi olmayan kule (örneğin yavaşlatmayan) bir şey kazanmaz.",
+  "sheet.knowledge.weight": "Seviye {level}: her öldürme ×{w} sayılır (Sv 10'da ×2). Getiri azalır: 40 bilgi ≈ +%20, 160 bilgi = +%50; +%100'e hiç varmaz.",
+  "sheet.knowledge.linkedSub": "Sunucu Sv {level} · {n} bilgi",
+  "sheet.knowledge.linkedApply": "Artış bu kulenin o türe karşı zaten yaptığı etkiye uygulanır. Birden çok Sunucu bağlıysa en bilgilisi sayılır.",
+  "sheet.knowledge.linkedEmpty": "Bağlı Sunucu henüz bilgi toplamadı. Bu kulenin son vuruşları bilgi toplar.",
+  "sheet.knowledge.inactiveValue": "işlemiyor",
+  "sheet.knowledge.inactive": "bu kulede {effect} yok · Sunucu'nun {v} artışı burada işlemiyor"
 } as const;
 
 /** Butun bolgeler; anahtar onekleri bolgeye ozgu, cakisma yok. */
