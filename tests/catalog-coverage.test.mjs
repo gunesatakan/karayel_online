@@ -41,6 +41,7 @@ const ALL_STATS = [
   "championGold", "airKillGold", "damageGold", "multiKillGold", "overkillGold",
   "garrisonGold", "upgradeGold", "heavyKillGold", "statusKillGold",
   "hotKillGold", "slowedKillGold", "deliveryGold", "longRangeKillGold",
+  "garrisonExperience", "cleanWaveExperience", "upgradeExperienceRefund", "damageExperience", "eliteKillExperience",
   "leadTargeting", "damageVsFast", "retargetDamage", "critSplash", "farCritChance", "hitSplash",
   "slowBleed", "slowVulnerability", "coolingFlat", "brakeCooling", "ventHeat", "killCooling",
   "neighborCooling", "heatBleed", "fireRateHeatRelief", "coldFireRate", "trackRhythm", "brakeDamage",
@@ -63,7 +64,7 @@ const BUILDING_ONLY_STATS = ["resourceProduction", "ammoProduction", "workerGath
  * (ucan hedef, komsusuzluk) bakiyorlar ve kart tarafinda ayni kosullar
  * kilitle duruyor (Ongorulu Takip, Gozcu Yuvasi).
  */
-const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated", "championGold", "airKillGold", "damageGold", "multiKillGold", "overkillGold", "hotKillGold", "slowedKillGold", "deliveryGold", "longRangeKillGold",
+const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated", "damageExperience", "eliteKillExperience", "championGold", "airKillGold", "damageGold", "multiKillGold", "overkillGold", "hotKillGold", "slowedKillGold", "deliveryGold", "longRangeKillGold",
   // Isi, atis hizi ve nisan, ikinci tur: tek kuleye baglanan esya mekanikleri.
   // Kart tarafinda karsiliklari ayri (Isi Donusturucu, Asiri Hiz, Soguk Salvo,
   // Termodinamik Denge kendi statlariyla).

@@ -68,6 +68,23 @@ export type ModifierStat =
    * baska bir sey karsiliginda takas eden.
    */
   | "experienceGain"
+  /**
+   * Tecrube primleri: `experienceGain` carpanindan ayri, belirli bir olaya
+   * baglanan duz tecrube (altin primlerinin aynasi). Ilk ucu oyuncunun
+   * listesinden (kartlar), son ikisi kulenin listesinden (esyalar).
+   *
+   * - `garrisonExperience`: dalga sonunda ayakta olan her hasar veren kule.
+   * - `cleanWaveExperience`: sizintisiz biten dalga.
+   * - `upgradeExperienceRefund`: kule gelistirmenin tecrube bedelinin geri donen payi.
+   * - `damageExperience`: dalga sonunda kulenin o dalga verdigi her 1000 hasar.
+   * - `eliteKillExperience`: kulenin oldurdugu brute, kusatma, sampiyon ve
+   *   ozel dusmandan gelen tecrubenin ek payi (`experienceGain` havuzuna).
+   */
+  | "garrisonExperience"
+  | "cleanWaveExperience"
+  | "upgradeExperienceRefund"
+  | "damageExperience"
+  | "eliteKillExperience"
   /** Onarim bedeli; negatif deger ucuzlatir. Yapiyi ayakta tutmanin fiyati. */
   | "repairCost"
   /** Satis iadesi; kuleyi sokup baskasini kurmanin bedelini degistirir. */

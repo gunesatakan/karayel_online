@@ -68,7 +68,9 @@ export const GLOBAL_SHOP_ITEM_IDS = [
   "sigorta-policesi",
   "vadeli-mevduat",
   // Sampiyon primi oyuncunun: sampiyonu kim oldururse oldursun.
-  "odul-fermani"
+  "odul-fermani",
+  // Tecrube kazanci oyuncunun listesinden okunuyor (`experienceGain`).
+  "egitim-kilavuzu"
 ] as const;
 
 /** Sokulemeyen esyalar icin tavan: her takma gercek bir taahhut olsun. */
@@ -562,6 +564,11 @@ const rawShopCatalog: ShopItem[] = [
   // takilacagi bir karar.
   defineItem("odul-fermani", "Ödül Fermanı", "Bir şampiyon düşman öldüğünde (kim öldürürse öldürsün) +300 altın.", "utility", 120, { axes: ["economy"], effects: [effect("odul-fermani", "championGold", 300)] }),
   defineItem("dusurme-primi", "Düşürme Primi", "Takıldığı kulenin öldürdüğü her uçan düşman +32 altın verir.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("dusurme-primi", "airKillGold", 32)] }),
+  // Tecrube esyalari: biri yuzeysel ve oyuncunun (duz carpan), ikisi derin ve
+  // kulenin: verdigi hasarin dalga sonu karsiligi, agir hedefin tecrubesi.
+  defineItem("egitim-kilavuzu", "Eğitim Kılavuzu", "Tecrübe kazancı +%30; en fazla 3 kez alınır.", "utility", 90, { repeatable: true, maxStacks: 3, priceGrowth: 1.5, axes: ["economy"], effects: [effect("egitim-kilavuzu", "experienceGain", 0.3)] }),
+  defineItem("ders-defteri", "Ders Defteri", "Takıldığı kule dalga sonunda o dalga verdiği her 1000 hasar için +10 tecrübe kazandırır.", "utility", 100, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("ders-defteri", "damageExperience", 10)] }),
+  defineItem("zor-ders", "Zor Ders", "Takıldığı kulenin öldürdüğü brute, kuşatma, şampiyon ve özel düşmanlardan gelen tecrübe +%100.", "utility", 110, { axes: ["economy"], effects: [effect("zor-ders", "eliteKillExperience", 1)] }),
   defineItem("savas-tazminati", "Savaş Tazminatı", "Takıldığı kule dalga sonunda o dalga verdiği her 1000 hasar için +20 altın kazandırır.", "utility", 90, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("savas-tazminati", "damageGold", 20)] }),
   defineItem("toplu-imha-primi", "Toplu İmha Primi", "Takıldığı kule 2 saniye içinde 3 düşman öldürdüğünde +60 altın verir.", "utility", 85, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("toplu-imha-primi", "multiKillGold", 60)] }),
   defineItem("artik-enerji-toplayici", "Artık Enerji Toplayıcı", "Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %10'u altına dönüşür.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("artik-enerji-toplayici", "overkillGold", 0.1)] }),

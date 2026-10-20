@@ -220,6 +220,9 @@ const KULE_KATMANINDAN_OKUNANLAR = new Set([
   // Altin primleri: olduren / hasari veren kulenin listesinden.
   "airKillGold", "damageGold", "multiKillGold", "overkillGold",
   "hotKillGold", "slowedKillGold", "deliveryGold", "longRangeKillGold",
+  // Tecrube primleri: hasari veren / olduren kulenin listesinden; davranislari
+  // tests/experience-content.test.mjs'te gercek odada.
+  "damageExperience", "eliteKillExperience",
   // Isi, atis hizi ve nisan, ikinci tur: hepsi kulenin listesinden okunuyor ve
   // davranislari tests/heat-aim-redesign.test.mjs'te gercek odada olculuyor.
   "leadTargeting", "damageVsFast", "retargetDamage", "critSplash", "farCritChance", "hitSplash",

@@ -817,6 +817,15 @@ export const cardCatalog: CardDefinition[] = [
   { id: "terfi-ikramiyesi", name: "Terfi İkramiyesi", description: "Her kule geliştirmende +10 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("terfi-ikramiyesi", "upgradeGold", 10)] },
   { id: "agir-hedef-odulu", name: "Ağır Hedef Ödülü", description: "Öldürdüğün her brute ve kuşatma düşmanı +24 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-hedef-odulu", "heavyKillGold", 24)] },
   { id: "yavas-olum-primi", name: "Yavaş Ölüm Primi", description: "Yanma ve kanamanla ölen her düşman +16 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("yavas-olum-primi", "statusKillGold", 16)] },
+  // Tecrube kartlari: seviye ve isci agaci tecrubeyle ilerliyor, tecrube ise
+  // yalnizca oldurmeden geliyordu. Ikisi yuzeysel (duz carpan; biri altindan
+  // takasli), ucu derin (dalga sonu ayakta kule ve temiz dalga, gelistirmede
+  // geri donen pay). Altin kartlarinin aynasi; oyuncunun kendi kesesine.
+  { id: "hizli-ogrenme", name: "Hızlı Öğrenme", description: "Tecrübe kazancı +%20.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("hizli-ogrenme", "experienceGain", 0.2)] },
+  { id: "ogrenci-bursu", name: "Öğrenci Bursu", description: "Tecrübe kazancı +%80 ama düşman altını -%15.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("ogrenci-bursu", "experienceGain", 0.8), effect("ogrenci-bursu", "goldGain", -0.15)] },
+  { id: "harp-akademisi", name: "Harp Akademisi", description: "Dalga sonunda ayakta olan her hasar veren kulen için +10 tecrübe.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("harp-akademisi", "garrisonExperience", 10)] },
+  { id: "temiz-ders", name: "Temiz Ders", description: "Sızıntısız biten her dalga sonunda +80 tecrübe.", axes: ["economy", "barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("temiz-ders", "cleanWaveExperience", 80)] },
+  { id: "tecrube-aktarimi", name: "Tecrübe Aktarımı", description: "Kule geliştirmenin tecrübe bedelinin %20'si geri döner.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("tecrube-aktarimi", "upgradeExperienceRefund", 0.2)] },
   { id: "kelle-parasi", name: "Kelle Parası", description: "Kritik vuruşla öldürülen her düşman +24 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:critKill"] },
 
   // --- Epik: cevrim kartlari ---
@@ -989,6 +998,7 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   // Altin primleri kulenin yaptigi bir seyi degistirmiyor, yalnizca oyuncunun altinini.
   championGold: "none", airKillGold: "none", damageGold: "none", multiKillGold: "none", overkillGold: "none",
   garrisonGold: "none", upgradeGold: "none", heavyKillGold: "none", statusKillGold: "none",
+  garrisonExperience: "none", cleanWaveExperience: "none", upgradeExperienceRefund: "none", damageExperience: "none", eliteKillExperience: "none",
   hotKillGold: "none", slowedKillGold: "none", deliveryGold: "none", longRangeKillGold: "none",
   // Isi, atis hizi ve nisan, ikinci tur: hepsi kulenin vurusuna ya da isisine
   // isliyor. Bitisik kulelerin sogumasi ve isi aktarimi ates etmeyen bir

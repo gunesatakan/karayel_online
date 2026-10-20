@@ -168,7 +168,8 @@ test("kritik hasar veren her esya yariya indi; fiyat ve oteki statlar ayni; TR v
 
 test("dusman altini yuzdesi veren kartlar yariya indi; Savas Hazinesi'nin hasari ayni", () => {
   const beklenen = { "ganimet-payi": 0.6, "kanli-kazanc": 1.4, "parali-asker": 1, "savas-hazinesi": 0.6 };
-  const altinKartlari = cardCatalog.filter((entry) => entry.effects.some((modifier) => modifier.stat === "goldGain")).map((entry) => entry.id).sort();
+  // Altin veren kartlar (artiran); Ogrenci Bursu altini tecrubeyle takas ediyor (eksi).
+  const altinKartlari = cardCatalog.filter((entry) => entry.effects.some((modifier) => modifier.stat === "goldGain" && modifier.add > 0)).map((entry) => entry.id).sort();
   assert.deepEqual(altinKartlari, Object.keys(beklenen).sort(), "altin yuzdesi kart listesi degisti");
   for (const [id, add] of Object.entries(beklenen)) {
     close(getModifierAdd(card(id).effects, "goldGain"), add, id);

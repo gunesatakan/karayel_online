@@ -166,6 +166,7 @@ const STAT_NEEDS: Readonly<Record<string, readonly ShopItemCapabilityNeed[]>> = 
   damageVsShooter: ["damage"], damageVsSiege: ["damage"], resistancePierce: ["damage"], weaknessBonus: ["damage"],
   // Tecrube ve oldurme primleri oldurmeden geliyor.
   experienceGain: ["damage"], airKillGold: ["damage"], damageGold: ["damage"], multiKillGold: ["damage"],
+  damageExperience: ["damage"], eliteKillExperience: ["damage"],
   overkillGold: ["damage"], slowedKillGold: ["damage"], longRangeKillGold: ["damage"], hotKillGold: ["damage", "heat"],
   fireRate: ["attacks"], range: ["attacks"], performanceCost: ["attacks"],
   statusDuration: ["attacks"], statusMagnitude: ["attacks"],

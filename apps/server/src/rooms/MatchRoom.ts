@@ -5430,6 +5430,38 @@ export class MatchRoom extends Room<MatchState> {
    * kendi kartinin ve esyasinin karsiligini aliyor; temizlik kosulu ise
    * takimin -- sizinti takimin nexusundan.
    */
+  /**
+   * Dalga sonu tecrube primleri (altin primlerinin aynasi): Harp Akademisi
+   * (ayakta olan her hasar veren kule), Temiz Ders (sizintisiz dalga) oyuncunun
+   * listesinden; Ders Defteri kulenin o dalga verdigi her 1000 hasar icin
+   * kulenin listesinden. Duz, tavansiz, carpanla buyumuyor; co-op'ta herkes
+   * kendi kartinin karsiligini aliyor. Kulelerin dalga hasar sayaci burada
+   * okunuyor, sifirlamayi altin primi yapiyor.
+   */
+  private awardWaveEndBonusExperience(clean: boolean) {
+    for (const [playerId, player] of this.state.players.entries()) {
+      const modifiers = player.runModifiers ?? [];
+      let bonus = 0;
+      const perTower = getModifierAdd(modifiers, "garrisonExperience");
+      if (perTower > 0) {
+        let standing = 0;
+        for (const tower of this.towers.values()) {
+          if (tower.ownerId === playerId && tower.hp > 0 && occupiesTowerSlot(tower.definition) && towerDealsDamage(tower.definition)) standing += 1;
+        }
+        bonus += standing * perTower;
+      }
+      if (clean) bonus += getModifierAdd(modifiers, "cleanWaveExperience");
+      if (bonus > 0) player.experience = (player.experience ?? 0) + bonus;
+    }
+    for (const tower of this.towers.values()) {
+      const perThousand = getModifierAdd(this.getTowerRunModifiers(tower), "damageExperience");
+      if (!(perThousand > 0)) continue;
+      const player = this.state.players.get(tower.ownerId);
+      if (!player) continue;
+      player.experience = (player.experience ?? 0) + Math.floor((tower.waveDamageDealt ?? 0) / DAMAGE_GOLD_PER_DAMAGE) * perThousand;
+    }
+  }
+
   private awardWaveEndBonusGold(completedWave: number, clean: boolean) {
     for (const [playerId, player] of this.state.players.entries()) {
       let bonus = this.getPlayerWaveIncome(playerId);
@@ -6298,6 +6330,8 @@ export class MatchRoom extends Room<MatchState> {
         if (this.playerHasUnlock(playerId, "goldInterest")) player.gold += Math.floor(player.gold * GOLD_INTEREST_RATE);
       }
       // Faizden sonra: duz primler faizin tabanina girmesin.
+      // Tecrube primleri altindan once: altin primi kulelerin dalga hasar sayacini sifirliyor.
+      this.awardWaveEndBonusExperience(isCleanWave(waveRecord));
       this.awardWaveEndBonusGold(completedWave, isCleanWave(waveRecord));
       this.setupPhase = true;
       this.setupSession += 1;
@@ -13459,7 +13493,12 @@ export class MatchRoom extends Room<MatchState> {
       const modifiers = player === killer && sourceTower
         ? [...(player.runModifiers ?? []), ...(sourceTower.runModifiers ?? [])]
         : player.runModifiers ?? [];
-      player.experience = (player.experience ?? 0) + share * getModifierMultiplier(modifiers, "experienceGain");
+      // Zor Ders: olduren kulenin agir hedefi (brute, kusatma, sampiyon, ozel)
+      // tecrubesine ek pay, ayni `1 + toplam` havuzunda.
+      const elite = player === killer && sourceTower && (enemy.type === "brute" || enemy.type === "siege" || enemy.champion || enemy.special)
+        ? getModifierAdd(sourceTower.runModifiers ?? [], "eliteKillExperience")
+        : 0;
+      player.experience = (player.experience ?? 0) + share * Math.max(0, getModifierMultiplier(modifiers, "experienceGain") + elite);
     }
   }
 
@@ -17145,7 +17184,10 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    player.experience = Math.max(0, player.experience - cost);
+    // Usta-Cirak: tecrube bedelinin bir payi geri donuyor. Satis tecrube
+    // iade etmedigi icin (geri almada da) bir pompa kurmuyor.
+    const refund = cost * Math.min(1, Math.max(0, getModifierAdd(player.runModifiers ?? [], "upgradeExperienceRefund")));
+    player.experience = Math.max(0, player.experience - cost + refund);
     player.gold -= goldCost;
     player.goldSpent += goldCost;
     // Ayni hazirlikta geri alinirsa iade edilecek gelistirme altini.
