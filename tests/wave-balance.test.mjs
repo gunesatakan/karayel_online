@@ -183,9 +183,10 @@ test("düşman sayısı harita ölçeği ve oyuncu sayısıyla çarpılır", () 
 });
 
 test("dalga ekonomisini ve rejenerasyon ölçeklemesini sabitler", () => {
-  assert.ok(Math.abs(ENEMY_REWARD_MULTIPLIER - 3.24) < 1e-9, "oldurme altini 1,5 x 1,8 x 1,2");
-  assert.equal(getWaveCompletionGold(1), 47);
-  assert.equal(getWaveCompletionGold(19), 144);
+  // Gelir +%30 (2026-10-21): 1,5 x (1,8 x 1,3) x 1,2; dalga sonu da 1,8 x 1,3.
+  assert.ok(Math.abs(ENEMY_REWARD_MULTIPLIER - 4.212) < 1e-9, "oldurme altini 1,5 x 2,34 x 1,2");
+  assert.equal(getWaveCompletionGold(1), 61);
+  assert.equal(getWaveCompletionGold(19), 187);
 
   const brute = getEnemyCombatDefinition("brute");
   const wave20Regen = brute.healthRegenPerSecond * getWaveHpMultiplier(20);

@@ -72,10 +72,11 @@ export const PLAYER_POWER_COMPENSATION = 2.13;
 export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATION;
 /**
  * Taban altin gelirinin carpani: oldurme ve dalga sonu altini. Sahibin
- * onceki 1.2 gelir carpani %50 artirildi. Kart ve esya primleri
- * kendi tutarlarinda.
+ * onceki 1.2 gelir carpani %50 artirildi (1,8); sonra sahibin istegiyle
+ * (2026-10-21: "altin ve tecrube kazanimini %30 artir") bir %30 daha:
+ * 1,8 x 1,3 = 2,34. Kart ve esya primleri kendi tutarlarinda.
  */
-export const GOLD_INCOME_MULTIPLIER = 1.8;
+export const GOLD_INCOME_MULTIPLIER = 1.8 * 1.3;
 /**
  * Dusman oldurmenin altininin ek carpani. Sahibin istegi (2026-10): "Para
  * asla yetmiyor. Dusmanlardan kazanilan parayi 1.2 kat yap." Sampiyon ve ozel
@@ -90,9 +91,10 @@ export const ENEMY_REWARD_MULTIPLIER = 1.5 * GOLD_INCOME_MULTIPLIER * ENEMY_KILL
  *
  * Altin carpaninin deneyim tarafindaki karsiligi: egrinin sekli dusman tipinde
  * ve dalgada duruyor, bu sayi ise butun kazancin seviyesini tek yerden ceviriyor.
- * Sahibin istegiyle %25 artirildi (1,5 -> 1,875).
+ * Sahibin istegiyle %25 artirildi (1,5 -> 1,875), sonra bir %30 daha
+ * (2026-10-21): 1,875 x 1,3 = 2,4375.
  */
-export const ENEMY_EXP_MULTIPLIER = 1.875;
+export const ENEMY_EXP_MULTIPLIER = 1.875 * 1.3;
 
 export function getWaveEnemyCount(wave: number) {
   return Math.max(1, Math.round(BASE_WAVE_ENEMY_COUNT * ENEMY_COUNT_WAVE_MULTIPLIER ** Math.max(0, wave - 1)));

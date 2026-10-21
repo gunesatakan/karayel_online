@@ -102,7 +102,7 @@ test("yuzeysel: Hizli Ogrenme +%20 (uc kez), Ogrenci Bursu +%80 tecrube -%15 alt
   enemy.reward = 100; enemy.champion = undefined; enemy.special = undefined;
   player.gold = 0;
   room.awardEnemyGold(enemy, "p1");
-  assert.ok(Math.abs(player.gold - Math.round(100 * 3.24) * 0.85) < 1e-6, `altin ${player.gold}`);
+  assert.ok(Math.abs(player.gold - Math.round(100 * 4.212) * 0.85) < 1e-6, `altin ${player.gold}`);
 });
 
 test("Harp Akademisi: dalga sonunda ayakta olan her hasar veren kule icin +10 tecrube", () => {
