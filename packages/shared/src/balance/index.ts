@@ -87,6 +87,17 @@ export const ENEMY_KILL_GOLD_BOOST = 1.2;
 export const ENEMY_REWARD_MULTIPLIER = 1.5 * GOLD_INCOME_MULTIPLIER * ENEMY_KILL_GOLD_BOOST;
 
 /**
+ * Logarithmic kill-gold growth: wave 1 = 1x, 13 = 1.5x, 20 = 2x.
+ * At wave 13 the log argument is 7/12; at 20 it is (7/12)^2.
+ * The reflected log rises slowly first, then faster. Clamp outside 1..20.
+ * Applied once to the base payout, including champion/special budgets.
+ */
+export function getEnemyGoldWaveMultiplier(wave: number): number {
+  const level = Number.isNaN(wave) ? 1 : Math.max(1, Math.min(FINAL_WAVE, wave));
+  return 1 + Math.log1p(-5 * (level - 1) / 144) / Math.log(49 / 144);
+}
+
+/**
  * Dusman oldurmenin deneyim odulu.
  *
  * Altin carpaninin deneyim tarafindaki karsiligi: egrinin sekli dusman tipinde

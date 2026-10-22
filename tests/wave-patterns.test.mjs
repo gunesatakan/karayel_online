@@ -27,6 +27,7 @@ import {
   WAVE_PATTERN_MIN_COUNT_FACTOR,
   WAVE_PATTERN_TABLE,
   ENEMY_REWARD_MULTIPLIER,
+  getEnemyGoldWaveMultiplier,
   getArenaWaveEnemyCount,
   getDefaultWaveSlotBudget,
   getEnemyCombatDefinition,
@@ -362,7 +363,8 @@ test("sunucu: oldurme altini ve deneyimi paternin olcegiyle; dalga sonu altini d
   const gold = player.gold;
   const experience = player.experience;
   room.damageEnemy(runner, runner.hp + runner.shield * 3 + 10, 0, "test", "p1", "true");
-  assert.equal(player.gold - gold, Math.max(1, Math.round(getEnemyCombatDefinition("runner").reward * plan.goldScale * ENEMY_REWARD_MULTIPLIER)));
+  const expectedGold = Math.max(1, Math.round(getEnemyCombatDefinition("runner").reward * plan.goldScale * ENEMY_REWARD_MULTIPLIER)) * getEnemyGoldWaveMultiplier(found);
+  assert.ok(Math.abs(player.gold - gold - expectedGold) < 1e-9);
   assert.ok(Math.abs(player.experience - experience - getEnemyExp(found, "runner", "ground") * plan.expScale) < 1e-6);
 });
 

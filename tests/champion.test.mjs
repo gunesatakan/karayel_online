@@ -41,6 +41,7 @@ import {
   getEffectiveHp,
   getEnemyCombatDefinition,
   getEnemyKillGold,
+  getEnemyGoldWaveMultiplier,
   getEnemyLeakDamage,
   getEnemyZeynepReputationGain,
   getEnemySpawnHealth,
@@ -333,7 +334,7 @@ test("sunucu: sampiyonu oldurmek yerine gectigi dogumlarin altinini, deneyimini,
   const experience = player.experience;
   const reputation = player.reputation;
   assert.equal(room.damageEnemy(champion, 1e9, 0, "test", "p1", "true"), true);
-  assert.equal(player.gold - gold, plan.gold);
+  assert.ok(Math.abs(player.gold - gold - plan.gold * getEnemyGoldWaveMultiplier(room.wave)) < 1e-9);
   assert.ok(Math.abs(player.experience - experience - plan.exp) < 1e-9);
   assert.equal(player.ultimateCharge, 7 * plan.replaced, "ulti sarji birim birim");
   assert.equal(room.kills, 1, "oldurme sayaci sampiyonu bir sayiyor");
@@ -641,7 +642,7 @@ test("Melis'in cevirdigi sampiyon olurken butcesini oduyor; cevrilen normal dusm
       room.damageMelisWhisperTurnedBlocker(champion, evolution === 3 ? champion.hp * 0.95 : champion.hp + 1);
       assert.equal(room.enemies.has(champion.id), false, `evrim ${evolution}: sampiyon kalkmadi`);
     });
-    assert.equal(player.gold - gold, plan.gold, `evrim ${evolution}: altin`);
+    assert.ok(Math.abs(player.gold - gold - plan.gold * getEnemyGoldWaveMultiplier(room.wave)) < 1e-9, `evrim ${evolution}: altin`);
     assert.ok(Math.abs(player.experience - experience - plan.exp) < 1e-9, `evrim ${evolution}: deneyim`);
     assert.equal(room.kills, 1);
     assert.equal(player.ultimateCharge, 7 * plan.replaced);

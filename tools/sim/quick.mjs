@@ -25,6 +25,7 @@ import {
   ATAKAN_ISOLATION_MULTIPLIER,
   FINAL_WAVE,
   ENEMY_REWARD_MULTIPLIER,
+  getEnemyGoldWaveMultiplier,
   getTowerRealDps,
   canEquipShopItem,
   cardAppliesToTower,
@@ -320,7 +321,7 @@ export function simulateRun({ seed = 1, strategy = "balanced", stage = 1, operat
     // Oldurme altini oyuncunun carpaniyla (sunucudaki `awardEnemyGold`). Bir
     // donem carpan hic okunmuyordu: altin kartlari puanlaniyor ama botun
     // kesesine hicbir sey eklemiyordu.
-    gold += totalReward * getModifierMultiplier(playerModifiers, "goldGain")
+    gold += totalReward * getEnemyGoldWaveMultiplier(wave) * getModifierMultiplier(playerModifiers, "goldGain")
       + getCritKillGold({ towers, playerModifiers, ownedCardIds, count });
     if (wave < FINAL_WAVE) {
       gold += getWaveCompletionGold(wave);

@@ -404,6 +404,7 @@ import {
   FINAL_WAVE,
   PLAYER_TOWER_LIMIT,
   ENEMY_REWARD_MULTIPLIER,
+  getEnemyGoldWaveMultiplier,
   getWaveCompletionGold,
   getWaveSpawnIntervalMs,
   KILL_STREAK_BUFF_DURATION_MS,
@@ -5410,7 +5411,7 @@ export class MatchRoom extends Room<MatchState> {
     // Anahtar oturum kimligi: yeniden baglanan oyuncunun kaydi yeni anahtara
     // tasiniyor, oldurme olayinin sahibi de o anahtar.
     for (const [playerId, player] of this.state.players.entries()) {
-      const gain = share * getModifierMultiplier(player.runModifiers, "goldGain");
+      const gain = share * getEnemyGoldWaveMultiplier(this.wave) * getModifierMultiplier(player.runModifiers, "goldGain");
       player.gold += gain;
       if (playerId === ownerId) {
         ownerGain = gain;
