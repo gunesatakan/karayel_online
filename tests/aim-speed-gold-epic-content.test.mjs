@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   CARD_RARITY_WEIGHT,
+  getEnemyGoldWaveMultiplier,
   CLEAN_WAVE_GOLD,
   INSURANCE_CLEAN_WAVE_GOLD,
   getShopItemNeeds,
@@ -1867,7 +1868,7 @@ test("Odul Fermani: her sampiyon olunce +300, tavan yok; co-op'ta yalnizca sahib
   const once = p1.gold;
   const enemy = sampiyon(room, ikinciKule);
   room.damageEnemy(enemy, 1e6, 0, ikinciKule.definition.id, "p2", "true", 0, ikinciKule.level, ikinciKule.id);
-  assert.equal(p1.gold - once, 300 + 50, "takim arkadasinin oldurdugu sampiyonda prim yok");
+  assert.ok(Math.abs(p1.gold - once - (300 + 50 * getEnemyGoldWaveMultiplier(room.wave))) < 1e-8, "takim arkadasinin oldurdugu sampiyonda prim yok");
 });
 
 test("Dusurme Primi: her ucan oldurme +32, tavan yok, yalnizca takildigi kule", () => {

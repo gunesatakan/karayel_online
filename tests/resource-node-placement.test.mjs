@@ -145,15 +145,15 @@ test("arena kurulmadan (lobi, test duzenegi) eski sabit yerlesim gecerli", () =>
   assert.equal(room.resourceLayout, undefined);
   // 11x18 varsayilan harita, 34 birimlik kare, ust kenar 86.
   assert.deepEqual(room.getCrystalNodes(), [
-    { id: "crystal-1", remaining: 2000, x: 85, y: 307 },
-    { id: "crystal-2", remaining: 2000, x: 187, y: 477 },
-    { id: "crystal-3", remaining: 2000, x: 289, y: 307 }
+    { id: "crystal-1", remaining: 3000, x: 85, y: 307 },
+    { id: "crystal-2", remaining: 3000, x: 187, y: 477 },
+    { id: "crystal-3", remaining: 3000, x: 289, y: 307 }
   ]);
   assert.deepEqual(room.getMaterialNodes(), [
-    { id: "ammo-source-1", kind: "gunpowder", remaining: 2000, x: 51, y: 511 },
-    { id: "ammo-source-2", kind: "mystic", remaining: 2000, x: 221, y: 273 },
-    { id: "ammo-source-3", kind: "plasma", remaining: 2000, x: 323, y: 511 },
-    { id: "iron-1", kind: "iron", remaining: 2000, x: 119, y: 375 }
+    { id: "ammo-source-1", kind: "gunpowder", remaining: 3000, x: 51, y: 511 },
+    { id: "ammo-source-2", kind: "mystic", remaining: 3000, x: 221, y: 273 },
+    { id: "ammo-source-3", kind: "plasma", remaining: 3000, x: 323, y: 511 },
+    { id: "iron-1", kind: "iron", remaining: 3000, x: 119, y: 375 }
   ]);
   assert.deepEqual(room.getAmmoNodes().map((node) => node.id), ["ammo-source-1", "ammo-source-2", "ammo-source-3"]);
 });
