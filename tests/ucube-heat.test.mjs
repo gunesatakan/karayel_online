@@ -16,6 +16,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { calculateTowerShotHeat, towerCatalog } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { mulberry32 } from "../apps/server/dist/debug/room-runtime.js";
 
 const client = { sessionId: "p1", send() {} };
 const definitions = Array.isArray(towerCatalog) ? towerCatalog : Object.values(towerCatalog).flat();
@@ -23,6 +24,8 @@ const definition = (id) => definitions.find((entry) => entry.id === id);
 
 function setup(definitionId = "warrior-6") {
   const room = createRoom("warrior");
+  room.runtime = Object.create(room.runtime);
+  room.runtime.random = mulberry32(42);
   room.broadcast = () => {};
   room.lastSnapshotBroadcastAt = Infinity;
   room.lastPerfBroadcastAt = Infinity;
@@ -66,7 +69,7 @@ test("Ucube'nin ritmi yalnızca ateş edebilirken ilerliyor; kilitliyken yığı
   assert.equal(tower.focusStacks, 3);
 });
 
-test("sürekli dalgada Ucube öteki hasar kuleleri kadar sık ateş ediyor", () => {
+test("sürekli hedef varken Ucube öteki hasar kuleleri kadar sık ateş ediyor", () => {
   const originalNow = Date.now;
   let clock = 1_800_000_000_000;
   Date.now = () => clock;
@@ -74,11 +77,22 @@ test("sürekli dalgada Ucube öteki hasar kuleleri kadar sık ateş ediyor", () 
     const shots = {};
     for (const definitionId of ["warrior-6", "warrior-1"]) {
       const { room, tower } = setup(definitionId);
+      // Heat/cadence needs continuous, identical target availability. Random
+      // spawn lanes previously measured time in range instead of fire cadence.
+      room.spawnEnemy();
+      const enemy = [...room.enemies.values()].at(-1);
+      Object.assign(enemy, {
+        x: tower.x + 40, y: tower.y, hp: 1e9, maxHp: 1e9,
+        speed: 0, attack: 0, attackRange: 0, shield: 0, maxShield: 0,
+        armor: 0, raceTrait: undefined, abilities: [], movementKind: "ground",
+        damageResistances: {}, hitTypeResistances: {}, statusResistances: {}
+      });
+      room.towerCriticalRandom = () => 1;
       let count = 0;
       const spawn = room.spawnTowerProjectile.bind(room);
       room.spawnTowerProjectile = (source, target) => { if (source === tower) count += 1; return spawn(source, target); };
       room.waveTarget = 100_000;
-      room.spawnCooldownMs = 0;
+      room.spawnCooldownMs = Infinity;
       for (let tick = 0; tick < 120 * 20; tick += 1) {
         tower.hp = tower.maxHp;
         tower.ammo = tower.maxAmmo;
@@ -88,8 +102,8 @@ test("sürekli dalgada Ucube öteki hasar kuleleri kadar sık ateş ediyor", () 
       }
       shots[definitionId] = count;
     }
-    // AttackLord menzilleri yariya inince dusman menzilde daha az kaliyor: iki
-    // kule de ~14 atista (eskiden ~20). Taban hatanin olcumunun (4) cok ustunde.
+    // Both towers had a target for all 120 seconds; retain the regression
+    // floor and relative cadence requirement without weakening either.
     assert.ok(shots["warrior-6"] >= 10, `Ucube 120 sn'de ${shots["warrior-6"]} atis (eskiden 4)`);
     assert.ok(shots["warrior-6"] >= shots["warrior-1"] * 0.7, `Ucube ${shots["warrior-6"]}, Takipci ${shots["warrior-1"]}`);
   } finally {

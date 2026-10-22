@@ -27,8 +27,21 @@ function unlockCapacity(room) {
 }
 
 function enemyAt(room, col, row) {
-  room.spawnEnemy();
+  // Navigation fixture must use a melee grunt. A random shooter can hit
+  // nearby structures while correctly walking through the gap.
+  const runtime = room.runtime;
+  const pattern = room.wavePatternPlan;
+  room.wavePatternPlan = undefined;
+  room.runtime = Object.create(runtime);
+  room.runtime.random = () => 0;
+  try {
+    room.spawnEnemy();
+  } finally {
+    room.runtime = runtime;
+    room.wavePatternPlan = pattern;
+  }
   const enemy = [...room.enemies.values()].at(-1);
+  assert.equal(enemy.type, "grunt");
   const world = gridToWorld(col, row, room.activeMap);
   enemy.x = world.x;
   enemy.y = world.y;
