@@ -213,10 +213,7 @@ export const ISOLATED_CRIT_CHANCE = 0.15;
  * `crit:fromAccuracy`: isabet bonusunun her birimi bu kadar kritik sansi
  * verir, yani her %10 isabet +%3 kritik.
  *
- * Bonus ates konisindeki gibi [0, 1] araligina kirpiliyor: koni 1.0`da
- * doyuyor, cevrim de orada doyuyor. Boylece tavanin ustune yigilan isabet
- * kritik olarak da bosa gidiyor ve "isabeti sonsuza kadar yigma" yolu
- * acilmiyor. Tavan bu yuzden +%30.
+ * Ates konisi doyduktan sonra da isabet bonusu kritige donusmeye devam eder.
  */
 export const ACCURACY_CRIT_RATIO = 0.3;
 /** `aim:killSnap`: oldurmeden sonra donus hizina eklenen pay ve suresi. */
@@ -310,7 +307,7 @@ export const LONG_RANGE_KILL_GOLD_WAVE_CAP = 48;
 
 /** Isabet bonusundan gelen kritik sansi; negatif bonus hicbir sey vermez. */
 export function getAccuracyCritChance(accuracyBonus: number) {
-  return Math.max(0, Math.min(1, accuracyBonus)) * ACCURACY_CRIT_RATIO;
+  return Math.max(0, accuracyBonus) * ACCURACY_CRIT_RATIO;
 }
 
 /**
@@ -552,7 +549,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "denge-agirligi", name: "Denge Ağırlığı", description: "Çarpma kulelerinin dönüş hızı +%70.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["impact"] }, stackable: false, rarity: "uncommon", effects: [effect("denge-agirligi", "turnRate", 0.7)] },
   { id: "serbest-yatak", name: "Serbest Yatak", description: "Bir kulenin dönüş hızı +%120, hasarı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("serbest-yatak", "turnRate", 1.2, "tower"), effect("serbest-yatak", "damage", -0.1, "tower")] },
   { id: "sabit-kundak", name: "Sabit Kundak", description: "Tüm kulelerin isabeti +%15, dönüş hızı -%5.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sabit-kundak", "accuracy", 0.15), effect("sabit-kundak", "turnRate", -0.05)] },
-  { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%10.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.1)] },
+  { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%20.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.2)] },
   { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.1, "tower")] },
 
   // --- Elle cekilen kollar ---
@@ -704,14 +701,14 @@ export const cardCatalog: CardDefinition[] = [
   // Menzil turu: menzil duz bir yuzde degil; ayni hedefte kalma suresine,
   // namlunun sicakligina ve kulenin kenarindaki duvarlara baglaniyor.
   // Sabitler ve kosullu toplam tavani `range-mechanics`te.
-  { id: "kenetlenme", name: "Kenetlenme", description: "Bir kule aynı hedefe ateş ettiği her saniye +%5 menzil kazanır; en fazla +%20. Hedef değişince sıfırlanır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("kenetlenme", "focusRange", 0.05)] },
-  { id: "termal-mercek", name: "Termal Mercek", description: "Kulenin sıcaklığı 50 dereceyi aştıkça menzili artar: her 10 derece +%4, 100 derecede +%20.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("termal-mercek", "heatRange", 0.2)] },
-  { id: "siper-gozcusu", name: "Siper Gözcüsü", description: "Kenarına duvar örülmüş kuleler her duvar için +%5 menzil kazanır; en fazla 3 duvar (+%15).", axes: ["barricade", "dps"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("siper-gozcusu", "wallRange", 0.05)] },
+  { id: "kenetlenme", name: "Kenetlenme", description: "Bir kule aynı hedefe ateş ettiği her saniye +%10 menzil kazanır; en fazla +%40. Hedef değişince sıfırlanır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("kenetlenme", "focusRange", 0.1)] },
+  { id: "termal-mercek", name: "Termal Mercek", description: "Kulenin sıcaklığı 50 dereceyi aştıkça menzili artar: her 10 derece +%8, 100 derecede +%40.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("termal-mercek", "heatRange", 0.4)] },
+  { id: "siper-gozcusu", name: "Siper Gözcüsü", description: "Kenarına duvar örülmüş kuleler her duvar için +%10 menzil kazanır; en fazla 3 duvar (+%30).", axes: ["barricade", "dps"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("siper-gozcusu", "wallRange", 0.1)] },
   // Menzil turu, ikinci kisim: herkese duz, kucuk bir menzil (katalogda tum
   // kulelere kosulsuz menzil veren tek kart) ve Kenetlenme'nin tersi, bosta
   // bekleyen kuleyi odullendiren pusu.
-  { id: "genis-ufuk", name: "Geniş Ufuk", description: "Tüm kulelerin menzili +%8.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("genis-ufuk", "range", 0.08)] },
-  { id: "pusu-nobeti", name: "Pusu Nöbeti", description: "3 saniyedir vuruş yapmayan hasar kulelerinin menzili +%20; pusudan sonraki ilk vuruştan sonra 2 saniye daha sürer.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("pusu-nobeti", "ambushRange", 0.2)] },
+  { id: "genis-ufuk", name: "Geniş Ufuk", description: "Tüm kulelerin menzili +%16.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("genis-ufuk", "range", 0.16)] },
+  { id: "pusu-nobeti", name: "Pusu Nöbeti", description: "3 saniyedir vuruş yapmayan hasar kulelerinin menzili +%40; pusudan sonraki ilk vuruştan sonra 2 saniye daha sürer.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("pusu-nobeti", "ambushRange", 0.4)] },
   // Dayaniklilik turu (`durability-mechanics`): duz "+%X can" degil. Biri
   // canini hayatta kalinan dalgaya, biri yapinin o anki canina, biri
   // oldurucu vurusa bagliyor. Uc karti da her yapi aliyor: duvar ve kaynak
@@ -751,7 +748,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "zafer-sarhoslugu", name: "Zafer Sarhoşluğu", description: "Öldürme başına +%3 hasar; dalga içi tavan %45.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["stack:kill"] },
   { id: "kidem-nisani", name: "Kıdem Nişanı", description: "Tamamlanan her dalga için kalıcı hasar +%2.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["stack:wave"] },
   { id: "suru-taktigi", name: "Sürü Taktiği", description: "Bitişik her kule çifti +%8 hasar verir; en fazla 4 çift.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["adjacencyBonus"] },
-  { id: "yalniz-nisanci", name: "Yalnız Nişancı", description: "Komşusuz kuleler +%25 hasar ve +%15 menzil kazanır.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["isolationBonus"] },
+  { id: "yalniz-nisanci", name: "Yalnız Nişancı", description: "Komşusuz kuleler +%25 hasar ve +%30 menzil kazanır.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["isolationBonus"] },
   { id: "yagmaci", name: "Yağmacı", description: "Düşmanlar %20 ihtimalle 4 mühimmat düşürür.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["ammoDrop"] },
   { id: "enkaz-tuzagi", name: "Enkaz Tuzağı", description: "Yıkılan kule 12 saniyelik yavaşlatıcı enkaz bırakır.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["trigger:debrisOnDeath"] },
   { id: "avci-egitimi", name: "Avcı Eğitimi", description: "En zayıf ve rastgele olmak üzere 2 hedefleme modu açar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["targeting:weakest", "targeting:random"] },
@@ -778,9 +775,9 @@ export const cardCatalog: CardDefinition[] = [
   { id: "sicak-tetik", name: "Sıcak Tetik", description: "Tüm kulelerin kritik şansı +%12, ısısı +%7.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sicak-tetik", "critChance", 0.12), effect("sicak-tetik", "heat", 0.07)] },
   { id: "agir-funye", name: "Ağır Fünye", description: "Tüm kulelerin kritik hasarı +%150, kritik şansı -%5.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-funye", "critDamage", 1.5), effect("agir-funye", "critChance", -0.05)] },
   { id: "ince-uc", name: "İnce Uç", description: "Tek hedefe saldıran kulelerin kritik hasarı +%70.", axes: ["dps"], scope: { kind: "tagged", shapes: ["single"] }, stackable: false, rarity: "uncommon", effects: [effect("ince-uc", "critDamage", 0.7)] },
-  { id: "keskin-nisanci-durbunu", name: "Keskin Nişancı Dürbünü", description: "Bir kulenin kritik şansı +%25, menzili +%10, atış hızı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("keskin-nisanci-durbunu", "critChance", 0.25, "tower"), effect("keskin-nisanci-durbunu", "range", 0.1, "tower"), effect("keskin-nisanci-durbunu", "fireRate", -0.2, "tower")] },
+  { id: "keskin-nisanci-durbunu", name: "Keskin Nişancı Dürbünü", description: "Bir kulenin kritik şansı +%25, menzili +%20, atış hızı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("keskin-nisanci-durbunu", "critChance", 0.25, "tower"), effect("keskin-nisanci-durbunu", "range", 0.2, "tower"), effect("keskin-nisanci-durbunu", "fireRate", -0.2, "tower")] },
   { id: "av-izi", name: "Av İzi", description: "İşaretli düşmanlara kritik şansı +%20; kulenin kendi koyduğu takip işareti sayılmaz.", axes: ["dps", "amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:vsMarked"] },
-  { id: "goz-karari", name: "Göz Kararı", description: "Her kulede isabet bonusunun her %10'u kritik şansına +%3 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["crit:fromAccuracy"] },
+  { id: "goz-karari", name: "Göz Kararı", description: "Her kulede isabet bonusunun her %10'u kritik şansına +%3 ekler.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["crit:fromAccuracy"] },
   { id: "gozcu-yuvasi", name: "Gözcü Yuvası", description: "Komşusuz kulelerin kritik şansı +%15.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:isolated"] },
 
   // --- Donus hizi, isabet ve mermi hizi, ucuncu tur ---
@@ -845,17 +842,17 @@ export const cardCatalog: CardDefinition[] = [
   // cevriminin orani dortte birine indi (her %40'i +%3). Sonra altin
   // kartlari yariya indi ve oran yine ikiye katlandi (her %20'si +%3): kartin
   // kendi +%60'i yine +%9 veriyor, tavan +%200 altinda.
-  { id: "tork-aktarimi", name: "Tork Aktarımı", description: "Nişan alan kulelerin dönüş hızı +%50. Dönüş hızı bonusunun her %10'u atış hızına +%2 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "epic", effects: [effect("tork-aktarimi", "turnRate", 0.5)], conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2, cap: 0.3 }] },
-  { id: "balistik-hesaplayici", name: "Balistik Hesaplayıcı", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%50. %30'u aşan isabet bonusunun her %10'u hasara +%5 ekler; en fazla +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "epic", effects: [effect("balistik-hesaplayici", "accuracy", 0.5)], conversions: [{ from: "accuracy", to: "damage", threshold: 0.3, ratio: 0.5, cap: 0.5 }] },
-  { id: "kinetik-erim", name: "Kinetik Erim", description: "Mermi atan kulelerin mermi hızı +%50. Mermi hızı bonusunun her %10'u menzile +%2 ekler; en fazla +%20.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "epic", effects: [effect("kinetik-erim", "projectileSpeed", 0.5)], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.2, cap: 0.2 }] },
+  { id: "tork-aktarimi", name: "Tork Aktarımı", description: "Nişan alan kulelerin dönüş hızı +%50. Dönüş hızı bonusunun her %10'u atış hızına +%2 ekler.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "epic", effects: [effect("tork-aktarimi", "turnRate", 0.5)], conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2 }] },
+  { id: "balistik-hesaplayici", name: "Balistik Hesaplayıcı", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%50. %30'u aşan isabet bonusunun her %10'u hasara +%5 ekler.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "epic", effects: [effect("balistik-hesaplayici", "accuracy", 0.5)], conversions: [{ from: "accuracy", to: "damage", threshold: 0.3, ratio: 0.5 }] },
+  { id: "kinetik-erim", name: "Kinetik Erim", description: "Mermi atan kulelerin mermi hızı +%50. Mermi hızı bonusunun her %10'u menzile +%4 ekler.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "epic", effects: [effect("kinetik-erim", "projectileSpeed", 0.5)], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.4 }] },
   // Isi dengesi: atis hizi bonusunun yarisi atis isisini indiriyor. Atis
   // hizi isiya carpip bosa gidiyordu; bu kartla her atis hizi bonusu kendi
   // isi butcesini de getiriyor. Cevrim (`conversions`) degil, stat
   // (`fireRateHeatRelief`): atis hizi Tork Aktarimi'nin cevrim hedefi ve
   // cevrimler zincirlenmiyor. Okunan kulenin gercek atis hizi bonusu (Tork
-  // dahil); tavan `HEAT_RELIEF_CAP`.
-  { id: "termodinamik-denge", name: "Termodinamik Denge", description: "Tüm kulelerin atış hızı +%15. Atış hızı bonusunun her %10'u atış başına ısıyı %5 azaltır; en fazla %40.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("termodinamik-denge", "fireRate", 0.15), effect("termodinamik-denge", "fireRateHeatRelief", 0.5)] },
-  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%60. Düşman altını bonusunun her %20'si tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 0.6)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.15, cap: 0.3 }] },
+  // dahil); atis isisi sifirin altina dusmez.
+  { id: "termodinamik-denge", name: "Termodinamik Denge", description: "Tüm kulelerin atış hızı +%15. Atış hızı bonusunun her %10'u atış başına ısıyı %5 azaltır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("termodinamik-denge", "fireRate", 0.15), effect("termodinamik-denge", "fireRateHeatRelief", 0.5)] },
+  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%60. Düşman altını bonusunun her %20'si tüm kulelerin hasarına +%3 ekler.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 0.6)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.15 }] },
 
   // --- Efsanevi: vurus etkileri ---
   //

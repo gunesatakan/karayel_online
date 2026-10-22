@@ -643,7 +643,7 @@ function shopItemScore(item) {
   // Vadeli altin: getirisi (150 -> 440, %193) kabaca iki hasar esyasi kadar puanlaniyor.
   const depositScore = item.deposit ? 1 : 0;
   // Cevrim esyalari: hedef statin tavaninin yarisi kadar (kartlardaki gibi kaba).
-  const conversionScore = (item.conversions ?? []).reduce((sum, conversion) => sum + conversion.cap * 0.5 * (STAT_SCORE[conversion.to] ?? 0.3), 0);
+  const conversionScore = (item.conversions ?? []).reduce((sum, conversion) => sum + (conversion.cap ?? conversion.ratio) * 0.5 * (STAT_SCORE[conversion.to] ?? 0.3), 0);
   return effectScore + depositScore + (behaviourDamageAdd(item) + goldUnlockScore(item)) * STAT_SCORE.damage + conversionScore;
 }
 
@@ -713,7 +713,7 @@ function cardScore(card, axes, towers) {
   // eklentilerinden gelir ve hasar carpani olcegine tasinir. Cevrim karti
   // secilirken kaynagin ne kadar yigilacagi belli degil: tavanin yarisi.
   // Kulenin gercek katkisi `getTowerDps` icinde, kaynagin kendisinden.
-  const conversionScore = (card.conversions ?? []).reduce((sum, conversion) => sum + conversion.cap * 0.5, 0) * STAT_SCORE.damage;
+  const conversionScore = (card.conversions ?? []).reduce((sum, conversion) => sum + (conversion.cap ?? conversion.ratio) * 0.5, 0) * STAT_SCORE.damage;
   const behaviourScore = (behaviourDamageAdd(card) + goldUnlockScore(card)) * STAT_SCORE.damage + conversionScore;
   const total = effectScore + behaviourScore;
   const axisBonus = card.axes.some((axis) => axes.includes(axis)) ? 0.5 : 0;

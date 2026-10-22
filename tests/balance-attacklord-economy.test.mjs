@@ -179,9 +179,9 @@ test("dusman altini yuzdesi veren kartlar yariya indi; Savas Hazinesi'nin hasari
   // Cevrim adimi ikiye katlandi: kartin kendi +%60'i yine +%9 hasar.
   const [conversion] = card("savas-hazinesi").conversions;
   close(conversion.ratio, 0.15);
-  close(conversion.cap, 0.3);
+  assert.equal(conversion.cap, undefined);
   close(beklenen["savas-hazinesi"] * conversion.ratio, 0.09);
-  assert.match(card("savas-hazinesi").description, /her %20'si tüm kulelerin hasarına \+%3 ekler; en fazla \+%30\./);
+  assert.match(card("savas-hazinesi").description, /her %20'si tüm kulelerin hasarına \+%3 ekler\./);
   assert.match(enCards["savas-hazinesi"].description, /Each 20% of enemy gold bonus adds \+3%/);
 });
 

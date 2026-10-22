@@ -145,8 +145,8 @@ test("1. seviye soguma +%40, 2. seviye menzil +%15; ikisi de yalnizca alanda", (
   near(room.getTowerOwnRange(inside) / room.getTowerOwnRange(outside), 1.15, "2. seviye menzil");
   near(room.getTowerConditionalRangeAdd(inside, room.getTowerRunModifiers(inside)), 0.15, "kosullu havuz");
 
-  // Kosullu menzil tavanina sayiliyor: Pusu Nobeti +%30 ile toplam tavanda.
-  inside.runModifiers.push({ source: "test", scope: "tower", stat: "ambushRange", add: 0.3 });
+  // Kosullu menzil tavanina sayiliyor: Yuksek bir kosullu bonusla toplam tavanda.
+  inside.runModifiers.push({ source: "test", scope: "tower", stat: "ambushRange", add: 0.8 });
   near(room.getTowerConditionalRangeAdd(inside, room.getTowerRunModifiers(inside)), RANGE_CONDITIONAL_CAP, "tavan");
 
   // Arsivin kendi menzili aura yaricapi: seviyeyle buyumuyor.

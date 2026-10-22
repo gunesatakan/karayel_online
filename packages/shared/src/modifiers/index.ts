@@ -216,7 +216,7 @@ export type ModifierStat =
    * - `neighborCooling`: bitisik dost kulelerin sogumasina eklenen pay.
    * - `heatBleed`: bitisik daha soguk kulelere saniyede aktarilan derece.
    * - `fireRateHeatRelief`: kulenin atis hizi bonusunun bu orani atis isisini
-   *   indiriyor (`HEAT_RELIEF_CAP` tavanli).
+   *   indiriyor (atis isisi sifirin altina dusmez).
    * Atis hizi:
    * - `coldFireRate`: kule 50 derecenin altindayken atis hizi.
    * - `trackRhythm`: ayni hedefe art arda atis basina atis hizi ve isi
@@ -447,8 +447,7 @@ export function appendLegacyMultiplier(breakdown: ModifierBreakdown, source: str
  *   (cezali bir kart) hicbir sey vermez ama bir sey de almaz.
  * - Ek dogrusal: kaynagin her birimi hedefe `ratio` kadar ekler. Metindeki
  *   "her %10'u +%2" 0,2 demek; ara degerler de sayilir (Goz Karari gibi).
- * - `cap` hedefe eklenebilecek en fazla. Cevrim kosmaz: kaynak ne kadar
- *   buyurse buyusun ek orada durur.
+ * - Opsiyonel `cap` varsa hedefe eklenebilecek en fazla; yoksa sinirsiz.
  *
  * Cevrimler zincirlenmez: kaynak cevrimlerden once okunuyor. Bir cevrimin
  * hedefi oteki cevrimin kaynagi olsa bile ikincisi birincinin ekledigini
@@ -459,13 +458,13 @@ export type StatConversion = {
   to: ModifierStat;
   threshold?: number;
   ratio: number;
-  cap: number;
+  cap?: number;
 };
 
 /** Cevrimin hedefe ekledigi pay; kaynak esigin altindaysa 0. */
 export function getStatConversionAdd(conversion: StatConversion, sourceAdd: number) {
   const excess = Math.max(0, sourceAdd - (conversion.threshold ?? 0));
-  return Math.max(0, Math.min(conversion.cap, excess * conversion.ratio));
+  return Math.max(0, Math.min(conversion.cap ?? Infinity, excess * conversion.ratio));
 }
 
 /**

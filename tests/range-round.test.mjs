@@ -34,6 +34,43 @@ const cardAdd = (cardId, stat) => getModifierAdd(cardCatalog.find((entry) => ent
 const allTowers = Object.values(towerCatalog).flat();
 const kule = (id) => allTowers.find((tower) => tower.id === id);
 
+test("menzil bonuslari iki kat: duz, kosullu, kare ve cevrim tavanlari", () => {
+  const cards = [
+    ["uzun-namlu", "range", 0.2], ["keskin-nisanci-durbunu", "range", 0.2],
+    ["genis-ufuk", "range", 0.16], ["kenetlenme", "focusRange", 0.1],
+    ["termal-mercek", "heatRange", 0.4], ["siper-gozcusu", "wallRange", 0.1],
+    ["pusu-nobeti", "ambushRange", 0.4]
+  ];
+  const items = [
+    ["lazer-telemetre", "range", 0.2], ["genlesme-odasi", "range", 0.16],
+    ["gauss-bobini", "range", 0.06], ["teleskopik-namlu", "rangeFlat", 0.5],
+    ["atis-haritasi", "killRange", 0.06], ["gozcu-diregi", "neighborRange", 0.2],
+    ["av-kayit-defteri", "killRangeLong", 0.03], ["erim-pompasi", "range", 0.16],
+    ["uzatma-halkasi", "range", 0.12], ["uzun-erim-optigi", "range", 0.36]
+  ];
+  for (const [id, stat, value] of cards) near(cardAdd(id, stat), value, id);
+  for (const [id, stat, value] of items) near(itemAdd(id, stat), value, id);
+  assert.equal(FOCUS_RANGE_MAX, 0.4);
+  assert.equal(NEIGHBOR_RANGE_MAX, 0.4);
+  assert.equal(RANGE_CONDITIONAL_CAP, 0.7);
+  assert.deepEqual(cardCatalog.find((c) => c.id === "kinetik-erim").conversions, [{ from: "projectileSpeed", to: "range", ratio: 0.4 }]);
+  assert.deepEqual(getShopItem("kinetik-uzatici").conversions, [{ from: "projectileSpeed", to: "range", ratio: 0.6 }]);
+  near(itemAdd("av-kayit-defteri", "range"), -0.05, "menzil cezasi ayni");
+  near(cardAdd("hizlandirici-bobin", "range"), -0.08, "menzil cezasi ayni");
+});
+
+test("Yalniz Nisanci ve Yalniz Kurt komsusuz kuleye yuzde 30 menzil verir", () => {
+  for (const source of ["card", "item"]) {
+    const room = oda();
+    const tower = kur(room);
+    room.isTowerIsolated = () => true;
+    const base = room.getTowerRange(tower);
+    if (source === "card") kartAl(room, "yalniz-nisanci");
+    else esyaTak(room, tower, "yalniz-kurt");
+    near(room.getTowerRange(tower) / base, 1.3, source);
+  }
+});
+
 function oda() {
   const room = clearBuildZones(createRoom("warrior"));
   room.broadcast = () => {};

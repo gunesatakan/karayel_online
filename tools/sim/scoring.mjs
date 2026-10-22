@@ -118,7 +118,7 @@ export function effectScore(effects) {
 
 /** Kartin bu kurulustaki degeri: kapsam (kac kuleye isliyor) dahil. */
 export function cardScore(card, axes, towerDefinitions) {
-  const conversionScore = (card.conversions ?? []).reduce((sum, conversion) => sum + conversion.cap * 0.5, 0) * STAT_SCORE.damage;
+  const conversionScore = (card.conversions ?? []).reduce((sum, conversion) => sum + (conversion.cap ?? conversion.ratio) * 0.5, 0) * STAT_SCORE.damage;
   const total = effectScore(card.effects) + (behaviourDamageAdd(card) + goldUnlockScore(card)) * STAT_SCORE.damage + conversionScore;
   const axisBonus = (card.axes ?? []).some((axis) => axes.includes(axis)) ? 0.5 : 0;
   if (towerDefinitions.length === 0) return total + axisBonus;
@@ -132,6 +132,6 @@ export function cardScore(card, axes, towerDefinitions) {
 export function shopItemScore(item) {
   const depositScore = item.deposit ? 1 : 0;
   // Cevrim esyalari: hedef statin tavaninin yarisi kadar (kartlardaki gibi kaba).
-  const conversionScore = (item.conversions ?? []).reduce((sum, conversion) => sum + conversion.cap * 0.5 * (STAT_SCORE[conversion.to] ?? 0.3), 0);
+  const conversionScore = (item.conversions ?? []).reduce((sum, conversion) => sum + (conversion.cap ?? conversion.ratio) * 0.5 * (STAT_SCORE[conversion.to] ?? 0.3), 0);
   return effectScore(item.effects) + depositScore + (behaviourDamageAdd(item) + goldUnlockScore(item)) * STAT_SCORE.damage + conversionScore;
 }

@@ -14,7 +14,7 @@
  */
 
 /** Kenetlenme: ayni hedefe ates edilen sure en fazla bu payi verir (4 oyun saniyesi). */
-export const FOCUS_RANGE_MAX = 0.2;
+export const FOCUS_RANGE_MAX = 0.4;
 /**
  * Kenetlenme: kule ayni hedefe bu kadar oyun suresi ates etmezse (hedef
  * oldu, menzilden cikti ya da kule baska hedefe dondu) kazanc sifirlaniyor.
@@ -41,14 +41,14 @@ export const KILL_RANGE_LONG_MAX_KILLS = 16;
 export const AMBUSH_RANGE_IDLE_MS = 3000;
 export const AMBUSH_RANGE_HOLD_MS = 2000;
 /** Gozcu Diregi: bir kulenin bitisikteki direklerden alabilecegi en fazla pay (iki direk). */
-export const NEIGHBOR_RANGE_MAX = 0.2;
+export const NEIGHBOR_RANGE_MAX = 0.4;
 /**
  * Kosullu menzil paylarinin toplam tavani (Kenetlenme, Termal Mercek, Siper
  * Gozcusu, Atis Haritasi / Av Kayit Defteri, Gozcu Diregi, Pusu Nobeti).
  * Cevrimlerden gelen menzil (Kinetik Erim, Kinetik Uzatici) duz `range`
- * payi; tavana girmiyor, kendi cevrim tavanlari var.
+ * payi; kosullu menzil tavanina girmiyor.
  */
-export const RANGE_CONDITIONAL_CAP = 0.35;
+export const RANGE_CONDITIONAL_CAP = 0.7;
 
 /** Termal Mercek: kazanc bu kadar derecelik basamaklarla artiyor ("her 10 derece"). */
 export const HEAT_RANGE_STEP_DEGREES = 10;

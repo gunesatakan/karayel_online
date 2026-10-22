@@ -65,12 +65,6 @@ export const KILL_COOLING_DURATION_MS = 2000;
 export const TRACK_RHYTHM_MAX_STACKS = 5;
 
 /**
- * `fireRateHeatRelief` (Termodinamik Denge): atis hizi bonusunun bu orani
- * atis isisini indiriyor; indirim en fazla bu kadar.
- */
-export const HEAT_RELIEF_CAP = 0.4;
-
-/**
  * `heatShock` (Termal Sok Halkasi): kule bu sicakligi gecince biriken isi
  * bir sok dalgasina donusuyor; bekleme suresi, atilan derece ve dalganin
  * yaricapi (kulenin menzilinin payi). Kilitte bekleme suresine bakilmiyor.

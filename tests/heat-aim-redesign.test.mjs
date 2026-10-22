@@ -25,7 +25,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   COLD_SALVO_FIRE_RATE,
-  HEAT_RELIEF_CAP,
   HEAT_SHOCK_TEMPERATURE,
   HEAT_SHOCK_VENT,
   KILL_COOLING_DURATION_MS,
@@ -529,15 +528,17 @@ test("Soguk Salvo 0 dereceye inen kuleye isisiz ve iki kat hizli atislar veriyor
   assert.equal(tower.coldSalvoShots, shots, "isinip sogudu: yeni salvo");
 });
 
-test("Termodinamik Denge atis hizi bonusunun yarisini atis isisi indirimine ceviriyor (tavanli)", () => {
+test("Termodinamik Denge eski yuzde 40 tavanini asar; atis isisi negatif olmaz", () => {
   const room = oda();
   const tower = kur(room, "warrior-1");
   const heat = room.getTowerShotHeat(tower);
   kartAl(room, "termodinamik-denge");
   const fireRate = cardAdd("termodinamik-denge", "fireRate");
   near(room.getTowerShotHeat(tower) / heat, 1 - fireRate * cardAdd("termodinamik-denge", "fireRateHeatRelief"), "kendi bonusu", 1e-9);
-  tower.runModifiers.push({ source: "test", scope: "tower", stat: "fireRate", add: 3 });
-  near(room.getTowerShotHeat(tower) / heat, 1 - HEAT_RELIEF_CAP, "tavan", 1e-9);
+  tower.runModifiers.push({ source: "test", scope: "tower", stat: "fireRate", add: 1 });
+  near(room.getTowerShotHeat(tower) / heat, 0.425, "yuzde 57.5 indirim", 1e-9);
+  tower.runModifiers.push({ source: "test:extra", scope: "tower", stat: "fireRate", add: 2 });
+  near(room.getTowerShotHeat(tower), 0, "isi sifirda durur", 1e-9);
 });
 
 // ------------------------------------------------------------------ 5. Isi bedelleri

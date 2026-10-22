@@ -190,7 +190,7 @@ test("kilit veren yeni icerigin sayilari sunucunun sabitleriyle ayni", () => {
     assert.deepEqual(entry.unlocks, ["crit:vsMarked"]);
     assert.match(entry.description, new RegExp(`şaretli düşmanlara kritik şansı \\+%${yuzde(MARKED_CRIT_CHANCE)}; (kulenin )?kendi koyduğu takip işareti sayılmaz\\.$`));
   }
-  const accuracyText = `her %10'u kritik şansına +%${yuzde(0.1 * ACCURACY_CRIT_RATIO)} ekler; en fazla +%${yuzde(ACCURACY_CRIT_RATIO)}`;
+  const accuracyText = `her %10'u kritik şansına +%${yuzde(0.1 * ACCURACY_CRIT_RATIO)} ekler`;
   for (const entry of [card("goz-karari"), getShopItem("mesafe-olcer")]) {
     assert.deepEqual(entry.unlocks, ["crit:fromAccuracy"]);
     assert.ok(entry.description.includes(accuracyText), `${entry.id}: "${entry.description}" -> ${accuracyText}`);
@@ -499,7 +499,7 @@ test("Keskin Nisanci Durbunu yalnizca secilen kuleye kritik, menzil ve atis hizi
   kartAl(room, "keskin-nisanci-durbunu", secilen.id);
   assert.ok(Math.abs(room.getTowerCritChance(secilen) - (TOWER_BASE_CRITICAL_CHANCE + 0.25)) < 1e-9);
   assert.ok(Math.abs(room.getTowerCritChance(oteki) - TOWER_BASE_CRITICAL_CHANCE) < 1e-9, "oteki kuleye isledi");
-  assert.ok(Math.abs(room.getTowerRange(secilen) - menzil * 1.1) < 1e-6, "menzil buyumedi");
+  assert.ok(Math.abs(room.getTowerRange(secilen) - menzil * 1.2) < 1e-6, "menzil buyumedi");
   assert.ok(Math.abs(room.getTowerFireInterval(secilen) - aralik / 0.8) < 1e-6, "atis hizi cezasi yok");
   assert.equal(kritikMi(room, secilen, 0.2), true);
 });
@@ -537,7 +537,7 @@ for (const [ad, ver] of [
   ["Goz Karari", (room) => kartAl(room, "goz-karari")],
   ["Mesafe Olcer", (room, tower) => assert.ok(esyaTak(room, tower, "mesafe-olcer"))]
 ]) {
-  test(`${ad} isabet bonusunun her %10'unu +%3 kritige ceviriyor, +%30'da doyuyor`, () => {
+  test(`${ad} isabet bonusunun her %10'unu +%3 kritige ceviriyor, eski +%30 tavanini asiyor`, () => {
     const room = oda();
     const tower = kur(room, "warrior-4");
     ver(room, tower);
@@ -547,16 +547,16 @@ for (const [ad, ver] of [
     assert.ok(Math.abs(room.getTowerCritChance(tower) - (TOWER_BASE_CRITICAL_CHANCE + 0.09)) < 1e-9, `%30 isabet: ${room.getTowerCritChance(tower)}`);
     assert.equal(kritikMi(room, tower, 0.08), true, "hasar yolunda kritik gelmedi");
     assert.equal(kritikMi(room, tower, 0.11), false);
-    // Tavan: isabet 1.0'in ustu bosa gidiyor.
+    // Isabet 1.0 ustunde de kritik bonusuna donusur.
     tower.runModifiers.push({ source: "test", scope: "tower", stat: "accuracy", add: 2 });
-    assert.ok(Math.abs(room.getTowerCritChance(tower) - (TOWER_BASE_CRITICAL_CHANCE + 0.3)) < 1e-9, `tavan: ${room.getTowerCritChance(tower)}`);
+    assert.ok(Math.abs(room.getTowerCritChance(tower) - (TOWER_BASE_CRITICAL_CHANCE + 0.69)) < 1e-9, `tavan: ${room.getTowerCritChance(tower)}`);
   });
 }
 
 test("isabetten gelen kritik saf bir fonksiyon: eksi isabet bir sey vermiyor", () => {
   assert.equal(getAccuracyCritChance(-0.5), 0);
   assert.ok(Math.abs(getAccuracyCritChance(0.5) - 0.15) < 1e-12);
-  assert.ok(Math.abs(getAccuracyCritChance(3) - ACCURACY_CRIT_RATIO) < 1e-12);
+  assert.ok(Math.abs(getAccuracyCritChance(3) - 3 * ACCURACY_CRIT_RATIO) < 1e-12);
 });
 
 test("Gozcu Yuvasi komsusuz kuleye +%15 kritik veriyor, komsulu kuleye vermiyor", () => {

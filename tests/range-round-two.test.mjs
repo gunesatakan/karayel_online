@@ -132,7 +132,7 @@ test("Pusu Nobeti: bosta bekleyen hasar kulesi uzak gorur; pusudan sonraki vurus
   near(room.getTowerRange(aura), auraBase, "hasarsiz kule");
 }));
 
-test("Av Kayit Defteri: -%5 tabandan oldurme basina +%1,5, 16 oldurme tavani; yeni dalgada sifir", () => {
+test("Av Kayit Defteri: -%5 tabandan oldurme basina +%3, 16 oldurme tavani; yeni dalgada sifir", () => {
   const room = oda();
   const tower = kur(room);
   const base = room.getTowerRange(tower);
@@ -173,7 +173,7 @@ test("karsit ciftler: Atis Haritasi / Av Kayit Defteri ve Erim Pompasi / Kinetik
   }
 });
 
-test("Erim Pompasi: menzil bonusu mermi hizina; tavanli", () => {
+test("Erim Pompasi: menzil bonusu mermi hizina; tavansiz", () => {
   const room = oda();
   const tower = kur(room);
   const speedBase = room.getTowerProjectileSpeedMultiplier(tower);
@@ -184,14 +184,14 @@ test("Erim Pompasi: menzil bonusu mermi hizina; tavanli", () => {
   near(room.getTowerRange(tower) / rangeBase, 1 + own, "kendi menzili", 1e-6);
   near(room.getTowerProjectileSpeedMultiplier(tower), speedBase + own * conversion.ratio, "menzilden mermi hizi", 1e-6);
   kartAl(room, "genis-ufuk");
-  near(room.getTowerProjectileSpeedMultiplier(tower), speedBase + (own + 0.08) * conversion.ratio, "kartin menzili de sayiliyor", 1e-6);
+  near(room.getTowerProjectileSpeedMultiplier(tower), speedBase + (own + 0.16) * conversion.ratio, "kartin menzili de sayiliyor", 1e-6);
   tower.runModifiers.push({ source: "test", scope: "tower", stat: "range", add: 2 });
-  near(room.getTowerProjectileSpeedMultiplier(tower), speedBase + conversion.cap, "tavan", 1e-6);
+  near(room.getTowerProjectileSpeedMultiplier(tower), speedBase + (own + 0.16 + 2) * conversion.ratio, "tavan", 1e-6);
   const panel = room.getTowerStatsBlock(tower, "p1").ps;
-  assert.ok(panel.s.some(([source, add]) => source === "shop:erim-pompasi" && Math.abs(add - conversion.cap) < 1e-3), "panel cevrimi gostermiyor");
+  assert.ok(panel.s.some(([source, add]) => source === "shop:erim-pompasi" && Math.abs(add - (own + 0.16 + 2) * conversion.ratio) < 1e-3), "panel cevrimi gostermiyor");
 });
 
-test("Kinetik Uzatici: mermi hizi bonusu menzile; tavanli", () => {
+test("Kinetik Uzatici: mermi hizi bonusu menzile; tavansiz", () => {
   const room = oda();
   const tower = kur(room);
   const rangeBase = room.getTowerRange(tower);
@@ -200,7 +200,7 @@ test("Kinetik Uzatici: mermi hizi bonusu menzile; tavanli", () => {
   const [conversion] = item("kinetik-uzatici").conversions;
   near(room.getTowerRange(tower) / rangeBase, 1 + own * conversion.ratio, "hizdan menzil", 1e-6);
   tower.runModifiers.push({ source: "test", scope: "tower", stat: "projectileSpeed", add: 3 });
-  near(room.getTowerRange(tower) / rangeBase, 1 + conversion.cap, "tavan", 1e-6);
+  near(room.getTowerRange(tower) / rangeBase, 1 + (own + 3) * conversion.ratio, "tavansiz", 1e-6);
   const panel = room.getTowerStatsBlock(tower, "p1").r;
   assert.ok(panel.s.some(([source]) => source === "shop:kinetik-uzatici"), "panel cevrimi gostermiyor");
 });
@@ -218,8 +218,8 @@ test("geri besleme yok: cevrimler kaynagi cevrimlerden once okuyor (Kinetik Erim
   const own = itemAdd("erim-pompasi", "range");
   const [pump] = item("erim-pompasi").conversions;
   // Kart yalnizca kendi (cevrimsiz) mermi hizini goruyor; pompa yalnizca cevrimsiz menzili.
-  const expectedRange = 1 + own + Math.min(kineticConversion.cap, kineticSpeed * kineticConversion.ratio);
-  const expectedSpeed = speedBase + kineticSpeed + Math.min(pump.cap, own * pump.ratio);
+  const expectedRange = 1 + own + kineticSpeed * kineticConversion.ratio;
+  const expectedSpeed = speedBase + kineticSpeed + own * pump.ratio;
   for (let pass = 0; pass < 3; pass += 1) {
     near(room.getTowerRange(tower) / rangeBase, expectedRange, `menzil, okuma ${pass}`, 1e-6);
     near(room.getTowerProjectileSpeedMultiplier(tower), expectedSpeed, `mermi hizi, okuma ${pass}`, 1e-6);
@@ -241,7 +241,7 @@ test("geri besleme yok: karsilikli direkli ve cevrimli iki kule kendi kendini ca
   assert.ok(Number.isFinite(room.getTowerProjectileSpeedMultiplier(b)));
 });
 
-test("Tork Radyatoru: donus hizi bonusu sogumaya; tavanli", () => {
+test("Tork Radyatoru: donus hizi bonusu sogumaya; tavansiz", () => {
   const room = oda();
   const tower = kur(room);
   const base = room.getTowerCoolingPerSecond(tower);
@@ -250,7 +250,7 @@ test("Tork Radyatoru: donus hizi bonusu sogumaya; tavanli", () => {
   const [conversion] = item("tork-radyatoru").conversions;
   near(room.getTowerCoolingPerSecond(tower) / base, 1 + own * conversion.ratio, "donusten soguma", 1e-6);
   tower.runModifiers.push({ source: "test", scope: "tower", stat: "turnRate", add: 3 });
-  near(room.getTowerCoolingPerSecond(tower) / base, 1 + conversion.cap, "tavan", 1e-6);
+  near(room.getTowerCoolingPerSecond(tower) / base, 1 + (own + 3) * conversion.ratio, "tavansiz", 1e-6);
 });
 
 test("Uzatma Halkasi uc kez yigiliyor; Uzun Erim Optigi menzil karsiligi atis hizi", () => {

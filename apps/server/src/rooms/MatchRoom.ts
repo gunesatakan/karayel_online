@@ -550,7 +550,6 @@ import {
   COLD_SALVO_TEMPERATURE,
   CRIT_SPLASH_RADIUS_CELLS,
   FAR_CRIT_RANGE_FRACTION,
-  HEAT_RELIEF_CAP,
   HIT_SPLASH_RADIUS_CELLS,
   KILL_COOLING_DURATION_MS,
   LEAD_TARGETING_MAX,
@@ -7205,10 +7204,10 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerShotHeat(tower: TowerModel) {
     const modifiers = this.getTowerRunModifiers(tower);
     // Termodinamik Denge (`fireRateHeatRelief`): kulenin gercek atis hizi
-    // bonusunun orani kadar indirim, tavanli. Takip Ritmi'nin yigini o anki
+    // bonusunun orani kadar indirim. Takip Ritmi'nin yigini o anki
     // hedefe bagli.
     const reliefRatio = getModifierAdd(modifiers, "fireRateHeatRelief");
-    const relief = reliefRatio > 0 ? Math.min(HEAT_RELIEF_CAP, reliefRatio * Math.max(0, this.getTowerStatBonus(tower, "fireRate", modifiers))) : 0;
+    const relief = reliefRatio > 0 ? reliefRatio * Math.max(0, this.getTowerStatBonus(tower, "fireRate", modifiers)) : 0;
     const rhythm = Math.min(1, getModifierAdd(modifiers, "trackRhythm") * (tower.rhythmStacks ?? 0));
     // Kriyo Kovan: yavaslamis ya da donmus hedefe atis daha az isi.
     const chilledRelief = getModifierAdd(modifiers, "chilledHeatRelief");
@@ -7218,7 +7217,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.performance,
       this.getTowerSpecialHeatMultiplier(tower),
       this.getTowerPerformanceCostMultiplier(tower)
-    ) * getModifierMultiplier(modifiers, "heat") * (1 - relief) * Math.max(0, 1 - rhythm) * (1 - chilled);
+    ) * getModifierMultiplier(modifiers, "heat") * Math.max(0, 1 - relief) * Math.max(0, 1 - rhythm) * (1 - chilled);
   }
 
   /** Kulenin su anki hedefi yavaslamis ya da donmus mu (Kriyo Kovan). */
@@ -21689,7 +21688,7 @@ export class MatchRoom extends Room<MatchState> {
     const applyRangeAura = (range: number, withFlat = true) => applyTowerAuraModifier(withFlat && range > 0 ? range + flat : range, this.getTowerAuraModifiers(tower), "range")
       * Math.max(0, 1 + getModifierAdd(modifiers, "range") + this.getTowerConditionalRangeAdd(tower, modifiers))
       * (1 + (this.getWorkerBoost(tower, "range")?.value ?? 0))
-      * (this.towerHasUnlock(tower, "isolationBonus") && this.isTowerIsolated(tower) ? 1.15 : 1);
+      * (this.towerHasUnlock(tower, "isolationBonus") && this.isTowerIsolated(tower) ? 1.3 : 1);
     if (tower.definition.id === "warrior-2") {
       const bounds = this.getActiveWorldBounds();
       return applyRangeAura(Math.hypot(bounds.width, bounds.height), false);
