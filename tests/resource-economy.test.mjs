@@ -237,13 +237,13 @@ test("all energy and material nodes have isolated finite reserves", () => {
   const room = createRoom("warrior");
   const nodes = room.getEconomyNodes();
   for (const node of nodes) {
-    assert.equal(node.remaining, 2000);
-    assert.equal(room.extractNodeResource(node.id, 3000), 2000);
+    assert.equal(node.remaining, 3000);
+    assert.equal(room.extractNodeResource(node.id, 4000), 3000);
     assert.equal(room.extractNodeResource(node.id, 1), 0);
   }
   assert.ok(room.getEconomyNodes().every(node => node.remaining === 0));
   const freshRoom = createRoom("warrior");
-  assert.ok(freshRoom.getEconomyNodes().every(node => node.remaining === 2000));
+  assert.ok(freshRoom.getEconomyNodes().every(node => node.remaining === 3000));
 });
 
 

@@ -1,11 +1,6 @@
 /**
- * Tamirciler kuleye eksik caninin gerektirdigi kadar gidiyor.
- *
- * Sahibin istegi (2026-10): "Tamirciler, bir kuleye kulenin eksik caninin
- * gerektirdigi kadar yonelmeliler. O kulenin onarimi icin o an 2 isci
- * yetiyorsa, 2 tane gitmeli ve digerleri de ayni sekilde dagilmalilar."
- * Olcu yuk: tamircinin tasidigi parca x `REPAIR_HP_PER_PART` can. Eskiden
- * hepsi en kotu orandaki yapiya yigiliyordu.
+ * Once her hasarli yapiya bir tamirci; sonra tasinan parca ve eksik cana
+ * gore yardim. Baska hedef yoksa parca fazlasi olsa bile ayni yapi paylasilir.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -62,7 +57,19 @@ test("eksik canin gerektirdigi kadar tamirci gidiyor, fazlasi oteki yapiya", () 
   assert.equal(targets.filter((id) => id === b.id).length, 1, `B'ye bir tamirci gitmeli: ${targets}`);
 });
 
-test("butun eksik karsilaninca fazla tamirci bosta kaliyor", () => {
+test("agir hasarli yapi iki isci istese bile once diger hasarli yapiya gidilir", () => {
+  const room = oda();
+  const a = kur(room, "warrior-1");
+  const b = kur(room, "warrior-1");
+  a.maxHp = 1000; a.hp = 100;
+  b.maxHp = 1000; b.hp = 990;
+  const list = tamirciler(room, 2, 20);
+  const targets = sec(room, list);
+  assert.deepEqual(new Set(targets), new Set([a.id, b.id]));
+  assert.deepEqual(sec(room, list), targets, "yolda hedefler degismemeli");
+});
+
+test("butun yapilara isci gidiyorsa fazla tamirci ayni yapida yardim eder", () => {
   const room = oda();
   const a = kur(room, "warrior-1");
   const b = kur(room, "warrior-1");
@@ -70,26 +77,31 @@ test("butun eksik karsilaninca fazla tamirci bosta kaliyor", () => {
   b.maxHp = 1000; b.hp = 900;
   const list = tamirciler(room, 4, 20);
   const targets = sec(room, list);
-  assert.equal(targets.filter((id) => id === a.id).length, 2);
+  assert.equal(targets.filter((id) => id === a.id).length, 3);
   assert.equal(targets.filter((id) => id === b.id).length, 1);
-  assert.equal(targets.filter((id) => id === "").length, 1, `dorduncu bosta kalmali: ${targets}`);
+  assert.equal(targets.filter((id) => id === "").length, 0, `fazla isci de yardim etmeli: ${targets}`);
 });
 
-test("eksik azalinca son gelen ayriliyor, once gelen kaliyor; eksik artinca yenisi katiliyor", () => {
+test("tek hasarli yapida isciler paylasir; yeni hasarli yapida once gelen kalir digeri ayrilir", () => {
   const room = oda();
   const a = kur(room, "warrior-1");
   a.maxHp = 1000; a.hp = 650;
   const list = tamirciler(room, 3, 20);
   sec(room, list);
   const onA = list.filter((drone) => drone.targetTowerId === a.id);
-  assert.equal(onA.length, 2);
+  assert.equal(onA.length, 3);
   const first = onA.reduce((x, y) => ((x.repairLockedAt ?? 0) <= (y.repairLockedAt ?? 0) ? x : y));
-  // A baska yoldan onarildi: eksik 150, tek tamirci yetiyor.
+  // Tek hedefte parca fazlasi olsa da isci bosta beklemez.
   a.hp = 850;
   sec(room, list);
   const still = list.filter((drone) => drone.targetTowerId === a.id);
-  assert.equal(still.length, 1, "eksik bir tamirciye indi ama ikisi kaldi");
-  assert.equal(still[0], first, "once gelen degil sonra gelen kaldi");
+  assert.equal(still.length, 3);
+  const b = kur(room, "warrior-1");
+  b.maxHp = 1000; b.hp = 950;
+  sec(room, list);
+  assert.equal(first.targetTowerId, a.id, "ilk gelen kilidini korumali");
+  assert.ok(list.some((worker) => worker.targetTowerId === b.id), "yeni hasarli yapi sahipsiz kalmamali");
+  b.hp = b.maxHp;
   // A agir hasar aldi: eksik 600, uc tamircinin yuku de yetmiyor; hepsi A'da.
   a.hp = 400;
   sec(room, list);

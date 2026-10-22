@@ -10411,19 +10411,15 @@ export class MatchRoom extends Room<MatchState> {
       drone.ttlMs -= deltaTime;
 
       if (drone.mode === "attack") {
-        let target = drone.targetId ? this.enemies.get(drone.targetId) : undefined;
-        // Hedef yer altina girdi ya da faza gecti: baskasina donuyor.
-        if (target?.untargetable) target = undefined;
+        const target = this.findDroneEnemy(drone.x, drone.y, drone);
         if (!target) {
-          target = this.findNearestEnemy(drone.x, drone.y);
-          drone.targetId = target?.id;
-          if (!target) {
-            // Yalnizca hedeflenemeyen dusman kaldiysa drone bekliyor (omru akiyor).
-            if (this.enemies.size === 0 || drone.ttlMs <= 0) this.drones.delete(id);
-            continue;
-          }
+          drone.targetId = undefined;
+          // Yalnizca hedeflenemeyen dusman kaldiysa drone bekliyor (omru akiyor).
+          if (this.enemies.size === 0 || drone.ttlMs <= 0) this.drones.delete(id);
+          continue;
         }
 
+        drone.targetId = target.id;
         const dx = target.x - drone.x;
         const dy = target.y - drone.y;
         const length = Math.max(1, Math.hypot(dx, dy));
@@ -14196,7 +14192,8 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Tamircinin onaracagi yapi.
    *
-   * Kilitli hedef hala hasarliysa ona devam edilir. Yeni secimde olcut can
+   * Ilk iscinin kilidi korunur; ek isciler once sahipsiz hasarli yapiya gider.
+   * Tum yapilar paylasilmissa ayni hedefe yardim edilebilir. Secimde olcut can
    * **orani**: oyuncunun kaygisi "hangisi dusmeye en yakin", eksik can
    * miktari degil. Esitlik mesafeyle bozuluyor ki secim belirlenimli olsun.
    *
@@ -14207,19 +14204,27 @@ export class MatchRoom extends Room<MatchState> {
    * cevabi oluyor.
    */
   private getRepairWorkerTarget(worker: DroneModel) {
-    // Kuleye eksik caninin gerektirdigi kadar tamirci: yuklu tamircilerin
-    // tasidigi parca (can karsiligi) eksik cani karsiliyorsa kule dolu,
-    // siradaki tamirci baska yapiya gidiyor. Sahibin istegi (2026-10): "o
-    // kulenin onarimi icin o an 2 isci yetiyorsa 2 tane gitmeli".
+    // Once her hasarli yapiya bir isci. Hepsi paylasildiysa eksik can ve
+    // tasinan parca ek iscilerin dagilimini belirler; fazlalik da yardim eder.
     const plan = this.getRepairPlan(worker.ownerId);
     const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
+    const validLock = locked && locked.ownerId === worker.ownerId && locked.hp > 0 && locked.hp < locked.maxHp;
+    const depot = this.getRepairDepot(worker);
+    // Ilk baglanan isci kalir; digerleri once sahipsiz hasarli yapilari alir.
+    if (validLock && (!plan.get(locked.id)?.length || plan.get(locked.id)?.[0] === worker)) return locked;
+    const unclaimed = (depot && this.findWorstStructure(worker, depot, plan, true))
+      ?? this.findWorstStructure(worker, undefined, plan, true);
+    if (unclaimed) return unclaimed;
     if (locked && locked.ownerId === worker.ownerId && locked.hp > 0 && locked.hp < locked.maxHp) {
       // Once gelenler kaliyor: bu tamirciden once baglananlar eksigi zaten
       // karsiliyorsa bu fazlalik, ayriliyor.
       if (this.getRepairCoverBefore(plan, locked.id, worker) < locked.maxHp - locked.hp) return locked;
     }
-    const depot = this.getRepairDepot(worker);
-    return (depot && this.findWorstStructure(worker, depot, plan)) ?? this.findWorstStructure(worker, undefined, plan);
+    return (depot && this.findWorstStructure(worker, depot, plan))
+      ?? this.findWorstStructure(worker, undefined, plan)
+      ?? (validLock ? locked : undefined)
+      ?? (depot && this.findWorstStructure(worker, depot))
+      ?? this.findWorstStructure(worker);
   }
 
   /**
@@ -14266,7 +14271,7 @@ export class MatchRoom extends Room<MatchState> {
    * merkezden olculur -- cemberin icinde "yakin" demek iscinin o anda
    * nerede durdugu degil, merkeze ne kadar yakin oldugu demek.
    */
-  private findWorstStructure(worker: DroneModel, depot?: TowerModel, plan?: Map<string, DroneModel[]>) {
+  private findWorstStructure(worker: DroneModel, depot?: TowerModel, plan?: Map<string, DroneModel[]>, unclaimedOnly = false) {
     const origin = depot ?? worker;
     const rangeSq = depot ? this.getTowerRange(depot) ** 2 : Number.POSITIVE_INFINITY;
     let best: TowerModel | undefined;
@@ -14274,6 +14279,7 @@ export class MatchRoom extends Room<MatchState> {
     let bestDistanceSq = Number.POSITIVE_INFINITY;
     for (const tower of this.towers.values()) {
       if (tower.ownerId !== worker.ownerId || tower.hp <= 0 || tower.hp >= tower.maxHp) continue;
+      if (unclaimedOnly && plan?.get(tower.id)?.some((other) => other !== worker)) continue;
       // Eksigi baska tamircilerin yuku zaten karsiliyorsa kule dolu.
       if (plan && this.getRepairCoverBefore(plan, tower.id, worker) >= tower.maxHp - tower.hp) continue;
       const distance = distanceSq(origin.x, origin.y, tower.x, tower.y);
@@ -18400,7 +18406,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private spawnAtakanDrone(tower: TowerModel, repairNexus: boolean, damage: number, origin?: { x: number; y: number }) {
-    const target = repairNexus ? undefined : this.findNearestEnemy(tower.x, tower.y);
+    const target = repairNexus ? undefined : this.findDroneEnemy(origin?.x ?? tower.x, origin?.y ?? tower.y);
     if (!repairNexus && !target) {
       return undefined;
     }
@@ -18467,11 +18473,18 @@ export class MatchRoom extends Room<MatchState> {
     client.send("ultimate:upgraded", { level: player.ultimatePower, cost });
   }
 
-  private findNearestEnemy(x: number, y: number) {
-    // Yer altindaki ve fazdaki dusman drone hedefi olamiyor (hasar almiyor).
+  private findDroneEnemy(x: number, y: number, current?: DroneModel) {
+    const assigned = new Map<string, number>();
+    for (const drone of this.drones.values()) {
+      if (drone === current || drone.mode !== "attack" || drone.ttlMs <= 0 || !drone.targetId) continue;
+      assigned.set(drone.targetId, (assigned.get(drone.targetId) ?? 0) + 1);
+    }
+    // Once en az dronun gittigi hedef; esitlikte mevcut hedefi koru, sonra mesafe.
     return Array.from(this.enemies.values())
-      .filter((enemy) => !enemy.untargetable)
-      .sort((a, b) => distanceSq(x, y, a.x, a.y) - distanceSq(x, y, b.x, b.y))[0];
+      .filter((enemy) => enemy.hp > 0 && !enemy.untargetable)
+      .sort((a, b) => (assigned.get(a.id) ?? 0) - (assigned.get(b.id) ?? 0)
+        || Number(b.id === current?.targetId) - Number(a.id === current?.targetId)
+        || distanceSq(x, y, a.x, a.y) - distanceSq(x, y, b.x, b.y))[0];
   }
 
   /**

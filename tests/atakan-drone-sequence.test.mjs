@@ -60,6 +60,31 @@ function enemyAt(room, x, y, hp = 30) {
 
 const ultimateDrones = (room) => [...room.drones.values()].filter((drone) => drone.mode === "attack" || drone.mode === "repair");
 
+test("saldiri dronlari once farkli dusmanlara, sonra dengeli dagilir; hedef kaybinda yeniden secer", () => {
+  const room = createRoom("warrior");
+  wire(room);
+  const [tower] = atakanTowers(room, 1);
+  const near = enemyAt(room, 400, 400, 10000);
+  const far = enemyAt(room, 600, 600, 10000);
+  const hidden = enemyAt(room, 1, 1, 10000);
+  hidden.untargetable = true;
+  const ids = Array.from({ length: 5 }, () => room.spawnAtakanDrone(tower, false, 1, { x: 0, y: 0 }));
+  const drones = ids.map((id) => room.drones.get(id));
+  assert.notEqual(drones[0].targetId, drones[1].targetId);
+  const counts = [near, far].map((enemy) => drones.filter((d) => d.targetId === enemy.id).length);
+  assert.equal(Math.abs(counts[0] - counts[1]), 1);
+  assert.ok(drones.every((d) => d.targetId !== hidden.id));
+  const before = drones.map((d) => d.targetId);
+  room.updateDrones(0, 0);
+  assert.deepEqual(drones.map((d) => d.targetId), before, "dengeli hedefler tikler arasinda sabit kalmali");
+  room.enemies.delete(near.id);
+  room.updateDrones(0, 0);
+  assert.ok(drones.every((d) => d.targetId === far.id), "tek dusman kalinca paylasilmali");
+  hidden.untargetable = false;
+  room.updateDrones(0, 0);
+  assert.ok(drones.some((d) => d.targetId === hidden.id), "yeni hedefe dagilim yapilmali");
+});
+
 function step(room, ms) {
   room.updateDrones(ms, ms / 1000);
   room.settleUltimateReports();
