@@ -56,6 +56,7 @@ import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signature
 import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEventInput, type CourtFrame, type ReceiptContext } from "../vfx/zeynep-signatures";
 import { getTowerBodySize, getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_SCALE } from "../tower-art";
 import { ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE, PROJECTILE_VISUAL_SCALE, WORKER_VISUAL_SCALE } from "../visual-scale";
+import { WORKER_LOOKS, getWorkerLookRole, getWorkerPlusOutline, type WorkerShape } from "../worker-look";
 import { arcade } from "../arcade";
 import { getArcadeRunScore } from "../arcade-score";
 import { AttackVfx, findHomingMuzzleOrigin, type EnemyHitFeel, type SinkingProjectile } from "../vfx/attack-vfx";
@@ -11545,7 +11546,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const govdeler = this.advancedWorkerGraphics ?? (this.advancedWorkerGraphics = this.add.graphics().setDepth(42));
     govdeler.clear();
     for (const drone of drones) {
-      const texture = drone.mode === "repair" || drone.mode === "repairer" || drone.mode === "crystalCollector" || drone.mode === "energyTransport" ? "drone-repair" : "drone-attack";
+      // Isci rolunun kendi dokusu (worker-look); AttackLord'un ulti dronlari eski dokularinda.
+      const lookRole = getWorkerLookRole(drone.mode);
+      const look = lookRole ? WORKER_LOOKS[lookRole] : undefined;
+      const texture = look ? look.texture : drone.mode === "repair" ? "drone-repair" : "drone-attack";
       let sprite = this.drones.get(drone.id);
       if (!sprite) {
         sprite = this.physics.add.sprite(drone.x, drone.y, texture);
@@ -11560,7 +11564,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         sprite.setTexture(texture);
       }
       const angle = Phaser.Math.Angle.Between(sprite.x, sprite.y, drone.x, drone.y);
-      if (Number.isFinite(angle)) {
+      // Onarim artisi donmuyor: capraz giderken "x"e donerdi.
+      if (look?.shape === "plus") {
+        sprite.setRotation(0);
+      } else if (Number.isFinite(angle)) {
         sprite.setRotation(angle);
       }
       sprite.setPosition(drone.x, drone.y);
@@ -11571,15 +11578,17 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const workerScale = isLogisticsWorker ? 0.69 * 0.75 * WORKER_VISUAL_SCALE : (drone.mode === "attack" ? ATAKAN_ATTACK_DRONE_BODY.spriteScale : 1.38) * ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE;
       sprite.setScale(workerScale * mapEntityScale * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
-      const tint = drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : drone.mode === "repairer" ? 0xf472b6 : 0xffffff;
-      sprite.setTint(tint);
+      // Doku zaten rolun renginde: tint carpimi yok (eskiden uc rolu ayni maviye
+      // dusuruyordu). Gelismis govde ayni rengi Graphics ile ciziyor.
+      const tint = look?.color ?? 0xffffff;
+      sprite.clearTint();
       sprite.setBlendMode(Phaser.BlendModes.ADD);
       // Gelismis isci ayni boyutta ama baska bir sekil: yuvarlak govde
       // yerine besgen. Ayirt edici olan olcu degil siluet oldugu icin yuk
       // tasirken buyuyup kuculmesi kademeyi bulanistirmiyor.
       sprite.setVisible(!drone.advanced);
       if (drone.advanced) {
-        this.drawAdvancedWorkerBody(govdeler, drone, tint, sprite.displayWidth * ADVANCED_WORKER_BODY_RADIUS_RATIO, sprite.rotation);
+        this.drawAdvancedWorkerBody(govdeler, drone, tint, sprite.displayWidth * ADVANCED_WORKER_BODY_RADIUS_RATIO, sprite.rotation, look?.shape);
       }
       // Can cubugu yalnizca yaralida: her iscinin ustunde duran dolu bir
       // cubuk, dolu olmayan tek cubugu gorunmez kilardi.
@@ -11725,18 +11734,26 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    *
    * Bir kose yurune yone bakiyor: besgen dairenin aksine yonunu
    * gosterebilir, yani sekil hem kademeyi hem gidisi anlatiyor.
+   *
+   * Tamirci besgen degil, kendi artisinin konturlu ve biraz buyuk hali
+   * (worker-look): gelismis Tamirci de ilk bakista Tamirci okunuyor.
    */
   private drawAdvancedWorkerBody(
     graphics: Phaser.GameObjects.Graphics,
     drone: DroneSnapshot,
     tint: number,
     radius: number,
-    rotation: number
+    rotation: number,
+    shape?: WorkerShape
   ) {
-    const points: Phaser.Geom.Point[] = [];
-    for (let i = 0; i < 5; i += 1) {
-      const angle = rotation + (i * Math.PI * 2) / 5;
-      points.push(new Phaser.Geom.Point(drone.x + Math.cos(angle) * radius, drone.y + Math.sin(angle) * radius));
+    const points: Phaser.Types.Math.Vector2Like[] = [];
+    if (shape === "plus") {
+      points.push(...getWorkerPlusOutline(drone.x, drone.y, radius));
+    } else {
+      for (let i = 0; i < 5; i += 1) {
+        const angle = rotation + (i * Math.PI * 2) / 5;
+        points.push({ x: drone.x + Math.cos(angle) * radius, y: drone.y + Math.sin(angle) * radius });
+      }
     }
     graphics.fillStyle(tint, 0.92);
     graphics.fillPoints(points, true);

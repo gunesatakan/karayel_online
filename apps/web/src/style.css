@@ -1662,6 +1662,11 @@ button.wave-report:active { transform: scale(0.99); }
   text-transform: uppercase;
 }
 
+/* Agacin rol basligi da haritadaki iscinin renginde (worker-look). */
+.worker-development__role--crystalCollector > strong { border-color: rgba(155, 126, 224, .6); }
+.worker-development__role--energyTransport > strong { border-color: rgba(224, 166, 58, .6); }
+.worker-development__role--repairer > strong { border-color: rgba(76, 199, 122, .6); }
+
 .worker-development__path {
   position: relative;
   display: grid;
@@ -2023,9 +2028,10 @@ button.wave-report:active { transform: scale(0.99); }
   touch-action: pan-y;
 }
 
-.game-controls button.worker-row--gatherer { border-left-color: rgba(56, 189, 248, 0.85); }
-.game-controls button.worker-row--carrier { border-left-color: rgba(251, 191, 36, 0.8); }
-.game-controls button.worker-row--repairer { border-left-color: rgba(45, 212, 191, 0.8); }
+/* Rol rengi haritadaki isciyle ayni (worker-look): satiri isciye baglayan renk. */
+.game-controls button.worker-row--gatherer { border-left-color: rgba(155, 126, 224, 0.85); }
+.game-controls button.worker-row--carrier { border-left-color: rgba(224, 166, 58, 0.8); }
+.game-controls button.worker-row--repairer { border-left-color: rgba(76, 199, 122, 0.8); }
 
 .worker-row__main {
   display: flex;

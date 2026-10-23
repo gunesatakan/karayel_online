@@ -5,6 +5,7 @@ import { darken, liftToWhite } from "../vfx/kit";
 import { assetUrl } from "../asset-url";
 import { listTieredTowerArt, listSupplyTowerArt } from "../tower-art";
 import { OPERATOR_BODY_TEXTURE_PATHS, getOperatorBodyTextureKey } from "../vfx/operator-bodies";
+import { WORKER_LOOKS, getWorkerPlusOutline, type WorkerLook } from "../worker-look";
 
 const ENEMY_RACE_TEXTURES = ["spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"] as const;
 const ENEMY_TYPE_TEXTURES = ["grunt", "brute", "runner", "shooter"] as const;
@@ -87,6 +88,7 @@ export class PreloaderScene extends Phaser.Scene {
     this.createCircleTexture("projectile-tower", 0xf8fafc, 4);
     this.createDroneTexture("drone-attack", 0xfb7185, 0xfacc15);
     this.createDroneTexture("drone-repair", 0x22d3ee, 0x86efac);
+    for (const look of Object.values(WORKER_LOOKS)) this.createWorkerTexture(look);
     // Efekt kitinin pisirilmis dokulari (2 kat): yumusak hale, kivilcim, halka.
     bakeFlashTextures(this);
     this.createProceduralTowerTextures();
@@ -145,6 +147,34 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.fillStyle(accent, 1);
     graphics.fillCircle(center, center, 3);
     graphics.generateTexture(key, size, size);
+    graphics.destroy();
+  }
+
+  /**
+   * Lojistik iscinin dokusu (worker-look): rolun kendi renginde, tint
+   * almadan. Baklava drone dokusunun olculeriyle ayni (hale, govde, halka,
+   * merkez); Tamircinin govdesi halkasiz kalin bir onarim artisi.
+   */
+  private createWorkerTexture(look: WorkerLook) {
+    const graphics = this.make.graphics({ x: 0, y: 0 }, false);
+    const size = 30;
+    const center = size / 2;
+    graphics.fillStyle(look.color, 0.18);
+    graphics.fillCircle(center, center, 14);
+    graphics.fillStyle(look.color, 0.95);
+    if (look.shape === "plus") {
+      graphics.fillPoints(getWorkerPlusOutline(center, center, 11), true);
+      graphics.fillStyle(look.accent, 1);
+      graphics.fillRect(center - 2.5, center - 2.5, 5, 5);
+    } else {
+      graphics.fillTriangle(center, 3, size - 4, center, center, size - 4);
+      graphics.fillTriangle(center, 3, center, size - 4, 4, center);
+      graphics.lineStyle(3, look.accent, 0.95);
+      graphics.strokeCircle(center, center, 8);
+      graphics.fillStyle(look.accent, 1);
+      graphics.fillCircle(center, center, 3);
+    }
+    graphics.generateTexture(look.texture, size, size);
     graphics.destroy();
   }
 
