@@ -113,6 +113,8 @@ test("onarım eksik canla orantılı ve yeniden inşadan ucuz", () => {
 
 test("hasarlı duvar altın karşılığı onarılır, yıkılan onarılmaz", () => {
   const { room, wall, player } = buildWall();
+  // Altinla onarim yalniz kurulumda (createRoom dalgada aciyor).
+  room.setupPhase = true;
   const goldBefore = player.gold;
   wall.hp = wall.maxHp * 0.25;
 
@@ -156,6 +158,8 @@ test("onarılan duvar tekrar kırılırsa yeniden uyarır", () => {
   room.damageTower(wall, wall.maxHp * 0.1);
   assert.equal(events.length, 1);
 
+  // Altinla onarim yalniz kurulumda (createRoom dalgada aciyor).
+  room.setupPhase = true;
   room.repairStructure(client, { towerId: wall.id });
   wall.hp = wall.maxHp * (STRUCTURE_BREACH_HEALTH_RATIO + 0.05);
   room.damageTower(wall, wall.maxHp * 0.1);

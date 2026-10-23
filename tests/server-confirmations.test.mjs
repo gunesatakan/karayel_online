@@ -251,6 +251,8 @@ test("takma: esya ve kule adi, guclu atim o kuleye; reddedilen esya envanterde k
 
 test("onarim: toast'taki bedel gercekten odenen altin, atim onarilan kuleye", () => {
   const { room, player, towers } = roomWithTowers("onur");
+  // Altinla onarim yalniz kurulumda (createRoom dalgada aciyor).
+  room.setupPhase = true;
   const wall = towers.find((tower) => tower.definition.id === "wall-1");
   wall.hp = wall.maxHp * 0.25;
   const goldBefore = player.gold;

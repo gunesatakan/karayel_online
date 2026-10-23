@@ -8,6 +8,10 @@
  * butun bedel komutta ayriliyor, gecersizlesen durak iade, geri cekilmede
  * kalan iade; tekli onarima verilmis yapi ikinci kez tahsil edilmiyor; tek
  * ozet toast'u. Metinler tr+en.
+ *
+ * Sahibin istegi (2026-10-24): altinla onarim (tekli ve "Tumunu Onar") yalniz
+ * kurulumda; dalgada yapilari yalnizca tamirciler onariyor. Kurulumda verilip
+ * dalga baslarken yolda olan onarim dusuyor, bedeli iade.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -132,6 +136,8 @@ function roomWithTowers(characterId = "onur") {
   }
   const towers = ownTowers(room);
   assert.ok(towers.length >= 4, `yeterli yapi kurulamadi: ${towers.length}`);
+  // Altinla onarim yalniz kurulumda (createRoom dalgada aciyor).
+  room.setupPhase = true;
   return { room, player: room.state.players.get("p1"), towers };
 }
 
@@ -185,6 +191,10 @@ test("dugme durumu: toplam, k/N, yetersiz altin, onarilacak yok", () => {
   assert.deepEqual(getRepairAllButtonState(planRepairAll(candidates, 0)), { key: "noGold", enabled: false, params: { count: 2 } });
   assert.deepEqual(getRepairAllButtonState(planRepairAll([], 500)), { key: "none", enabled: false, params: {} });
   assert.equal(getRepairAllButtonState(planRepairAll([candidates[0]], 1_000_000)).key, "actionOne");
+  // Dalgada: hasarli yapi sayisi gorunuyor, dugme kapali; onarilacak yoksa yine "none".
+  assert.deepEqual(getRepairAllButtonState(full, { setupPhase: false }), { key: "setupOnly", enabled: false, params: { count: 2 } });
+  assert.equal(getRepairAllButtonState(planRepairAll([], 500), { setupPhase: false }).key, "none");
+  assert.equal(getRepairAllButtonState(full, { setupPhase: true }).key, "action");
 });
 
 // --------------------------------------------------------- bedensiz: aninda
@@ -318,7 +328,7 @@ test("bedenli: geri cekilmede yapilanlarin ozeti, kalanin payi iade", async () =
   const { room, clients: [client] } = await startedRoom(["warrior"]);
   const clock = withClock();
   try {
-    room.setupPhase = false;
+    // Kurulumda: altinla onarim yalniz orada; bedenin hasari evreye bakmiyor.
     const player = room.state.players.get("p1");
     player.gold = 100_000;
     for (const spot of spots(room, "warrior-1", 3)) room.placeTower(client, { ...spot, definitionId: "warrior-1" });
@@ -348,6 +358,115 @@ test("bedenli: geri cekilmede yapilanlarin ozeti, kalanin payi iade", async () =
   }
 });
 
+// ------------------------------------------------------ yalniz kurulumda
+
+test("dalgada altinla onarim yok: tekli ve toplu komut sessizce reddediliyor", () => {
+  const { room, player, towers } = roomWithTowers("onur");
+  room.setupPhase = false;
+  player.gold = 1_000_000;
+  for (const tower of towers) tower.hp = tower.maxHp * 0.5;
+  const goldBefore = player.gold;
+  const client = fakeClient("p1");
+  room.commandRepairAll(client);
+  room.commandRepair(client, { towerId: towers[0].id });
+  assert.equal(room.repairStructure(client, { towerId: towers[1].id }), 0);
+  assert.equal(player.gold, goldBefore, "dalgada altin alindi");
+  assert.ok(towers.every((tower) => tower.hp === tower.maxHp * 0.5), "dalgada onarildi");
+  assert.equal(client.sent.length, 0);
+  // Dalga sonu duraklamasi da kurulum degil.
+  room.waveClearedAt = Date.now();
+  room.commandRepairAll(client);
+  assert.equal(player.gold, goldBefore);
+  // Kurulum acilinca ayni komut isliyor.
+  room.waveClearedAt = 0;
+  room.setupPhase = true;
+  room.commandRepairAll(client);
+  assert.ok(towers.every((tower) => tower.hp === tower.maxHp), "kurulumda onarilmadi");
+});
+
+test("bedenli: dalgada onarim kuyruga girmiyor, altin ayrilmiyor", async () => {
+  const { room, clients: [client] } = await startedRoom(["warrior"]);
+  try {
+    const player = room.state.players.get("p1");
+    player.gold = 100_000;
+    for (const spot of spots(room, "warrior-1", 2)) room.placeTower(client, { ...spot, definitionId: "warrior-1" });
+    const towers = ownTowers(room);
+    for (const tower of towers) tower.hp = tower.maxHp * 0.5;
+    room.setupPhase = false;
+    const goldBefore = player.gold;
+    send(room, client, "structure:repairAll");
+    send(room, client, "structure:repair", { towerId: towers[0].id });
+    assert.equal(room.getOperatorBody("p1").tasks.length, 0);
+    assert.equal(player.gold, goldBefore);
+  } finally {
+    cleanup(room);
+  }
+});
+
+test("bedenli: dalga baslayinca sirada bekleyen onarim dusuyor; yapilanin ozeti, kalan iade, oteki is suruyor", async () => {
+  const { room, clients: [client] } = await startedRoom(["warrior"]);
+  const clock = withClock();
+  try {
+    const player = room.state.players.get("p1");
+    player.gold = 100_000;
+    const places = spots(room, "warrior-1", 4);
+    for (const spot of places.slice(0, 3)) room.placeTower(client, { ...spot, definitionId: "warrior-1" });
+    const towers = ownTowers(room);
+    for (const tower of towers) tower.hp = tower.maxHp * 0.5;
+    const goldBefore = player.gold;
+    send(room, client, "structure:repairAll");
+    const body = room.getOperatorBody("p1");
+    const task = body.tasks[0];
+    fly(room, clock, 6000, () => task.repairStats.count >= 1);
+    assert.equal(task.repairStats.count, 1);
+    const firstCost = task.repairStats.cost;
+    // Sirada bir kurulum da var: dalgada da suruyor.
+    const beforePlace = player.gold;
+    send(room, client, "placeTower", { ...places[3], definitionId: "warrior-1" });
+    const placeReserved = beforePlace - player.gold;
+    assert.ok(placeReserved > 0);
+    assert.deepEqual(body.tasks.map((entry) => entry.kind), ["repairAll", "place"]);
+
+    send(room, client, "wave:continue");
+    assert.equal(room.setupPhase, false, "dalga baslamadi");
+    assert.deepEqual(body.tasks.map((entry) => entry.kind), ["place"], "onarim dusmedi ya da kurulum dustu");
+    assert.equal(goldBefore - player.gold, firstCost + placeReserved, "kalan onarim payi iade edilmedi");
+    assert.equal(towers.filter((tower) => tower.hp === tower.maxHp).length, 1);
+    assert.equal(messages(client, "structure:repairedAll").at(-1)?.count, 1, "yapilan onarimin ozeti");
+    assert.equal(messages(client, "body:task-failed").at(-1)?.key, "body.repairSetupOnly");
+
+    fly(room, clock, 3000);
+    assert.equal(ownTowers(room).length, 4, "kurulum dalgada surmedi");
+    assert.equal(towers.filter((tower) => tower.hp === tower.maxHp).length, 1, "dalgada onarim yapildi");
+  } finally {
+    clock.restore();
+    cleanup(room);
+  }
+});
+
+test("bedenli: tekli onarim yola cikmadan dalga baslarsa butun bedel geri", async () => {
+  const { room, clients: [client] } = await startedRoom(["warrior"]);
+  try {
+    const player = room.state.players.get("p1");
+    player.gold = 100_000;
+    const [spot] = spots(room, "warrior-1", 1);
+    room.placeTower(client, { ...spot, definitionId: "warrior-1" });
+    const [tower] = ownTowers(room);
+    tower.hp = tower.maxHp * 0.3;
+    const goldBefore = player.gold;
+    send(room, client, "structure:repair", { towerId: tower.id });
+    assert.ok(player.gold < goldBefore, "bedel ayrilmadi");
+    send(room, client, "wave:continue");
+    assert.equal(room.getOperatorBody("p1").tasks.length, 0);
+    assert.equal(player.gold, goldBefore);
+    assert.equal(tower.hp, tower.maxHp * 0.3);
+    assert.equal(messages(client, "structure:repairedAll").length, 0, "yapilmamis onarimin ozeti olmaz");
+    assert.equal(messages(client, "body:task-failed").at(-1)?.key, "body.repairSetupOnly");
+  } finally {
+    cleanup(room);
+  }
+});
+
 // ---------------------------------------------------------- kapilar ve istemci
 
 test("mesaj kurali, ogretici, istemci ve metinler", async () => {
@@ -360,10 +479,15 @@ test("mesaj kurali, ogretici, istemci ve metinler", async () => {
   assert.ok(scene.includes('room.onMessage("structure:repairedAll"'));
   assert.ok(scene.includes("planRepairAll(") && scene.includes("getRepairAllButtonState("));
   assert.ok(ui.includes('dispatch({ action: "repairAll" })'));
-  for (const key of ["action", "actionOne", "partial", "none", "noGold"]) {
+  for (const key of ["action", "actionOne", "partial", "none", "noGold", "setupOnly"]) {
     const occurrences = locales.split(`"controls.repairAll.${key}":`).length - 1;
     assert.equal(occurrences, 2, `${key} tr+en`);
   }
+  // Dalgada iki dugme de kapali ve nedenini yaziyor.
+  const sceneLocales = await readFile(new URL("../apps/web/src/locales/areas/scene.ts", import.meta.url), "utf8");
+  assert.equal(sceneLocales.split('"scene.repair.setupOnly":').length - 1, 2, "scene.repair.setupOnly tr+en");
+  assert.ok(scene.includes('if (this.latestPerfSnapshot?.setupPhase === false) return { label: t("scene.repair.setupOnly"), enabled: false };'), "tekli onarim dugmesi evreyi bilmiyor");
+  assert.ok(scene.includes("{ setupPhase: this.latestPerfSnapshot?.setupPhase }"), "Tumunu Onar evreyi bilmiyor");
   assert.ok(locales.includes('"controls.repairAll.partial": "Tümünü Onar · {affordable}/{count} yapı · {cost}g"'));
   assert.ok(locales.includes('"controls.repairAll.none": "Tümünü Onar · Onarılacak yapı yok"'));
   assert.ok(locales.includes("Yetersiz altın"));

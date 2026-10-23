@@ -2395,14 +2395,16 @@ export type RepairAllPlan = ReturnType<typeof planRepairAll>;
  * "Tumunu Onar" dugmesinin durumu: hangi metin (`controls.repairAll.<key>`),
  * yer tutucular ve acik mi. Hepsi yetiyorsa toplam; yetmiyorsa "k/N" ve
  * alt kumenin bedeli (dokununca olacak olan tam bu); hic biri yetmiyorsa ya
- * da hasarli yapi yoksa kapali.
+ * da hasarli yapi yoksa kapali. Altinla onarim yalniz kurulumda: dalgada
+ * (`setupPhase: false`) hasarli yapi sayisi gorunuyor, dugme kapali.
  */
-export function getRepairAllButtonState(plan: RepairAllPlan): {
-  key: "none" | "noGold" | "partial" | "action" | "actionOne";
+export function getRepairAllButtonState(plan: RepairAllPlan, options: { setupPhase?: boolean } = {}): {
+  key: "none" | "noGold" | "partial" | "action" | "actionOne" | "setupOnly";
   enabled: boolean;
   params: Record<string, number>;
 } {
   if (plan.damaged === 0) return { key: "none", enabled: false, params: {} };
+  if (options.setupPhase === false) return { key: "setupOnly", enabled: false, params: { count: plan.damaged } };
   if (plan.ids.length === 0) return { key: "noGold", enabled: false, params: { count: plan.damaged } };
   if (plan.ids.length < plan.damaged) {
     return { key: "partial", enabled: true, params: { affordable: plan.ids.length, count: plan.damaged, cost: plan.cost } };

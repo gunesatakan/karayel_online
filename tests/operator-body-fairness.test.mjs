@@ -133,7 +133,7 @@ test("onarim ve Execute temas disindan, isinla", async () => {
   const { room, clients: [client] } = await startedRoom(["warrior"]);
   const clock = withClock();
   try {
-    room.setupPhase = false;
+    // Onarim kurulumda (altinla onarim yalniz orada), Execute dalgada.
     room.state.players.get("p1").gold = 100_000;
     const gridSize = getMapGridSize(room.activeMap);
     const contact = OPERATOR_BODY_CONTACT_RADIUS * room.getMapWorldScale();
@@ -152,6 +152,7 @@ test("onarim ve Execute temas disindan, isinla", async () => {
     assert.ok(repairedGap !== undefined, "onarim olmadi");
     assert.ok(repairedGap > contact, `onarim temasta yapildi (${repairedGap})`);
 
+    room.setupPhase = false;
     room.enemies.clear();
     const enemy = spawnEnemy(room);
     const bounds = getMapWorldBounds(room.activeMap);

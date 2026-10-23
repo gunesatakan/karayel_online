@@ -6725,6 +6725,7 @@ export class MatchRoom extends Room<MatchState> {
       .map(([id]) => id);
     if (connectedPlayerIds.length > 0 && connectedPlayerIds.every((id) => this.setupReadyPlayerIds.has(id))) {
       this.setupPhase = false;
+      this.dropQueuedStructureRepairs();
       this.setupReadyPlayerIds.clear();
       this.spawnCooldownMs = 350;
       this.chargeBloodBanks();
@@ -15749,8 +15750,12 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Tek yapinin onarimi; odenen bedeli donduruyor (0: reddedildi). `quiet`:
    * "Tumunu Onar" tek ozet yolluyor, yapi basina onay yok.
+   *
+   * Altinla onarim yalniz kurulum evresinde: dalga sirasinda (dalga sonu
+   * duraklamasi dahil) yapilari yalnizca tamirciler onariyor.
    */
   private repairStructure(client: Client, message: RepairStructureMessage, options: { quiet?: boolean } = {}) {
+    if (!this.setupPhase) return 0;
     const player = this.state.players.get(client.sessionId);
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!player || !tower || tower.ownerId !== client.sessionId) return 0;
@@ -16418,8 +16423,9 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  /** `structure:repair` kapisi: bedel komut aninda ayriliyor, onarim varista aninda. */
+  /** `structure:repair` kapisi: bedel komut aninda ayriliyor, onarim varista aninda. Yalniz kurulumda. */
   private commandRepair(client: Client, message: RepairStructureMessage) {
+    if (!this.setupPhase) return;
     const body = this.getCommandBody(client);
     if (!body) {
       this.repairStructure(client, message);
@@ -16446,6 +16452,25 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
+  /**
+   * Kurulum bitti: bedene verilmis, henuz yapilmamis onarimlar dusuyor (altinla
+   * onarim yalniz kurulumda). Ayrilan bedel iade; yarida kalan "Tumunu Onar"in
+   * yapilmis onarimlari tek ozet; sahibine not. Bedenin oteki isleri suruyor.
+   */
+  private dropQueuedStructureRepairs() {
+    for (const body of this.operatorBodies.values()) {
+      const repairs = body.tasks.filter((task) => task.kind === "repair" || task.kind === "repairAll");
+      if (repairs.length === 0) continue;
+      const client = this.getBodyClient(body.ownerId);
+      for (const task of repairs) {
+        if (task.kind === "repairAll" && task.repairStats && task.repairStats.count > 0) this.sendRepairAllResult(client, task.repairStats);
+        this.refundOperatorBodyTask(body, task);
+      }
+      body.tasks = body.tasks.filter((task) => !repairs.includes(task));
+      client.send("body:task-failed", serverTextMessage("body.repairSetupOnly"));
+    }
+  }
+
   /** Bedene verilmis, henuz yapilmamis onarimlarin yapilari (tekli ve "Tumunu Onar"in kalan duraklari). */
   private getQueuedRepairTowerIds(body: OperatorBodyModel) {
     const ids = new Set<string>();
@@ -16465,8 +16490,10 @@ export class MatchRoom extends Room<MatchState> {
    * sayisina guvenilmiyor), ayni karsilanabilirlik kuraliyla. Bedenli oyuncuda
    * tek gorev: butun bedel komut aninda ayriliyor, beden duraklari en yakin
    * komsu sirasiyla geziyor ve her varista tekli onarimin isleyicisi.
+   * Yalniz kurulumda (`repairStructure`).
    */
   private commandRepairAll(client: Client) {
+    if (!this.setupPhase) return;
     const body = this.getCommandBody(client);
     if (!body) {
       this.repairAllStructures(client);
@@ -17544,6 +17571,7 @@ export class MatchRoom extends Room<MatchState> {
     if (!this.getCreativePlayer(client)) return;
     const count = Math.max(1, Math.min(CREATIVE_MAX_SPAWN_BURST, Math.round(isFiniteNumber(message.count) ? message.count : 1)));
     this.setupPhase = false;
+    this.dropQueuedStructureRepairs();
     this.setupReadyPlayerIds.clear();
     this.waveClearedAt = 0;
     this.waveTarget = Math.max(this.waveTarget, this.waveSpawned + count);

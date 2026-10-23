@@ -66,7 +66,7 @@ export const trCore = {
   "tutorial.repairDepot.title": "TAMİR MERKEZİ",
   "tutorial.repairDepot.body": "Kuleler'den Tamir Merkezi'ni kur. Enerji ve demir harcayıp onarım parçası üretir; tamirciler burada bekler.",
   "tutorial.repairer.title": "TAMİRCİ",
-  "tutorial.repairer.body": "Onarım uzmanı bir işçi al ya da bir tamirciyi merkeze ata; parçayla yapıları onarır. Acil durumda yapıyı seçip altınla da onarabilirsin.",
+  "tutorial.repairer.body": "Onarım uzmanı bir işçi al ya da bir tamirciyi merkeze ata; parçayla yapıları onarır. Dalgada yalnız tamirci onarır; altınla onarım kurulumda.",
   "tutorial.xpGold.title": "DENEYİM VE ALTIN",
   "tutorial.xpGold.body": "Altın (üst şerit, ◆) öldürme ve dalgadan gelir; kule, işçi ve eşya alır. Deneyim (altının yanında, ★) savaşta birikir; kule seviyesi ve işçi ağacı ister.",
   "tutorial.upgrade.title": "YÜKSELT",

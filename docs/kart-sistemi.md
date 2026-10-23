@@ -276,13 +276,16 @@ testler `tests/durability-round.test.mjs`.
   Nefes penceresindeki kiriş paylaşmaz. Tavan %50.
 - **Öz Onarım Çekirdeği** (eşya, 120 g, `idleRegen` 0,03): 4 oyun sn hasar
   almayan yapı saniyede azami canının %3'ünü yeniler; yalnızca dalga sırasında
-  (hazırlıkta altınla ya da tamirciyle onarılıyor).
+  (altınla onarım yalnız kurulumda; dalgada yapıları tamirciler onarıyor).
 - **Perçinli Kaplama** (eşya, 75 g, `armorFlat` 4): yapının zırhı 3 → 7. Zırh
   her vuruştan düşülür (vuruş en az 1): 12'lik piyade vuruşu 9 → 5, 96'lık
   kuşatma vuruşu 93 → 89. Karşı atak ve yıkım zırhı deler. Snapshot'taki `armor`
   ve önizlemenin "Zırh" satırı (`preview.stat.armor`) bu sayıyı okur.
 
-Can kurallarıyla birlikte: altınla onarım bedeli eksik canın **oranına** bakar
+Can kurallarıyla birlikte: altınla onarım (tekli ve "Tümünü Onar") yalnız
+kurulumda; dalga sırasında yapıları yalnızca tamirciler onarır, kurulumda
+verilip dalga başlarken yolda olan onarım düşer ve bedeli iade edilir. Altınla
+onarım bedeli eksik canın **oranına** bakar
 (`getStructureRepairCost`), azami can büyüyünce onarım pahalılaşmaz; tamirci
 parça başına sabit can yazar, büyük can daha çok parça ister. Üç eşya da can
 eşyaları gibi kapsamsız: her kuleye ve duvara takılır, kaynak binasına takılmaz

@@ -54,6 +54,8 @@ const FORMER_TURKISH = {
   "body.queueFull": "Operatör meşgul: önce sıradaki işler bitsin",
   "body.duplicate": "Bu kareye kurulum zaten sırada",
   "body.retreated": "Beden geri çekildi: görevler iptal, altın iade edildi",
+  // Yeni metin (kurulumda verilip dalgada dusen onarim, `body:task-failed`); eskisi yok.
+  "body.repairSetupOnly": "Dalga başladı: onarım yalnız kurulumda, altın iade edildi",
   // Yeni metinler (uyumsuz kuleye esya takma reddi, `inventory:equip-rejected`); eskisi yok.
 "equip.incompatible.attacks": "Bu eşya bu kuleye takılamaz: yalnızca düşmana etki eden kulelere takılır.",
   "equip.incompatible.damage": "Bu eşya bu kuleye takılamaz: yalnızca hasar veren kulelere takılır.",

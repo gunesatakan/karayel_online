@@ -66,7 +66,7 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "tutorial.repairDepot.title": "REPAIR DEPOT",
   "tutorial.repairDepot.body": "Build a Repair Depot from Towers. It spends energy and iron to make repair parts; repairers wait here.",
   "tutorial.repairer.title": "REPAIRER",
-  "tutorial.repairer.body": "Hire a Repair specialist or assign a repairer to the depot; it fixes structures with parts. In a pinch, select one and repair it with gold.",
+  "tutorial.repairer.body": "Hire a Repair specialist or assign a repairer to the depot; it fixes structures with parts. In waves only repairers fix; gold repair is setup-only.",
   "tutorial.xpGold.title": "XP AND GOLD",
   "tutorial.xpGold.body": "Gold (top bar, ◆) comes from kills and waves; it buys towers, workers and items. Experience (next to gold, ★) builds in battle; levels and the worker tree spend it.",
   "tutorial.upgrade.title": "UPGRADE",

@@ -67,6 +67,8 @@ function esyaTak(room, tower, itemId) {
 
 test("kaynak makinesi onarimi hem ucuzlatiyor hem dugmede gorunuyor", () => {
   const room = oda();
+  // Altinla onarim yalniz kurulumda (createRoom dalgada aciyor).
+  room.setupPhase = true;
   const player = room.state.players.get("p1");
   const tower = kur(room);
   esyaTak(room, tower, "kaynak-makinesi");
@@ -93,6 +95,8 @@ test("kaynak makinesi onarimi hem ucuzlatiyor hem dugmede gorunuyor", () => {
 test("esya yokken de gorunen ile odenen ayni", () => {
   // Kontrol: carpan yoluna girmek carpansiz durumu bozmamis olmali.
   const room = oda();
+  // Altinla onarim yalniz kurulumda (createRoom dalgada aciyor).
+  room.setupPhase = true;
   const player = room.state.players.get("p1");
   const tower = kur(room);
   tower.hp = tower.maxHp * 0.25;

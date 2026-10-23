@@ -50,6 +50,8 @@ export const SERVER_TEXT = {
   "body.queueFull": "Operatör meşgul: önce sıradaki işler bitsin",
   "body.duplicate": "Bu kareye kurulum zaten sırada",
   "body.retreated": "Beden geri çekildi: görevler iptal, altın iade edildi",
+  // Dalga basladi; sirada bekleyen altinla onarim dustu (onarim yalniz kurulumda).
+  "body.repairSetupOnly": "Dalga başladı: onarım yalnız kurulumda, altın iade edildi",
   // `inventory:equip-rejected` (uyumsuz kule): esyanin istedigi kule yetenegi (`ShopItemNeed`)
 "equip.incompatible.attacks": "Bu eşya bu kuleye takılamaz: yalnızca düşmana etki eden kulelere takılır.",
   "equip.incompatible.damage": "Bu eşya bu kuleye takılamaz: yalnızca hasar veren kulelere takılır.",

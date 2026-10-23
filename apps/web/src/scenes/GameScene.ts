@@ -4503,6 +4503,8 @@ export class GameScene extends Phaser.Scene {
     if (maxHp <= 0) return undefined;
     if (hp <= 0) return { label: t("scene.repair.destroyed"), enabled: false };
     if (hp >= maxHp) return { label: t("scene.repair.intact"), enabled: false };
+    // Altinla onarim yalniz kurulumda; dalgada yapilari tamirciler onariyor.
+    if (this.latestPerfSnapshot?.setupPhase === false) return { label: t("scene.repair.setupOnly"), enabled: false };
 
     // Carpan sunucudan geliyor: onu doguran kart ve esya listesi tele
     // cikmiyor, yani istemci indirimi kendi bulamaz. Eksikse 1.
@@ -4535,7 +4537,7 @@ export class GameScene extends Phaser.Scene {
         costMultiplier: tower.repairCostMultiplier ?? 1
       });
     }
-    const button = getRepairAllButtonState(planRepairAll(candidates, this.localPlayerSnapshot?.gold ?? 0));
+    const button = getRepairAllButtonState(planRepairAll(candidates, this.localPlayerSnapshot?.gold ?? 0), { setupPhase: this.latestPerfSnapshot?.setupPhase });
     return { label: t(`controls.repairAll.${button.key}`, button.params), enabled: button.enabled };
   }
 

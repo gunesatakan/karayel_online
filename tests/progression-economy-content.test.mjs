@@ -50,6 +50,8 @@ test("tecrube kazanci oyuncu basina olceklenir", () => {
 
 test("onarim bedeli icerige bagli", () => {
   const { room, tower, player } = odaVeKule();
+  // Altinla onarim yalniz kurulumda (createRoom dalgada aciyor).
+  room.setupPhase = true;
   tower.hp = tower.maxHp * 0.5;
   player.gold = 1_000_000;
 
