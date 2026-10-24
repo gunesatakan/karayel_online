@@ -80,7 +80,7 @@ export function buildTower(id = "warrior-1") {
   if (!asset) throw new Error(`Unknown tower asset: ${id}`);
   const p = palette, root = new THREE.Group(), yaw = new THREE.Group(), barrels = new THREE.Group();
   root.name = id;
-  root.userData = { assetId: id, sourceArt: asset.art, tier: "levels-1-4", footprintCells: 1, authoredSides: true };
+  root.userData = { assetId: id, sourceArt: asset.art, tier: "levels-1-4", footprintCells: asset.footprintSpan ** 2, authoredSides: true };
   yaw.name = "turret-yaw";
   barrels.name = "barrels-recoil";
   root.add(yaw);
@@ -186,7 +186,7 @@ export function buildTower(id = "warrior-1") {
   muzzle.name = "muzzle-socket";
   muzzle.position.set(0, asset.muzzle.height, asset.muzzle.length);
   barrels.add(muzzle);
-  root.scale.setScalar(TOWER_SCALE);
+  root.scale.setScalar(TOWER_SCALE * asset.footprintSpan);
   root.updateMatrixWorld(true);
   return { root, yaw, barrels, muzzle, asset };
 }

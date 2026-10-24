@@ -18,10 +18,11 @@ for index in range(1, 7):
     points = [obj.matrix_world @ vertex.co for obj in meshes for vertex in obj.data.vertices]
     # Blender converts glTF Y-up into Blender Z-up; ground is now XY.
     radius = max(math.hypot(point.x, point.y) for point in points)
-    assert radius <= 0.485, (path.name, radius)
-    results.append({"asset": path.name, "meshes": len(meshes), "ground_radius_cells": round(radius, 6), "height_cells": round(max(point.z for point in points), 6), "rig_nodes": "ok"})
+    span = 2 if index == 6 else 1
+    assert radius <= span / 2 - 0.015, (path.name, radius)
+    results.append({"asset": path.name, "meshes": len(meshes), "footprint_span": span, "ground_radius_cells": round(radius, 6), "height_cells": round(max(point.z for point in points), 6), "rig_nodes": "ok"})
 
 output = base / "validation"
 output.mkdir(exist_ok=True)
 (output / "blender-import.json").write_text(json.dumps({"blender": bpy.app.version_string, "results": results}, indent=2) + "\n", encoding="utf-8", newline="\n")
-print("BLENDER_IMPORT_OK: six GLBs, materials, rig nodes and one-cell footprints verified")
+print("BLENDER_IMPORT_OK: six GLBs and rig nodes verified; Ucube occupies 2x2 cells, other towers 1x1")

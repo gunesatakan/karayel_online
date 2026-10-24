@@ -4,6 +4,7 @@
     {
       "asset": "warrior-1.glb",
       "meshes": 132,
+      "footprint_span": 1,
       "ground_radius_cells": 0.4444,
       "height_cells": 0.4664,
       "rig_nodes": "ok"
@@ -11,6 +12,7 @@
     {
       "asset": "warrior-2.glb",
       "meshes": 81,
+      "footprint_span": 1,
       "ground_radius_cells": 0.4444,
       "height_cells": 0.492868,
       "rig_nodes": "ok"
@@ -18,6 +20,7 @@
     {
       "asset": "warrior-3.glb",
       "meshes": 106,
+      "footprint_span": 1,
       "ground_radius_cells": 0.4444,
       "height_cells": 0.43978,
       "rig_nodes": "ok"
@@ -25,6 +28,7 @@
     {
       "asset": "warrior-4.glb",
       "meshes": 79,
+      "footprint_span": 1,
       "ground_radius_cells": 0.4444,
       "height_cells": 0.4785,
       "rig_nodes": "ok"
@@ -32,6 +36,7 @@
     {
       "asset": "warrior-5.glb",
       "meshes": 122,
+      "footprint_span": 1,
       "ground_radius_cells": 0.4444,
       "height_cells": 0.467421,
       "rig_nodes": "ok"
@@ -39,8 +44,9 @@
     {
       "asset": "warrior-6.glb",
       "meshes": 151,
-      "ground_radius_cells": 0.4444,
-      "height_cells": 0.5214,
+      "footprint_span": 2,
+      "ground_radius_cells": 0.8888,
+      "height_cells": 1.0428,
       "rig_nodes": "ok"
     }
   ]

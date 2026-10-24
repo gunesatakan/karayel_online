@@ -30,3 +30,20 @@ export function cellCenter(col, row) {
   );
 }
 export const TOWER_POSITION = cellCenter(TOWER_CELL.col, TOWER_CELL.row);
+
+// TOWER_CELL is the top-left occupied cell. Even spans centre on a grid corner,
+// matching GameScene's 2x2 placement rule instead of straddling nine cells.
+export function towerPlacement(span = 1) {
+  return {
+    span,
+    scale: TOWER_SCALE * span,
+    position: worldToScene(
+      MAP.origin.x + (TOWER_CELL.col + span / 2) * MAP.cellSize,
+      MAP.origin.y + (TOWER_CELL.row + span / 2) * MAP.cellSize,
+    ),
+    cells: Array.from({ length: span * span }, (_, i) => ({
+      col: TOWER_CELL.col + i % span,
+      row: TOWER_CELL.row + Math.floor(i / span),
+    })),
+  };
+}

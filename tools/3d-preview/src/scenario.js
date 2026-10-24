@@ -31,25 +31,26 @@ export function shotEnabled(at, mode) {
   return at >= 0 && weaponAt(at, mode) === "projectile";
 }
 
-export function muzzleAt(time, offset = 0, length = 1.7, height = 1.86) {
+export function muzzleAt(time, offset = 0, length = 1.7, height = 1.86, placement = { position: TOWER_POSITION, scale: TOWER_SCALE }) {
+  const { position, scale } = placement;
   const target = enemyPosition(time);
-  const dx = target.x - TOWER_POSITION.x;
-  const dz = target.z - TOWER_POSITION.z;
+  const dx = target.x - position.x;
+  const dz = target.z - position.z;
   const len = Math.hypot(dx, dz);
   return {
     x:
-      TOWER_POSITION.x +
-      ((dx / len) * length + (dz / len) * offset) * TOWER_SCALE,
-    y: TOWER_BASE_Y + height * TOWER_SCALE,
+      position.x +
+      ((dx / len) * length + (dz / len) * offset) * scale,
+    y: TOWER_BASE_Y + height * scale,
     z:
-      TOWER_POSITION.z +
-      ((dz / len) * length - (dx / len) * offset) * TOWER_SCALE,
+      position.z +
+      ((dz / len) * length - (dx / len) * offset) * scale,
   };
 }
 
-export function projectileAt(index, time, socket = { offset: 0.25, length: 1.7, height: 1.86 }) {
+export function projectileAt(index, time, socket = { offset: 0.25, length: 1.7, height: 1.86 }, placement) {
   const born = index * SHOT_PERIOD;
-  const from = muzzleAt(born, index % 2 ? -socket.offset : socket.offset, socket.length, socket.height);
+  const from = muzzleAt(born, index % 2 ? -socket.offset : socket.offset, socket.length, socket.height, placement);
   const end = enemyPosition(born + FLIGHT_TIME);
   const to = { x: end.x, y: ENEMY_HIT_Y, z: end.z };
   const progress = Math.max(0, Math.min(1, (time - born) / FLIGHT_TIME));

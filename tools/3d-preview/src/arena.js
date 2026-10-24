@@ -37,15 +37,22 @@ export async function buildArena(scene, anisotropy = 4) {
     box(root, [w, 0.022, 0.022], [0, 0.025, side * d / 2], new THREE.MeshBasicMaterial({ color: side < 0 ? 0x67e8f9 : 0xf9a8d4 }), 0.001);
     box(root, [0.016, 0.018, d], [side * w / 2, 0.025, 0], new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.34 }), 0.001);
   }
-  const cell = mesh(root, new THREE.PlaneGeometry(0.98, 0.98), new THREE.MeshBasicMaterial({ color: 0xe3b66e, transparent: true, opacity: 0.09, depthWrite: false }), TOWER_POSITION.x, 0.035, TOWER_POSITION.z);
+  const footprint = new THREE.Group();
+  footprint.position.set(TOWER_POSITION.x, 0, TOWER_POSITION.z);
+  root.add(footprint);
+  const cell = mesh(footprint, new THREE.PlaneGeometry(0.98, 0.98), new THREE.MeshBasicMaterial({ color: 0xe3b66e, transparent: true, opacity: 0.09, depthWrite: false }), 0, 0.035, 0);
   cell.rotation.x = -Math.PI / 2;
   cell.castShadow = false;
   for (const side of [-1, 1]) {
-    box(root, [0.98, 0.009, 0.012], [TOWER_POSITION.x, 0.044, TOWER_POSITION.z + side * 0.484], materials.brass, 0.001);
-    box(root, [0.012, 0.009, 0.98], [TOWER_POSITION.x + side * 0.484, 0.044, TOWER_POSITION.z], materials.brass, 0.001);
+    box(footprint, [0.98, 0.009, 0.012], [0, 0.044, side * 0.484], materials.brass, 0.001);
+    box(footprint, [0.012, 0.009, 0.98], [side * 0.484, 0.044, 0], materials.brass, 0.001);
   }
   return {
     root, grid, floor,
+    setFootprint({ position, span }) {
+      footprint.position.set(position.x, 0, position.z);
+      footprint.scale.set(span, 1, span);
+    },
     setStage(id) {
       if (!textures[id - 1]) throw new Error(`Unknown stage ${id}`);
       floor.material.map = textures[id - 1];

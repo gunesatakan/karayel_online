@@ -14,7 +14,7 @@ import {
   MAP_WIDTH,
   MAP_DEPTH,
   TOWER_BASE_Y,
-  TOWER_SCALE,
+  towerPlacement,
   ENEMY_SCALE,
   ENEMY_HIT_Y,
 } from "./layout.js";
@@ -26,7 +26,6 @@ import {
   projectileAt,
   shotEnabled,
   weaponAt,
-  TOWER_POSITION,
   SHOT_PERIOD,
   FLIGHT_TIME,
 } from "./scenario.js";
@@ -111,10 +110,12 @@ async function start() {
     loadTowerAssets(),
   ]);
   for (const model of towers.values()) {
-    model.root.position.set(TOWER_POSITION.x, TOWER_BASE_Y, TOWER_POSITION.z);
+    const { position } = towerPlacement(model.asset.footprintSpan);
+    model.root.position.set(position.x, TOWER_BASE_Y, position.z);
     scene.add(model.root);
   }
   let tower = towers.get(TOWER_ASSETS[0].id);
+  let placement = towerPlacement(tower.asset.footprintSpan);
   tower.root.visible = true;
   const enemy = buildEnemy();
   scene.add(enemy.root);
@@ -130,12 +131,12 @@ async function start() {
     }),
   );
   range.rotation.x = -Math.PI / 2;
-  range.position.set(TOWER_POSITION.x, 0.07, TOWER_POSITION.z);
+  range.position.set(placement.position.x, 0.07, placement.position.z);
   range.visible = false;
   scene.add(range);
   const aura = new THREE.Mesh(new THREE.RingGeometry(1.48, 1.53, 96), new THREE.MeshBasicMaterial({ color: 0x59dce5, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }));
   aura.rotation.x = -Math.PI / 2;
-  aura.position.set(TOWER_POSITION.x, 0.04, TOWER_POSITION.z);
+  aura.position.set(placement.position.x, 0.04, placement.position.z);
   aura.visible = false;
   scene.add(aura);
 
@@ -315,13 +316,13 @@ async function start() {
       radius = 25,
       polar = THREE.MathUtils.degToRad(90 - p.elevation),
       azimuth = THREE.MathUtils.degToRad(p.yaw);
-    const center = p.focus ? new THREE.Vector3(TOWER_POSITION.x, 0.25, TOWER_POSITION.z) : new THREE.Vector3(0, 0.25, 0);
+    const center = p.focus ? new THREE.Vector3(placement.position.x, 0.25 * placement.span, placement.position.z) : new THREE.Vector3(0, 0.25, 0);
     camera.position.set(
       center.x + Math.sin(azimuth) * Math.sin(polar) * radius,
       center.y + Math.cos(polar) * radius,
       center.z + Math.cos(azimuth) * Math.sin(polar) * radius,
     );
-    camera.zoom = p.zoom;
+    camera.zoom = p.focus ? p.zoom / placement.span : p.zoom;
     camera.updateProjectionMatrix();
     controls.target.copy(center);
     controls.update();
@@ -359,6 +360,13 @@ async function start() {
     tower = towers.get(id);
     tower.root.visible = true;
     const asset = tower.asset;
+    placement = towerPlacement(asset.footprintSpan);
+    arena.setFootprint(placement);
+    range.position.set(placement.position.x, 0.07, placement.position.z);
+    aura.position.set(placement.position.x, 0.04, placement.position.z);
+    $("tower-footprint").textContent = `${placement.span} × ${placement.span} HÜCRE`;
+    $("footprint-description").textContent = `${placement.span} × ${placement.span} hücre · ${placement.cells.length} kare`;
+    if (cameraPresets[cameraMode].focus) preset(cameraMode);
     $("tower-name").textContent = asset.name;
     $("tower-label-name").textContent = asset.name.toLocaleUpperCase("tr-TR");
     $("tower-role").textContent = asset.role;
@@ -468,8 +476,8 @@ async function start() {
     const target = enemyPosition(time);
     enemy.root.position.set(target.x, 0, target.z);
     enemy.root.rotation.y = Math.atan2(
-      TOWER_POSITION.x - target.x,
-      TOWER_POSITION.z - target.z,
+      placement.position.x - target.x,
+      placement.position.z - target.z,
     );
     enemy.body.position.y = Math.sin(time * 8) * 0.035;
     enemy.legs.forEach(({ pivot, side, front }) => {
@@ -479,8 +487,8 @@ async function start() {
         Math.cos(time * 8 + (side * front * Math.PI) / 2) * 0.075;
     });
     tower.yaw.rotation.y = Math.atan2(
-      target.x - TOWER_POSITION.x,
-      target.z - TOWER_POSITION.z,
+      target.x - placement.position.x,
+      target.z - placement.position.z,
     );
     const effectiveMode = mode === "asset" ? tower.asset.mode : mode;
     const weapon = weaponAt(time, effectiveMode),
@@ -511,7 +519,7 @@ async function start() {
         time - i * SHOT_PERIOD >= FLIGHT_TIME
       )
         continue;
-      const p = projectileAt(i, time, socket),
+      const p = projectileAt(i, time, socket, placement),
         view = bullets[slot++];
       const dir = new THREE.Vector3(
         p.to.x - p.from.x,
@@ -538,7 +546,7 @@ async function start() {
     }
     for (; slot < bullets.length; slot++)
       bullets[slot].core.visible = bullets[slot].trail.visible = false;
-    const muzzle = muzzleAt(time, 0, socket.length, socket.height),
+    const muzzle = muzzleAt(time, 0, socket.length, socket.height, placement),
       end = { x: target.x, y: ENEMY_HIT_Y, z: target.z };
     beams.forEach(({ mesh, radius }) => {
       mesh.visible = beam;
@@ -601,9 +609,9 @@ async function start() {
       }
     });
     label($("tower-label"), [
-      TOWER_POSITION.x,
-      TOWER_BASE_Y + 3 * TOWER_SCALE,
-      TOWER_POSITION.z,
+      placement.position.x,
+      TOWER_BASE_Y + 3 * placement.scale,
+      placement.position.z,
     ]);
     label($("enemy-label"), [target.x, 2.45 * ENEMY_SCALE, target.z]);
     if (time - lastUi > 0.1 || lastUi < 0) {

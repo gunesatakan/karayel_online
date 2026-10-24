@@ -5,8 +5,8 @@ export const TOWER_ASSETS = [
   { id: "warrior-3", name: "İzolasyon Kulesi", role: "Alan kontrolü", extension: "png", mode: "aura", range: 52, muzzle: { length: 0.9, height: 1.85, offset: 0 }, detail: "Dört bakır bobin, radyal kollar ve turkuaz alan çekirdeği." },
   { id: "warrior-4", name: "Obsesyon Kulesi", role: "Tek hedef hasarı", extension: "webp", mode: "impact", range: 59, muzzle: { length: 1.6, height: 1.85, offset: 0 }, detail: "Mor zırh dilimleri, altın halka ve odak merceği." },
   { id: "warrior-5", name: "Debug Lazer", role: "Sürekli hasar", extension: "webp", mode: "beam", range: 67, muzzle: { length: 1.62, height: 1.86, offset: 0 }, detail: "Radyal mavi enerji tüpleri ve yeşil metal lazer başlığı." },
-  { id: "warrior-6", name: "Ucube", role: "Geç oyun hasarı", extension: "webp", mode: "impact", range: 59, muzzle: { length: 1.65, height: 2.08, offset: 0 }, detail: "Bakır çatı üzerinde ağır yeşil gövde, kalın namlu ve üç bobin." },
-].map((asset) => ({ ...asset, art: `game-assets/towers/tower-${asset.id}-levels-1-4.${asset.extension}`, model: `game-assets/models/${asset.id}.glb` }));
+  { id: "warrior-6", name: "Ucube", role: "Geç oyun hasarı", extension: "webp", mode: "impact", range: 59, footprintSpan: 2, muzzle: { length: 1.65, height: 2.08, offset: 0 }, detail: "Dört hücreye oturan ağır yeşil gövde, bakır çatı, kalın namlu ve üç bobin." },
+].map((asset) => ({ footprintSpan: 1, ...asset, art: `game-assets/towers/tower-${asset.id}-levels-1-4.${asset.extension}`, model: `game-assets/models/${asset.id}.glb` }));
 
 export const STAGE_ASSETS = ["Taş Kuşatma", "Çelik Hat", "Sürü", "Düşüş", "Katlanma"].map((name, index) => ({
   id: index + 1, name, texture: `game-assets/terrain/stage-${index + 1}.jpg`,

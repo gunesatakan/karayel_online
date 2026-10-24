@@ -27,7 +27,7 @@
             <div class="scene-top"><span><i class="live-dot"></i><b id="run-state">SİMÜLASYON AKTİF</b></span><span class="scene-coordinate" id="map-metrics">12 × 18 HÜCRE · 408 × 612 BİRİM</span></div>
             <div id="canvas-host" aria-label="Fareyle sürükleyerek döndürülebilen üç boyutlu savaş sahnesi"></div>
             <div id="loading" role="status"><span class="loader"></span> Kuleler ve harita yükleniyor…</div>
-            <div id="tower-label" class="object-label"><span class="label-pin"></span><b id="tower-label-name">TAKİPÇİ</b><small>1 × 1 HÜCRE</small></div>
+            <div id="tower-label" class="object-label"><span class="label-pin"></span><b id="tower-label-name">TAKİPÇİ</b><small id="tower-footprint">1 × 1 HÜCRE</small></div>
             <div id="enemy-label" class="object-label enemy-label"><b>TEST HEDEFİ</b><div class="health-track"><i id="health-bar"></i></div></div>
             <div class="scene-bottom"><div class="camera-readout"><span id="camera-angle">45°</span><small>KAMERA EĞİMİ</small></div><span class="orbit-hint">Sürükle: döndür <span>·</span> Tekerlek: yaklaş</span><button id="reset-camera" class="icon-button" title="Kamerayı sıfırla" aria-label="Kamerayı sıfırla">↺</button></div>
           </div>
@@ -37,7 +37,7 @@
             <p id="tower-detail" class="asset-detail"></p>
             <a id="download-model" class="model-download" download>↓ GLB modelini indir <span>BLENDER UYUMLU</span></a>
             <div class="control-block"><label>KAMERA / İNCELEME</label><div class="camera-options" role="group" aria-label="Kamera açısı"><button data-camera="tactical" aria-pressed="true"><span>◈</span> Harita <small>45°</small></button><button data-camera="overhead" aria-pressed="false"><span>◇</span> Yüksek <small>65°</small></button><button data-camera="detail" aria-pressed="false"><span>⌖</span> Kule detayı <small>38°</small></button><button data-camera="top" aria-pressed="false"><span>⊞</span> Tepeden <small>90°</small></button></div></div>
-            <div class="scale-note"><b>1 kule = 1 hücre</b><span>Altın çerçeve yerleşim sınırıdır. Detay görünümü yalnızca kamerayı yaklaştırır.</span></div>
+            <div class="scale-note"><b id="footprint-description">1 × 1 hücre · 1 kare</b><span>Altın çerçeve yerleşim sınırıdır. Detay görünümü yalnızca kamerayı yaklaştırır.</span></div>
             <div class="toggle-row"><label for="show-grid">Hücre çizgileri</label><input id="show-grid" type="checkbox" checked /></div>
             <div class="toggle-row"><label for="show-range">Kule menzilini göster</label><input id="show-range" type="checkbox" /></div>
             <details class="simulation-controls"><summary>Savaş efektlerini dene</summary><div class="control-block"><div class="segmented" id="weapon-modes" role="group" aria-label="Ateş sistemi"><button data-mode="asset" aria-pressed="true">Kuleye göre</button><button data-mode="projectile" aria-pressed="false">Mermi</button><button data-mode="beam" aria-pressed="false">Işın</button></div><div class="mode-description"><span class="weapon-indicator" id="weapon-indicator"></span><div><strong id="weapon-name">Kinetik mermi</strong><p id="weapon-description"></p></div></div></div><div class="control-block"><div class="label-row"><label for="speed">SİMÜLASYON HIZI</label><output id="speed-value">1×</output></div><input id="speed" type="range" min="0.25" max="1.5" step="0.25" value="1" /></div></details>
