@@ -4,183 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#101719" />
-    <title>Karayel — 3D Savaş Önizlemesi</title>
+    <title>Karayel — 3D Varlık Atölyesi</title>
   </head>
   <body>
     <div id="app">
       <header class="topbar">
-        <a class="brand" href="./" aria-label="Karayel önizleme ana sayfası"
-          ><span class="brand-mark">K<span>⁄</span></span
-          ><span>KARAYEL<small>GÖRSEL GELİŞTİRME</small></span></a
-        >
-        <div class="top-note">
-          <span class="status-dot"></span> YEREL ÖNİZLEME
-          <span class="separator">/</span> 001
-        </div>
-        <span class="prototype-tag">3D PROTOTİP</span>
+        <a class="brand" href="./" aria-label="Karayel önizleme ana sayfası"><span class="brand-mark">K<span>⁄</span></span><span>KARAYEL<small>GÖRSEL GELİŞTİRME</small></span></a>
+        <div class="top-note"><span class="status-dot"></span> YEREL ÖNİZLEME <span class="separator">/</span> 002</div>
+        <span class="prototype-tag">3D VARLIK ATÖLYESİ</span>
       </header>
       <main>
         <section class="intro">
-          <div>
-            <p class="eyebrow">SAVUNMA HATTI / SAHNE 01</p>
-            <h1>
-              Aynı savaş.<br class="mobile-only" />
-              Yeni bir boyut.
-            </h1>
-            <p class="intro-copy">
-              Orijinal harita oranları. Tek hücreye sığan kule. Açılı kamerada
-              3D savaş.
-            </p>
-          </div>
-          <div class="isolation-note">
-            <span>◈</span>
-            <p>
-              Bağımsız test sahnesi<small
-                >Canlı oyuna ve oyunculara bağlantısı yok.</small
-              >
-            </p>
-          </div>
+          <div><p class="eyebrow">İLK KOLEKSİYON / ATTACKLORD</p><h1>Tanıdık kuleler. Yeni bir boyut.</h1><p class="intro-copy">6 kule · Oyunun 5 orijinal zemini · Aynı harita ve hücre ölçeği</p></div>
+          <div class="isolation-note"><span>◈</span><p>Bağımsız test sahnesi<small>Canlı oyuna ve oyunculara bağlantısı yok.</small></p></div>
+        </section>
+        <section class="asset-library" aria-label="Kule koleksiyonu">
+          <div id="tower-picker" class="tower-picker" role="group" aria-label="Kule seçimi"></div>
+          <div class="stage-picker"><label for="stage-select">OYUN HARİTASI</label><select id="stage-select"></select><small>12 × 18 hücre / değişmeyen ölçek</small></div>
         </section>
         <section class="workspace" aria-label="3D savaş önizlemesi">
           <div class="viewport" id="viewport">
-            <div class="scene-top">
-              <span
-                ><i class="live-dot"></i
-                ><b id="run-state">SİMÜLASYON AKTİF</b></span
-              ><span class="scene-coordinate" id="map-metrics"
-                >12 × 18 HÜCRE · 408 × 612 BİRİM</span
-              >
-            </div>
-            <div
-              id="canvas-host"
-              aria-label="Fareyle sürükleyerek döndürülebilen üç boyutlu savaş sahnesi"
-            ></div>
-            <div id="loading" role="status">
-              <span class="loader"></span> Savaş alanı hazırlanıyor…
-            </div>
-            <div id="tower-label" class="object-label">
-              <span class="label-pin"></span><b>NÖBETÇİ / 01</b
-              ><small>SAVUNMA KULESİ</small>
-            </div>
-            <div id="enemy-label" class="object-label enemy-label">
-              <b>AKINCI / 01</b>
-              <div class="health-track"><i id="health-bar"></i></div>
-            </div>
-            <div class="scene-bottom">
-              <div class="camera-readout">
-                <span id="camera-angle">45°</span><small>KAMERA EĞİMİ</small>
-              </div>
-              <span class="orbit-hint"
-                >Sürükle: döndür <span>·</span> Tekerlek: yaklaş</span
-              ><button
-                id="reset-camera"
-                class="icon-button"
-                title="Kamerayı sıfırla"
-                aria-label="Kamerayı sıfırla"
-              >
-                ↺
-              </button>
-            </div>
+            <div class="scene-top"><span><i class="live-dot"></i><b id="run-state">SİMÜLASYON AKTİF</b></span><span class="scene-coordinate" id="map-metrics">12 × 18 HÜCRE · 408 × 612 BİRİM</span></div>
+            <div id="canvas-host" aria-label="Fareyle sürükleyerek döndürülebilen üç boyutlu savaş sahnesi"></div>
+            <div id="loading" role="status"><span class="loader"></span> Kuleler ve harita yükleniyor…</div>
+            <div id="tower-label" class="object-label"><span class="label-pin"></span><b id="tower-label-name">TAKİPÇİ</b><small>1 × 1 HÜCRE</small></div>
+            <div id="enemy-label" class="object-label enemy-label"><b>TEST HEDEFİ</b><div class="health-track"><i id="health-bar"></i></div></div>
+            <div class="scene-bottom"><div class="camera-readout"><span id="camera-angle">45°</span><small>KAMERA EĞİMİ</small></div><span class="orbit-hint">Sürükle: döndür <span>·</span> Tekerlek: yaklaş</span><button id="reset-camera" class="icon-button" title="Kamerayı sıfırla" aria-label="Kamerayı sıfırla">↺</button></div>
           </div>
-          <aside class="inspector" aria-label="Sahne kontrolleri">
-            <div class="inspector-title">
-              <span class="eyebrow">SAHNE KONTROLÜ</span
-              ><span class="tiny-code">01 / 01</span>
-            </div>
-            <div class="weapon-card">
-              <div class="weapon-symbol" aria-hidden="true">⌖</div>
-              <p>NÖBETÇİ<small>1 × 1 hücre · 34 × 34 birim</small></p>
-              <span class="level-badge">T1</span>
-            </div>
-            <div class="control-block">
-              <label>ATEŞ SİSTEMİ</label>
-              <div
-                class="segmented"
-                id="weapon-modes"
-                role="group"
-                aria-label="Ateş sistemi"
-              >
-                <button data-mode="auto" aria-pressed="true">Döngü</button
-                ><button data-mode="projectile" aria-pressed="false">
-                  Mermi</button
-                ><button data-mode="beam" aria-pressed="false">Işın</button>
-              </div>
-              <div class="mode-description">
-                <span class="weapon-indicator" id="weapon-indicator"></span>
-                <div>
-                  <strong id="weapon-name">Kinetik mermi</strong>
-                  <p id="weapon-description">
-                    Namlu parlaması, iz ve metal kıvılcımları.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div class="control-block">
-              <label>KAMERA AÇISI</label>
-              <div
-                class="camera-options"
-                role="group"
-                aria-label="Kamera açısı"
-              >
-                <button data-camera="tactical" aria-pressed="true">
-                  <span>◈</span> Taktik <small>45°</small></button
-                ><button data-camera="close" aria-pressed="false">
-                  <span>▱</span> Yakın <small>30°</small></button
-                ><button data-camera="overhead" aria-pressed="false">
-                  <span>◇</span> Yüksek <small>65°</small>
-                </button>
-              </div>
-            </div>
-            <div class="control-block">
-              <div class="label-row">
-                <label for="speed">SİMÜLASYON HIZI</label
-                ><output id="speed-value">1×</output>
-              </div>
-              <input
-                id="speed"
-                type="range"
-                min="0.25"
-                max="1.5"
-                step="0.25"
-                value="1"
-              />
-              <div class="range-labels">
-                <span>Yavaş çekim</span><span>Hızlı</span>
-              </div>
-            </div>
-            <div class="toggle-row">
-              <label for="show-range">Kule menzilini göster</label
-              ><input id="show-range" type="checkbox" />
-            </div>
-            <div class="playback">
-              <button id="pause" class="primary-button" aria-pressed="false">
-                <span>Ⅱ</span> Duraklat</button
-              ><button
-                id="restart"
-                class="secondary-button"
-                aria-label="Simülasyonu yeniden başlat"
-                title="Yeniden başlat"
-              >
-                ↻
-              </button>
-            </div>
-            <div class="stats">
-              <div><span id="fps">—</span><small>FPS</small></div>
-              <div><span id="hit-count">0</span><small>İSABET</small></div>
-              <div><span id="elapsed">00:00</span><small>SÜRE</small></div>
-            </div>
-            <p class="preview-note">
-              Harita: 12 × 18 hücre. Altın çerçeve kulenin tek hücrelik
-              sınırıdır. Modeller ve savaş gösterim amaçlıdır.
-            </p>
+          <aside class="inspector" aria-label="Varlık ve sahne kontrolleri">
+            <div class="inspector-title"><span class="eyebrow">2D REFERANS → 3D MODEL</span><span class="tiny-code">İLK TASLAK</span></div>
+            <div class="reference-card"><img id="tower-art" alt="Takipçi — oyundaki tepeden görünüm" /><div><h2 id="tower-name">Takipçi</h2><p id="tower-role">Hasar ve işaretleme</p><span>SEVİYE 1–4</span></div></div>
+            <p id="tower-detail" class="asset-detail"></p>
+            <a id="download-model" class="model-download" download>↓ GLB modelini indir <span>BLENDER UYUMLU</span></a>
+            <div class="control-block"><label>KAMERA / İNCELEME</label><div class="camera-options" role="group" aria-label="Kamera açısı"><button data-camera="tactical" aria-pressed="true"><span>◈</span> Harita <small>45°</small></button><button data-camera="overhead" aria-pressed="false"><span>◇</span> Yüksek <small>65°</small></button><button data-camera="detail" aria-pressed="false"><span>⌖</span> Kule detayı <small>38°</small></button><button data-camera="top" aria-pressed="false"><span>⊞</span> Tepeden <small>90°</small></button></div></div>
+            <div class="scale-note"><b>1 kule = 1 hücre</b><span>Altın çerçeve yerleşim sınırıdır. Detay görünümü yalnızca kamerayı yaklaştırır.</span></div>
+            <div class="toggle-row"><label for="show-grid">Hücre çizgileri</label><input id="show-grid" type="checkbox" checked /></div>
+            <div class="toggle-row"><label for="show-range">Kule menzilini göster</label><input id="show-range" type="checkbox" /></div>
+            <details class="simulation-controls"><summary>Savaş efektlerini dene</summary><div class="control-block"><div class="segmented" id="weapon-modes" role="group" aria-label="Ateş sistemi"><button data-mode="asset" aria-pressed="true">Kuleye göre</button><button data-mode="projectile" aria-pressed="false">Mermi</button><button data-mode="beam" aria-pressed="false">Işın</button></div><div class="mode-description"><span class="weapon-indicator" id="weapon-indicator"></span><div><strong id="weapon-name">Kinetik mermi</strong><p id="weapon-description"></p></div></div></div><div class="control-block"><div class="label-row"><label for="speed">SİMÜLASYON HIZI</label><output id="speed-value">1×</output></div><input id="speed" type="range" min="0.25" max="1.5" step="0.25" value="1" /></div></details>
+            <div class="playback"><button id="pause" class="primary-button" aria-pressed="false"><span>Ⅱ</span> Duraklat</button><button id="restart" class="secondary-button" aria-label="Simülasyonu yeniden başlat" title="Yeniden başlat">↻</button></div>
+            <div class="stats"><div><span id="fps">—</span><small>FPS</small></div><div><span id="hit-count">0</span><small>İSABET</small></div><div><span id="elapsed">00:00</span><small>SÜRE</small></div></div>
+            <p class="preview-note">Kuleler, tepeden görsellerin 3D tasarım yorumlarıdır. Yan yüzeyler yeniden tasarlandı. Savaş, görsel test içindir.</p>
           </aside>
         </section>
-        <footer>
-          <span
-            ><i></i> 3D modeller · Dinamik gölgeler · Mermi izleri · Hacimli
-            ışın</span
-          ><span>CANLI SÜRÜMDEN BAĞIMSIZ</span>
-        </footer>
+        <footer><span><i></i> Orijinal zemin dokuları · Gerçek 3D kuleler · Ortak hücre ölçeği</span><span>CANLI SÜRÜMDEN BAĞIMSIZ</span></footer>
       </main>
     </div>
     <script type="module" src="/src/main.js"></script>

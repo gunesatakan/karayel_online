@@ -8,7 +8,7 @@ export const MAP_DEPTH = MAP.rows * CELL_SIZE;
 export const TOWER_CELL = { col: 4, row: 9 };
 export const TOWER_SCALE = 0.22;
 export const ENEMY_SCALE = 0.25;
-export const TOWER_BASE_Y = 0.07;
+export const TOWER_BASE_Y = 0.015;
 export const ENEMY_HIT_Y = 1.05 * ENEMY_SCALE;
 
 export function worldToScene(x, y) {

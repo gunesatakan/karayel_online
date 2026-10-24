@@ -10,13 +10,17 @@ import {
 } from "../src/scenario.js";
 
 test("the same interval produces identical contacts at different frame rates", () => {
-  for (const mode of ["auto", "beam", "projectile"]) {
+  for (const mode of ["auto", "beam", "projectile", "impact", "idle", "aura"]) {
     const all = impactsBetween(0, 24, mode);
     const stepped = [];
     for (let i = 0; i < 1440; i++)
       stepped.push(...impactsBetween(i / 60, (i + 1) / 60, mode));
     assert.deepEqual(stepped, all);
   }
+});
+test("support and control towers never generate damaging impacts", () => {
+  assert.deepEqual(impactsBetween(0, 30, "idle"), []);
+  assert.deepEqual(impactsBetween(0, 30, "aura"), []);
 });
 test("projectiles reach the moving enemy at their contact timestamp", () => {
   for (let i = 0; i < 30; i++) {

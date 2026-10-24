@@ -47,9 +47,9 @@ export function muzzleAt(time, offset = 0, length = 1.7, height = 1.86) {
   };
 }
 
-export function projectileAt(index, time) {
+export function projectileAt(index, time, socket = { offset: 0.25, length: 1.7, height: 1.86 }) {
   const born = index * SHOT_PERIOD;
-  const from = muzzleAt(born, index % 2 ? -0.25 : 0.25);
+  const from = muzzleAt(born, index % 2 ? -socket.offset : socket.offset, socket.length, socket.height);
   const end = enemyPosition(born + FLIGHT_TIME);
   const to = { x: end.x, y: ENEMY_HIT_Y, z: end.z };
   const progress = Math.max(0, Math.min(1, (time - born) / FLIGHT_TIME));
@@ -69,6 +69,13 @@ export function projectileAt(index, time) {
 export function impactsBetween(from, to, mode) {
   const events = [];
   if (to <= from) return events;
+  if (mode === "impact") {
+    for (let i = Math.max(1, Math.floor(from / SHOT_PERIOD)); i <= Math.floor(to / SHOT_PERIOD) + 1; i++) {
+      const at = i * SHOT_PERIOD;
+      if (at > from && at <= to) events.push({ at, kind: "projectile" });
+    }
+    return events;
+  }
   // Inspect an extra boundary candidate: e.g. 17.5 / .14 can round below 125.
   // The timestamp filter below still prevents early or duplicate contacts.
   for (

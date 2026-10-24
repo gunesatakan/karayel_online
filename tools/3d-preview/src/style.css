@@ -751,3 +751,54 @@ footer i {
     max-width: 350px;
   }
 }
+
+/* Asset workshop: reference art stays visible next to the actual GLB scene. */
+.topbar { height: 72px; }
+main { padding-top: 26px; }
+.intro { margin-bottom: 22px; }
+h1 { font-size: clamp(25px, 2.3vw, 36px); }
+.asset-library { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 0; margin-bottom: 14px; border: 1px solid #394541; background: #182121; }
+.tower-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; padding: 8px; }
+.tower-picker button { border: 1px solid transparent; background: transparent; color: #97aaa0; display: flex; gap: 5px; align-items: center; justify-content: center; flex-direction: column; font-size: 10px; padding: 7px 3px; }
+.tower-picker button img { width: 48px; height: 48px; object-fit: contain; }
+.tower-picker button[aria-pressed="true"] { border-color: #a28a60; background: #c0a05e12; color: #ecd29f; }
+.stage-picker { display: flex; flex-direction: column; justify-content: center; padding: 18px 23px; border-left: 1px solid #394541; gap: 10px; }
+.stage-picker label { color: #9baa9f; letter-spacing: 1.5px; font-size: 8px; }
+.stage-picker select { width: 100%; background: #101b1c; color: #e0d4bb; border: 1px solid #44534b; padding: 9px 6px; font: inherit; font-size: 11px; cursor: pointer; }
+.stage-picker small { font-size: 8px; color: #71897d; }
+select:focus-visible, summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.viewport { height: clamp(680px, 70vh, 850px); }
+.inspector { height: clamp(680px, 70vh, 850px); overflow-y: auto; gap: 19px; scrollbar-width: thin; scrollbar-color: #556957 #172222; }
+.reference-card { display: flex; gap: 14px; align-items: center; }
+.reference-card img { width: 80px; height: 80px; object-fit: contain; background: #101918; border: 1px solid #3c4840; padding: 4px; }
+.reference-card h2 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
+.reference-card p { font-size: 9px; color: #90a39a; line-height: 1.5; margin: 0 0 10px; }
+.reference-card span { font-size: 7px; letter-spacing: 1px; color: var(--amber); }
+.asset-detail { font-size: 10px; line-height: 1.7; color: #9bafa3; margin: -6px 0 0; min-height: 34px; }
+.model-download { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #d4ba87; text-decoration: none; font-size: 10px; padding-bottom: 17px; border-bottom: 1px solid var(--line); }
+.model-download span { font-size: 6px; color: #6f897a; letter-spacing: 1px; }
+.camera-options { display: grid; grid-template-columns: repeat(2, 1fr); }
+.camera-options button { flex-direction: row; justify-content: center; flex-wrap: wrap; padding: 11px 3px; }
+.camera-options button span { font-size: 14px; }
+.scale-note { border-left: 2px solid #ad9665; background: #d1b26708; padding: 9px 11px; }
+.scale-note b { display: block; font-size: 10px; color: #d9c593; font-weight: 500; margin-bottom: 6px; }
+.scale-note span { display: block; font-size: 9px; line-height: 1.6; color: #879d8f; }
+.simulation-controls summary { cursor: pointer; font-size: 10px; color: #aabdb0; padding: 2px 0; }
+.simulation-controls[open] summary { margin-bottom: 15px; }
+.simulation-controls .control-block + .control-block { margin-top: 10px; }
+.stats { margin-top: 0; }
+@media (min-width: 1600px) { .asset-library { grid-template-columns: minmax(0, 1fr) 320px; } }
+@media (max-width: 1000px) { .asset-library { grid-template-columns: minmax(0, 1fr) 255px; } .stage-picker { padding: 15px; } .tower-picker button { font-size: 8px; } }
+@media (max-width: 700px) {
+  .asset-library { display: block; }
+  .tower-picker { grid-template-columns: repeat(3, 1fr); }
+  .tower-picker button { flex-direction: row; justify-content: start; padding: 6px; }
+  .tower-picker button img { width: 34px; height: 34px; }
+  .stage-picker { border-left: 0; border-top: 1px solid #394541; padding: 12px; display: grid; grid-template-columns: 1fr 2fr; align-items: center; }
+  .stage-picker small { grid-column: 1/-1; }
+  .viewport { height: 460px; }
+  .inspector { height: auto; overflow: visible; }
+  .reference-card, .asset-detail, .model-download, .scale-note, .simulation-controls { grid-column: 1/-1; }
+  .inspector > .control-block { grid-column: 1/-1; }
+  .camera-options { grid-template-columns: repeat(4, 1fr); }
+}

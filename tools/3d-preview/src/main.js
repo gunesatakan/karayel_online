@@ -5,7 +5,9 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { buildTower, buildEnemy } from "./models.js";
+import { buildEnemy } from "./models.js";
+import { loadTowerAssets } from "./tower-assets.js";
+import { TOWER_ASSETS, STAGE_ASSETS } from "./asset-catalog.js";
 import { buildArena } from "./arena.js";
 import {
   MAP,
@@ -34,7 +36,7 @@ const $ = (id) => document.getElementById(id);
 const host = $("canvas-host");
 const loading = $("loading");
 
-function start() {
+async function start() {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     powerPreference: "high-performance",
@@ -67,10 +69,10 @@ function start() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
-  controls.minPolarAngle = Math.PI * 0.1;
+  controls.minPolarAngle = 0.001;
   controls.maxPolarAngle = Math.PI * 0.43;
   controls.minZoom = 0.6;
-  controls.maxZoom = 2.4;
+  controls.maxZoom = 18;
   controls.target.set(0, 0.25, 0);
 
   const hemi = new THREE.HemisphereLight(0xc7e3ed, 0x424b38, 2.2);
@@ -104,10 +106,16 @@ function start() {
   floor.position.y = -0.85;
   floor.receiveShadow = true;
   scene.add(floor);
-  buildArena(scene);
-  const tower = buildTower();
-  tower.root.position.set(TOWER_POSITION.x, TOWER_BASE_Y, TOWER_POSITION.z);
-  scene.add(tower.root);
+  const [arena, towers] = await Promise.all([
+    buildArena(scene, Math.min(8, renderer.capabilities.getMaxAnisotropy())),
+    loadTowerAssets(),
+  ]);
+  for (const model of towers.values()) {
+    model.root.position.set(TOWER_POSITION.x, TOWER_BASE_Y, TOWER_POSITION.z);
+    scene.add(model.root);
+  }
+  let tower = towers.get(TOWER_ASSETS[0].id);
+  tower.root.visible = true;
   const enemy = buildEnemy();
   scene.add(enemy.root);
 
@@ -125,6 +133,11 @@ function start() {
   range.position.set(TOWER_POSITION.x, 0.07, TOWER_POSITION.z);
   range.visible = false;
   scene.add(range);
+  const aura = new THREE.Mesh(new THREE.RingGeometry(1.48, 1.53, 96), new THREE.MeshBasicMaterial({ color: 0x59dce5, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }));
+  aura.rotation.x = -Math.PI / 2;
+  aura.position.set(TOWER_POSITION.x, 0.04, TOWER_POSITION.z);
+  aura.visible = false;
+  scene.add(aura);
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
@@ -261,7 +274,7 @@ function start() {
     previous = 0,
     paused = false,
     speed = 1,
-    mode = "auto",
+    mode = "asset",
     hits = 0,
     lastImpact = -100;
   let lastReal = performance.now(),
@@ -273,6 +286,8 @@ function start() {
     tactical: { elevation: 45, yaw: 25, zoom: 1 },
     close: { elevation: 30, yaw: 35, zoom: 1.22 },
     overhead: { elevation: 65, yaw: 16, zoom: 1 },
+    detail: { elevation: 38, yaw: 35, zoom: 12, focus: true },
+    top: { elevation: 89.9, yaw: 0, zoom: 12, focus: true },
   };
   $("map-metrics").textContent =
     `${MAP.cols} × ${MAP.rows} HÜCRE · ${MAP.bounds.width} × ${MAP.bounds.height} BİRİM`;
@@ -300,14 +315,15 @@ function start() {
       radius = 25,
       polar = THREE.MathUtils.degToRad(90 - p.elevation),
       azimuth = THREE.MathUtils.degToRad(p.yaw);
+    const center = p.focus ? new THREE.Vector3(TOWER_POSITION.x, 0.25, TOWER_POSITION.z) : new THREE.Vector3(0, 0.25, 0);
     camera.position.set(
-      Math.sin(azimuth) * Math.sin(polar) * radius,
-      Math.cos(polar) * radius,
-      Math.cos(azimuth) * Math.sin(polar) * radius,
+      center.x + Math.sin(azimuth) * Math.sin(polar) * radius,
+      center.y + Math.cos(polar) * radius,
+      center.z + Math.cos(azimuth) * Math.sin(polar) * radius,
     );
     camera.zoom = p.zoom;
     camera.updateProjectionMatrix();
-    controls.target.set(0, 0.25, 0);
+    controls.target.copy(center);
     controls.update();
     document
       .querySelectorAll("[data-camera]")
@@ -338,6 +354,45 @@ function start() {
     smoke.forEach((s) => (s.at = -100));
     lastUi = -1;
   }
+  function selectTower(id) {
+    tower.root.visible = false;
+    tower = towers.get(id);
+    tower.root.visible = true;
+    const asset = tower.asset;
+    $("tower-name").textContent = asset.name;
+    $("tower-label-name").textContent = asset.name.toLocaleUpperCase("tr-TR");
+    $("tower-role").textContent = asset.role;
+    $("tower-art").src = asset.art;
+    $("tower-art").alt = `${asset.name} — oyundaki tepeden görünüm`;
+    $("tower-detail").textContent = asset.detail;
+    $("download-model").href = asset.model;
+    $("download-model").download = `${asset.id}.glb`;
+    range.scale.setScalar(asset.range / MAP.cellSize / 4.2);
+    document.querySelectorAll("[data-tower]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.tower === id)));
+    resetSimulation();
+  }
+  for (const asset of TOWER_ASSETS) {
+    const button = document.createElement("button");
+    button.dataset.tower = asset.id;
+    button.setAttribute("aria-label", asset.name);
+    const thumbnail = document.createElement("img");
+    thumbnail.src = asset.art;
+    thumbnail.alt = "";
+    const name = document.createElement("span");
+    name.textContent = asset.name.replace(" Kulesi", "");
+    button.append(thumbnail, name);
+    button.addEventListener("click", () => selectTower(asset.id));
+    $("tower-picker").append(button);
+  }
+  for (const asset of STAGE_ASSETS) {
+    const option = document.createElement("option");
+    option.value = String(asset.id);
+    option.textContent = `${asset.id.toString().padStart(2, "0")} / ${asset.name}`;
+    $("stage-select").append(option);
+  }
+  $("stage-select").addEventListener("change", (event) => arena.setStage(Number(event.target.value)));
+  $("show-grid").addEventListener("change", (event) => { arena.grid.visible = event.target.checked; });
+  selectTower(TOWER_ASSETS[0].id);
   document.querySelectorAll("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => {
       mode = b.dataset.mode;
@@ -392,6 +447,10 @@ function start() {
   });
   const labelPoint = new THREE.Vector3();
   function label(element, position) {
+    if (element.id === "tower-label" && cameraMode === "top") {
+      element.style.display = "none";
+      return;
+    }
     labelPoint.set(...position).project(camera);
     const visible =
       Math.abs(labelPoint.x) < 0.94 &&
@@ -423,19 +482,23 @@ function start() {
       target.x - TOWER_POSITION.x,
       target.z - TOWER_POSITION.z,
     );
-    const weapon = weaponAt(time, mode),
-      beam = beamActive(time, mode);
+    const effectiveMode = mode === "asset" ? tower.asset.mode : mode;
+    const weapon = weaponAt(time, effectiveMode),
+      beam = beamActive(time, effectiveMode);
+    const socket = tower.asset.muzzle;
+    aura.visible = weapon === "aura";
+    aura.material.opacity = 0.18 + Math.sin(time * 2) * 0.07;
     const index = Math.floor(time / SHOT_PERIOD),
       sinceShot = time - index * SHOT_PERIOD;
     const recoil =
-      weapon === "projectile" && shotEnabled(index * SHOT_PERIOD, mode)
+      weapon === "projectile" && shotEnabled(index * SHOT_PERIOD, effectiveMode)
         ? Math.exp(-sinceShot * 22) * 0.12
         : 0;
     tower.barrels.position.z = -recoil;
-    tower.flash.visible = weapon === "projectile" && sinceShot < 0.065;
-    tower.flash.position.x = index % 2 ? -0.25 : 0.25;
+    tower.flash.visible = time > 0 && weapon === "projectile" && sinceShot < 0.065;
+    tower.flash.position.x = index % 2 ? -socket.offset : socket.offset;
     tower.flash.scale.set(1, 1, 1.4 + (Math.sin(time * 80) + 1) * 0.3);
-    tower.light.intensity = tower.flash.visible ? 4 : beam ? 1 : 0;
+    tower.light.intensity = tower.flash.visible ? 0.12 : beam ? 0.035 : 0;
     let slot = 0;
     for (
       let i = Math.max(0, Math.floor((time - FLIGHT_TIME) / SHOT_PERIOD));
@@ -443,26 +506,31 @@ function start() {
       i++
     ) {
       if (
-        !shotEnabled(i * SHOT_PERIOD, mode) ||
+        !shotEnabled(i * SHOT_PERIOD, effectiveMode) ||
+        time <= i * SHOT_PERIOD ||
         time - i * SHOT_PERIOD >= FLIGHT_TIME
       )
         continue;
-      const p = projectileAt(i, time),
+      const p = projectileAt(i, time, socket),
         view = bullets[slot++];
       const dir = new THREE.Vector3(
         p.to.x - p.from.x,
         p.to.y - p.from.y,
         p.to.z - p.from.z,
-      ).normalize();
+      );
+      const traveled = dir.length() * p.progress;
+      dir.normalize();
+      const coreLength = Math.min(0.12, traveled);
+      const trailLength = Math.min(0.36, traveled);
       const back = {
-        x: p.position.x - dir.x * 0.12,
-        y: p.position.y - dir.y * 0.12,
-        z: p.position.z - dir.z * 0.12,
+        x: p.position.x - dir.x * coreLength,
+        y: p.position.y - dir.y * coreLength,
+        z: p.position.z - dir.z * coreLength,
       };
       const trailBack = {
-        x: p.position.x - dir.x * 0.36,
-        y: p.position.y - dir.y * 0.36,
-        z: p.position.z - dir.z * 0.36,
+        x: p.position.x - dir.x * trailLength,
+        y: p.position.y - dir.y * trailLength,
+        z: p.position.z - dir.z * trailLength,
       };
       view.core.visible = view.trail.visible = true;
       segment(view.core, back, p.position, 0.014);
@@ -470,14 +538,14 @@ function start() {
     }
     for (; slot < bullets.length; slot++)
       bullets[slot].core.visible = bullets[slot].trail.visible = false;
-    const muzzle = muzzleAt(time, 0, 1.14, 1.54),
+    const muzzle = muzzleAt(time, 0, socket.length, socket.height),
       end = { x: target.x, y: ENEMY_HIT_Y, z: target.z };
     beams.forEach(({ mesh, radius }) => {
       mesh.visible = beam;
       if (beam)
         segment(mesh, muzzle, end, radius * (1 + Math.sin(time * 72) * 0.09));
     });
-    const events = impactsBetween(previous, time, mode);
+    const events = impactsBetween(previous, time, effectiveMode);
     events.forEach((e) => {
       impact(e.at, e.kind);
       hits++;
@@ -492,7 +560,7 @@ function start() {
       beam ? 0.65 + Math.sin(time * 70) * 0.2 : hitFade * 1.5,
     );
     contactLight.position.copy(contactBall.position);
-    contactLight.intensity = beam ? 2.2 : hitFade * 3;
+    contactLight.intensity = beam ? 0.2 : hitFade * 0.25;
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i],
         age = time - p.at;
@@ -543,12 +611,14 @@ function start() {
       $("elapsed").textContent =
         `${String(Math.floor(time / 60)).padStart(2, "0")}:${String(Math.floor(time % 60)).padStart(2, "0")}`;
       $("health-bar").style.width = `${100 - ((hits % 28) / 28) * 100}%`;
-      $("weapon-name").textContent =
-        weapon === "projectile" ? "Kinetik mermi" : "Enerji ışını";
-      $("weapon-description").textContent =
-        weapon === "projectile"
-          ? "Namlu parlaması, iz ve metal kıvılcımları."
-          : "Kesintili enerji akışı, sıcak çekirdek ve temas parlaması.";
+      const descriptions = {
+        projectile: ["Kinetik mermi", "Çift namlu, geri tepme ve temas kıvılcımları."],
+        beam: ["Odak ışını", "Enerji başlığından çıkan sürekli ışın."],
+        impact: ["Doğrudan temas", "Hedef üzerinde vuruş parlaması."],
+        idle: ["Destek kulesi", "Sunucu kendisi ateş etmez. Bağlantı davranışı sonraki aşamada."],
+        aura: ["Kontrol alanı", "İzolasyon alanının görsel örneği; hasar vuruşu yok."],
+      };
+      [$("weapon-name").textContent, $("weapon-description").textContent] = descriptions[weapon];
       lastUi = time;
     }
     $("camera-angle").textContent =
@@ -581,10 +651,9 @@ function start() {
   );
 }
 
-try {
-  start();
-} catch (error) {
+start().catch((error) => {
   console.error("3D preview could not start", error);
   loading.textContent =
-    "3D önizleme başlatılamadı. WebGL destekleyen bir tarayıcıda donanım hızlandırmasını kontrol edip sayfayı yenileyebilirsin.";
-}
+    "3D varlıklar yüklenemedi. Yerel sunucunun çalıştığını kontrol edip sayfayı yenileyebilirsin.";
+  loading.classList.remove("hidden");
+});

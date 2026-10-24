@@ -1,0 +1,47 @@
+{
+  "blender": "5.2.3 LTS",
+  "results": [
+    {
+      "asset": "warrior-1.glb",
+      "meshes": 132,
+      "ground_radius_cells": 0.4444,
+      "height_cells": 0.4664,
+      "rig_nodes": "ok"
+    },
+    {
+      "asset": "warrior-2.glb",
+      "meshes": 81,
+      "ground_radius_cells": 0.4444,
+      "height_cells": 0.492868,
+      "rig_nodes": "ok"
+    },
+    {
+      "asset": "warrior-3.glb",
+      "meshes": 106,
+      "ground_radius_cells": 0.4444,
+      "height_cells": 0.43978,
+      "rig_nodes": "ok"
+    },
+    {
+      "asset": "warrior-4.glb",
+      "meshes": 79,
+      "ground_radius_cells": 0.4444,
+      "height_cells": 0.4785,
+      "rig_nodes": "ok"
+    },
+    {
+      "asset": "warrior-5.glb",
+      "meshes": 122,
+      "ground_radius_cells": 0.4444,
+      "height_cells": 0.467421,
+      "rig_nodes": "ok"
+    },
+    {
+      "asset": "warrior-6.glb",
+      "meshes": 151,
+      "ground_radius_cells": 0.4444,
+      "height_cells": 0.5214,
+      "rig_nodes": "ok"
+    }
+  ]
+}

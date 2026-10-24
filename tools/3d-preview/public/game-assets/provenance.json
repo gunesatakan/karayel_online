@@ -1,0 +1,71 @@
+{
+  "note": "Original game art copied byte-for-byte. Tower GLBs are new, hand-constructed visual interpretations of the level 1–4 art; unseen sides are designed, not recovered.",
+  "assets": [
+    {
+      "source": "apps/web/public/images/towers/tower-warrior-1-levels-1-4.png",
+      "destination": "game-assets/towers/tower-warrior-1-levels-1-4.png",
+      "sha256": "cac70256f63c13e4e595e4a05dfbb136e5bc9fb177c3886100ac8af6e5005212",
+      "bytes": 416495
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-warrior-2-levels-1-4.webp",
+      "destination": "game-assets/towers/tower-warrior-2-levels-1-4.webp",
+      "sha256": "7ceea730f1850716524883c33a782ef80900b343ed19cfe39c2de807f107657e",
+      "bytes": 10814
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-warrior-3-levels-1-4.png",
+      "destination": "game-assets/towers/tower-warrior-3-levels-1-4.png",
+      "sha256": "d49c93361227d21003efb42ff589fdd89eeda98af4657214fccc332d9a1bbd1a",
+      "bytes": 482492
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-warrior-4-levels-1-4.webp",
+      "destination": "game-assets/towers/tower-warrior-4-levels-1-4.webp",
+      "sha256": "628febef9b12a8ea97abc6ebfde7c5decde1fd64696144912dffc950c3261deb",
+      "bytes": 9456
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-warrior-5-levels-1-4.webp",
+      "destination": "game-assets/towers/tower-warrior-5-levels-1-4.webp",
+      "sha256": "da781973535cd10449c07c80b0d2185aae1506be8b7fa2502e75e199ee9082ec",
+      "bytes": 12018
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-warrior-6-levels-1-4.webp",
+      "destination": "game-assets/towers/tower-warrior-6-levels-1-4.webp",
+      "sha256": "b3f7de1d7c930bbe41d69a9c792b3477b220add9bda31524f98e789c7cc48818",
+      "bytes": 32696
+    },
+    {
+      "source": "apps/web/public/images/terrain/stage-1.jpg",
+      "destination": "game-assets/terrain/stage-1.jpg",
+      "sha256": "ea9826b98769ed653a9fe37e2f391c72c8c9c623610c87820add0704206f477e",
+      "bytes": 521016
+    },
+    {
+      "source": "apps/web/public/images/terrain/stage-2.jpg",
+      "destination": "game-assets/terrain/stage-2.jpg",
+      "sha256": "8d81141a3b37a119d0f8de11cf6a1b0e907b17f2b76c8b4791ccee92728c8757",
+      "bytes": 400987
+    },
+    {
+      "source": "apps/web/public/images/terrain/stage-3.jpg",
+      "destination": "game-assets/terrain/stage-3.jpg",
+      "sha256": "920b185cce9cb94727a4d6f02f0a50cd9c7c2eac881bbeb98ac1746a5ce48b55",
+      "bytes": 483927
+    },
+    {
+      "source": "apps/web/public/images/terrain/stage-4.jpg",
+      "destination": "game-assets/terrain/stage-4.jpg",
+      "sha256": "036dabd9155423bb6f0729ea76d9a7cf2f39a5220ac6cc7cbbbd1db48ad8098b",
+      "bytes": 424432
+    },
+    {
+      "source": "apps/web/public/images/terrain/stage-5.jpg",
+      "destination": "game-assets/terrain/stage-5.jpg",
+      "sha256": "c431986ecd4d0f99bf175d0d96bd8ca0024c5d8a4a72934c6140974a4e53561b",
+      "bytes": 281124
+    }
+  ]
+}
