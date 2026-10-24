@@ -1,0 +1,25 @@
+{
+  "source": "https://studio.tripo3d.ai/tr/workspace/generate/circular-artillery-turret-with-copper-roof-weathered-green-cannons-a-fd539154-0126-4a07-9903-46741858eed5",
+  "credits": 55,
+  "sourceSha256": "054db3c58b94f8923db12e207d2562fccc9c42b128d463169d8669f925c8587f",
+  "modelSha256": "a880718481522d367ce1e9018755408578dfd60a4e167168c1a4141da1b6aad0",
+  "modelBytes": 20424064,
+  "triangleCount": 80000,
+  "parts": {
+    "fixed-copper-platform": 59141,
+    "rotating-bearing": 11976,
+    "twin-cannons": 8883
+  },
+  "muzzle": {
+    "length": 1.8065657134862825,
+    "height": 1.9104176759719849,
+    "offset": 0.12724730439358867,
+    "centerOffset": -0.19965091720223427
+  },
+  "groundRadiusCells": 0.4268,
+  "maps": [
+    "base color 4096x4096",
+    "metallic/roughness 4096x4096",
+    "normal 4096x4096"
+  ]
+}

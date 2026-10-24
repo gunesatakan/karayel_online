@@ -86,7 +86,7 @@ async function start() {
   sun.shadow.camera.bottom = -12;
   sun.shadow.camera.near = 0.5;
   sun.shadow.camera.far = 40;
-  sun.shadow.normalBias = 0.035;
+  sun.shadow.normalBias = 0.006;
   sun.shadow.bias = -0.00025;
   sun.shadow.radius = 3;
   scene.add(sun);
@@ -114,7 +114,7 @@ async function start() {
     model.root.position.set(position.x, TOWER_BASE_Y, position.z);
     scene.add(model.root);
   }
-  let tower = towers.get(TOWER_ASSETS[0].id);
+  let tower = towers.get(`${TOWER_ASSETS[0].id}:quality`) ?? towers.get(TOWER_ASSETS[0].id);
   let placement = towerPlacement(tower.asset.footprintSpan);
   tower.root.visible = true;
   const enemy = buildEnemy();
@@ -357,9 +357,11 @@ async function start() {
   }
   function selectTower(id) {
     tower.root.visible = false;
-    tower = towers.get(id);
+    tower = ($("high-detail").checked && towers.get(`${id}:quality`)) || towers.get(id);
     tower.root.visible = true;
     const asset = tower.asset;
+    $("quality-controls").hidden = !asset.qualityModel;
+    $("asset-version").textContent = asset.quality ? "YENİ MODEL" : "İLK TASLAK";
     placement = towerPlacement(asset.footprintSpan);
     arena.setFootprint(placement);
     range.position.set(placement.position.x, 0.07, placement.position.z);
@@ -374,7 +376,7 @@ async function start() {
     $("tower-art").alt = `${asset.name} — oyundaki tepeden görünüm`;
     $("tower-detail").textContent = asset.detail;
     $("download-model").href = asset.model;
-    $("download-model").download = `${asset.id}.glb`;
+    $("download-model").download = `${asset.id}${asset.quality ? "-quality" : ""}.glb`;
     range.scale.setScalar(asset.range / MAP.cellSize / 4.2);
     document.querySelectorAll("[data-tower]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.tower === id)));
     resetSimulation();
@@ -400,6 +402,7 @@ async function start() {
   }
   $("stage-select").addEventListener("change", (event) => arena.setStage(Number(event.target.value)));
   $("show-grid").addEventListener("change", (event) => { arena.grid.visible = event.target.checked; });
+  $("high-detail").addEventListener("change", () => selectTower(tower.asset.id));
   selectTower(TOWER_ASSETS[0].id);
   document.querySelectorAll("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -504,7 +507,7 @@ async function start() {
         : 0;
     tower.barrels.position.z = -recoil;
     tower.flash.visible = time > 0 && weapon === "projectile" && sinceShot < 0.065;
-    tower.flash.position.x = index % 2 ? -socket.offset : socket.offset;
+    tower.flash.position.x = (socket.centerOffset ?? 0) + (index % 2 ? -socket.offset : socket.offset);
     tower.flash.scale.set(1, 1, 1.4 + (Math.sin(time * 80) + 1) * 0.3);
     tower.light.intensity = tower.flash.visible ? 0.12 : beam ? 0.035 : 0;
     let slot = 0;
@@ -546,7 +549,7 @@ async function start() {
     }
     for (; slot < bullets.length; slot++)
       bullets[slot].core.visible = bullets[slot].trail.visible = false;
-    const muzzle = muzzleAt(time, 0, socket.length, socket.height, placement),
+    const muzzle = muzzleAt(time, socket.centerOffset ?? 0, socket.length, socket.height, placement),
       end = { x: target.x, y: ENEMY_HIT_Y, z: target.z };
     beams.forEach(({ mesh, radius }) => {
       mesh.visible = beam;

@@ -10,6 +10,8 @@
 * {
   box-sizing: border-box;
 }
+.quality-controls[hidden] { display: none; }
+.quality-controls { border: 1px solid #8e7748; padding: 8px 10px; background: #baa06b0a; }
 body {
   margin: 0;
 }

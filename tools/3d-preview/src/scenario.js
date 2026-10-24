@@ -50,7 +50,7 @@ export function muzzleAt(time, offset = 0, length = 1.7, height = 1.86, placemen
 
 export function projectileAt(index, time, socket = { offset: 0.25, length: 1.7, height: 1.86 }, placement) {
   const born = index * SHOT_PERIOD;
-  const from = muzzleAt(born, index % 2 ? -socket.offset : socket.offset, socket.length, socket.height, placement);
+  const from = muzzleAt(born, (socket.centerOffset ?? 0) + (index % 2 ? -socket.offset : socket.offset), socket.length, socket.height, placement);
   const end = enemyPosition(born + FLIGHT_TIME);
   const to = { x: end.x, y: ENEMY_HIT_Y, z: end.z };
   const progress = Math.max(0, Math.min(1, (time - born) / FLIGHT_TIME));
