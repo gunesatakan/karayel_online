@@ -27,11 +27,11 @@ def hex_rgb(value):
     return np.array([int(value[i:i + 2], 16) / 255 for i in (0, 2, 4)], dtype=np.float32)
 
 palettes = {
-    "peach": hex_rgb("C58E7D"),
-    "mint": hex_rgb("7FA99A"),
-    "sage": hex_rgb("6E8F96"),
-    "cream": hex_rgb("B7A174"),
-    "stone": hex_rgb("94A6A0"),
+    "peach": hex_rgb("A15B40"),
+    "mint": hex_rgb("4F816C"),
+    "sage": hex_rgb("315967"),
+    "cream": hex_rgb("91713A"),
+    "stone": hex_rgb("57736B"),
 }
 materials = {material for obj in meshes for material in obj.data.materials}
 albedos = {}
@@ -60,8 +60,9 @@ for obj in meshes:
     target[copper] = palettes["peach"]
     target[green] = palettes["sage"] if obj.name == "fixed-copper-platform" else palettes["mint"]
     target[gold] = palettes["cream"]
-    # Broad light colours, retaining some surface variation and dark recesses.
-    tone = .32 + .68 * np.sqrt(maximum)
+    # Muted midtones retain colour under the preview's bright lighting.
+    # Preserve material relief instead of lifting dark texels toward white.
+    tone = .18 + .82 * np.sqrt(maximum)
     colour = target * tone[:, None]
     recess = np.clip((.14 - maximum) / .14, 0, 1)[:, None]
     colour *= 1 - recess * .55
@@ -87,7 +88,7 @@ for material in materials:
     material.name = "Pastel painted metal"
 
 root["quality"] = "Pastel vertex palette / 2K normal map / 50k triangles"
-root["palette"] = "peach, mint, sage, pale gold"
+root["palette"] = "muted copper, sage green, slate teal, aged gold"
 bpy.ops.export_scene.gltf(filepath=str(output), export_format="GLB", export_extras=True, export_materials="EXPORT", export_image_format="AUTO")
 original_report = json.loads((base / "validation/takipci-stylized.json").read_text(encoding="utf-8"))
 report = {
@@ -102,6 +103,7 @@ report = {
     "metallic": .22,
     "roughness": .76,
     "normalStrength": .78,
+    "paletteSrgb": {name: [round(float(channel), 5) for channel in rgb] for name, rgb in palettes.items()},
 }
 (base / "validation/takipci-pastel.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
 print("PASTEL_EXPORT", json.dumps(report))

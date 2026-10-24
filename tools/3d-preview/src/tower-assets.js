@@ -8,7 +8,7 @@ export async function loadTowerAssets() {
     { ...asset, key: asset.id },
     ...(asset.qualityModel ? [{ ...asset, key: `${asset.id}:quality`, variant: "quality", model: asset.qualityModel, quality: true, detail: "Kabartılı bakır kaplama, aşınmış yeşil metal ve 4K yüzey dokuları. Gerçekçi yorum." }] : []),
     ...(asset.stylizedModel ? [{ ...asset, key: `${asset.id}:stylized`, variant: "stylized", model: asset.stylizedModel, quality: true, detail: "Kalın çift namlu, belirgin bakır plakalar, canlı turkuaz metal ve altın bağlantılar. Küçük ölçekte güçlü siluet." }] : []),
-    ...(asset.pastelModel ? [{ ...asset, key: `${asset.id}:pastel`, variant: "pastel", model: asset.pastelModel, quality: true, detail: "Şeftali bakır, mint yeşili ve soluk altın. Aynı güçlü siluet, daha mat yüzeyler ve yumuşak pastel renkler." }] : []),
+    ...(asset.pastelModel ? [{ ...asset, key: `${asset.id}:pastel`, variant: "pastel", model: asset.pastelModel, quality: true, detail: "Yumuşak bakır, adaçayı yeşili ve sıcak altın. Renk derinliği korunan mat yüzeyler ve belirgin parça ayrımları." }] : []),
   ]);
   const entries = await Promise.all(variants.map(async (asset) => {
     const gltf = await loader.loadAsync(asset.model);

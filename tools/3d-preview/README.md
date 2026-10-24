@@ -6,13 +6,13 @@ Tepeden bir görsel yükseklik ve yan yüz bilgisi içermez. Bu modellerde yan y
 
 ## Takipçi kalite örneği
 
-Görsel yön tercihi: **güçlü siluet ve zengin detay, daha yumuşak pastel renkler**. Ana parçalar ve renk grupları küçük ölçekte okunmalı; şeftali-bakır platform, mint mekanizma ve soluk altın bağlantılar birbirinden ayrılmalı. Belirgin bevel'lar ve büyük plaka ayrımları korunurken parlaklık ve sert renk kontrastı azaltılmalı. Hücre ve harita ölçüsü bu sanat tercihinden bağımsızdır.
+Görsel yön tercihi: **güçlü siluet ve zengin detay, beyazlamayan yumuşak renkler**. Ana parçalar ve renk grupları küçük ölçekte okunmalı; bakır platform, adaçayı yeşili mekanizma ve sıcak altın bağlantılar birbirinden ayrılmalı. Pastel ayarı doygunluğu ve parlaklığı dengelerken orta tonların rengini korumalı. Belirgin bevel'lar ve büyük plaka ayrımları korunur. Hücre ve harita ölçüsü bu sanat tercihinden bağımsızdır.
 
 ### Pastel örnek (varsayılan)
 
 - `build-pastel-model.py`, stilize GLB'nin geometrisini, UV'lerini ve hareket düğümlerini koruyarak ayrı `warrior-1-pastel.glb` üretir. Yeni Tripo üretimi veya kredi kullanımı yoktur.
-- Orijinal albedo mesh'in köşe renklerine örneklenip şeftali, mint, adaçayı ve soluk altın paletine eşlenir; raster görsel düzenlenmez. Parlaklık azaltılır: metallic 0,22; roughness 0,76; normal strength 0,78. Yüzey detayı 2K normal haritasıyla korunur.
-- 50.000 üçgen ve yaklaşık 5,0 MB. Kaynak/hash kaydı `validation/takipci-pastel.json`; tarayıcı görüntüsü `validation/takipci-pastel-detail.png`.
+- Orijinal albedo mesh'in köşe renklerine örneklenip yumuşak bakır, adaçayı yeşili, koyu mavi-yeşil ve sıcak altın paletine eşlenir; raster görsel düzenlenmez. Önceki fazla açık palet koyulaştırıldı ve gölge tonlarının beyaza doğru yükseltilmesi azaltıldı. Parlaklık azaltılır: metallic 0,22; roughness 0,76; normal strength 0,78. Yüzey detayı 2K normal haritasıyla korunur.
+- 50.000 üçgen ve yaklaşık 5,0 MB. Kaynak/hash ve palet kaydı `validation/takipci-pastel.json`; güncel tarayıcı görüntüsü `validation/takipci-pastel-balanced.png`.
 - **Model görünümü** menüsünden önceki canlı stilize, gerçekçi veya ilk taslak görünümüne dönülebilir. İndirilen GLB pastel renkleri içerir; tarayıcıya özel bir renk filtresi değildir.
 
 ### Canlı stilize örnek (karşılaştırma)

@@ -2,8 +2,8 @@
   "source": "https://studio.tripo3d.ai/tr/workspace/generate/0caa9bd5-9882-487c-90dc-392a54843a78",
   "credits": 0,
   "sourceSha256": "7c6e01f482b254a6a23bdc495b3cf74fe54499f04d13a27b169a62b2adab77bd",
-  "modelSha256": "4914c47d6cd0f5de3edfc5d52685db88025e948f22d8276e20b47a3bbaff7a31",
-  "modelBytes": 5003848,
+  "modelSha256": "c3652bd56c76d093baa937189e4deb3b908fdcab697c09ee31913c116952e206",
+  "modelBytes": 5003868,
   "triangleCount": 50000,
   "parts": {
     "fixed-copper-platform": 35341,
@@ -25,5 +25,32 @@
   "colour": "Per-corner mesh colours sampled from the original albedo and mapped to a pastel palette",
   "metallic": 0.22,
   "roughness": 0.76,
-  "normalStrength": 0.78
+  "normalStrength": 0.78,
+  "paletteSrgb": {
+    "peach": [
+      0.63137,
+      0.35686,
+      0.25098
+    ],
+    "mint": [
+      0.3098,
+      0.50588,
+      0.42353
+    ],
+    "sage": [
+      0.19216,
+      0.34902,
+      0.40392
+    ],
+    "cream": [
+      0.56863,
+      0.44314,
+      0.22745
+    ],
+    "stone": [
+      0.34118,
+      0.45098,
+      0.41961
+    ]
+  }
 }
