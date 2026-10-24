@@ -698,7 +698,13 @@ const STAT_SCORE = {
   // (0,35 -> 1), Oz Onarim dalga ortasi molalarinda ~+%45 (0,03 -> 15),
   // Percinli Kaplama erken piyadede ~+%40, kusatmada ~%5: ortalama ~+%24 (4 -> 0,06).
   veteranHealth: 4, woundedDamageReduction: 0.8, lastStand: 0.07,
-  damageShare: 1, idleRegen: 15, armorFlat: 0.06
+  damageShare: 1, idleRegen: 15, armorFlat: 0.06,
+  // Zirh turu, ayni olcekle: Tam Govde canin ust bandinda (puanin ~yarisi),
+  // Katmanli Zirh kosu ortalamasinda ~3 puan (1 -> 0,18), Reaktif Zirh alt
+  // yarida zirhi ikiye katliyor (~+3 puan, 1 -> 0,1), Dehset Zirhi ~6 sn'de
+  // bir vurusun dusmanlarini zirhla 1,5 sn durduruyor (0,25 -> 0,5), Kutle
+  // Telemetresi ~+%150 canla ~+%18 menzil (0,12 -> 0,27).
+  highHealthArmor: 0.03, veteranArmor: 0.18, woundedArmor: 0.1, armorFear: 2, healthRange: 2.25
 };
 
 /**

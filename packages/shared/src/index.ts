@@ -1816,6 +1816,8 @@ export {
   RUN_HOT_HEAT_LOCK_THRESHOLD,
   cardCatalog,
   canTowerHoldTargetedCard,
+  canTargetedCardGoToTower,
+  targetedCardNeedsHits,
   cardAppliesToTower,
   cardReachesTower,
   drawCards,

@@ -158,7 +158,7 @@ import {
   pruneStaticSnapshotCache,
   worldToGrid,
   canAcceptTargetedCard,
-  canTowerHoldTargetedCard,
+  canTargetedCardGoToTower,
   cardReachesTower,
   getCardDefinition,
   getCardRarity,
@@ -8977,10 +8977,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * reddediyor ama oyuncunun once secip sonra reddedilmesi, listede hic
    * gormemesinden cok daha kotu. Kart ekranindaki "N kule tasiyabilir"
    * sayisi da buradan geciyor, yani sayi ile hedef listesi ayni kuleler.
+   * Vurus isteyen kart (Dehset Zirhi) vurmayan kuleyi saymiyor.
    */
-  private canTowerHoldCard(tower: TowerSnapshot) {
+  private canTowerHoldCard(card: CardDefinition, tower: TowerSnapshot) {
     const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
-    return definition ? canTowerHoldTargetedCard(definition) && canAcceptTargetedCard(tower.targetedCardIds ?? []) : false;
+    return definition ? canTargetedCardGoToTower(card, definition) && canAcceptTargetedCard(tower.targetedCardIds ?? []) : false;
   }
 
   /** Yerel oyuncunun kuleleri tanimlariyla birlikte; kart erisimi tanimdan okunuyor. */
@@ -9004,7 +9005,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    */
   private getCardReach(card: CardDefinition, towers: ReadonlyArray<{ tower: TowerSnapshot; definition: TowerDefinition }>) {
     if (card.scope.kind === "targeted") {
-      const count = towers.filter(({ tower }) => this.canTowerHoldCard(tower)).length;
+      const count = towers.filter(({ tower }) => this.canTowerHoldCard(card, tower)).length;
       return count > 0
         ? { text: t("scene.card.reachTargeted", { count }), muted: false }
         : { text: t("scene.card.reachTargetedNone"), muted: true };
@@ -9031,7 +9032,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private startCardTargetPick(card: CardDefinition) {
     const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
     const eligible = (this.latestPerfSnapshot?.towers ?? [])
-      .some((tower) => tower.ownerId === this.localSessionId && this.canTowerHoldCard(tower));
+      .some((tower) => tower.ownerId === this.localSessionId && this.canTowerHoldCard(card, tower));
     if (!root || !eligible) {
       this.showTargetedTowerChoices(card);
       return;
@@ -9076,7 +9077,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (!pick || performance.now() < this.ignoreMapPointerUntil) return;
     const tower = this.findTowerAt(pointer.worldX, pointer.worldY);
     if (!tower) return;
-    if (tower.ownerId !== this.localSessionId || !this.canTowerHoldCard(tower)) {
+    if (tower.ownerId !== this.localSessionId || !this.canTowerHoldCard(pick.card, tower)) {
       this.showNotice(t("scene.card.mapPickInvalid"));
       return;
     }
@@ -9115,7 +9116,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
     const cellSize = this.getMapCellSize();
     for (const tower of this.latestPerfSnapshot?.towers ?? []) {
-      if (tower.ownerId !== this.localSessionId || !this.canTowerHoldCard(tower)) continue;
+      if (tower.ownerId !== this.localSessionId || !this.canTowerHoldCard(pick.card, tower)) continue;
       const radius = getTowerBodySize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId)) * 0.62;
       frame.lineStyle(2, pick.color, 0.9 * pulse).strokeCircle(tower.x, tower.y, radius);
     }
@@ -9125,7 +9126,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
     if (!root) return;
     const towers = (this.latestPerfSnapshot?.towers ?? [])
-      .filter((tower) => tower.ownerId === this.localSessionId && this.canTowerHoldCard(tower));
+      .filter((tower) => tower.ownerId === this.localSessionId && this.canTowerHoldCard(card, tower));
     const panel = root.querySelector<HTMLElement>(".card-draft__panel");
     if (!panel) return;
     panel.classList.add("card-draft__panel--targets");

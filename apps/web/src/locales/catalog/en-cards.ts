@@ -167,5 +167,9 @@ export const enCards: Readonly<Record<string, { name: string; description: strin
   "sertlesen-govde": { name: "Hardened Hull", description: "Each structure still standing at the end of a wave gains +8% max HP; up to 8 waves (+64%). The count belongs to the structure and starts once you take the card." },
   "inatci-siper": { name: "Stubborn Bulwark", description: "Structures below 50% HP take 40% less damage." },
   "son-nefes": { name: "Last Breath", description: "Once per wave per structure, a hit that would destroy it leaves it at 1 HP instead; it then takes no damage for 3 seconds." },
+  "takviye-levhasi": { name: "Reinforcing Plate", description: "All structures' armor +2: every hit deals 2 less damage (at least 1)." },
+  "tam-govde": { name: "Full Hull", description: "Structures at 75% HP or more get +4 armor; the bonus drops below that threshold and returns once repaired." },
+  "katmanli-zirh": { name: "Layered Armor", description: "Each structure still standing at the end of a wave gains +1 armor; up to 5 waves (+5). The count belongs to the structure and starts once you take the card." },
+  "dehset-zirhi": { name: "Terror Plating", description: "One tower's armor +3. The tower rolls a die every second; on a 6 its next hit puts the enemies it strikes in Fear for 0.25 seconds per armor point (they stop walking), up to 6 seconds." },
   ...enLegendaryCards
 };

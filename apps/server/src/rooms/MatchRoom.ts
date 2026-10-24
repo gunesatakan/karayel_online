@@ -2,6 +2,7 @@ import { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } f
 import { getTowerRangePerLevel } from "@karayel/shared";
 import { ZEYNEP_PALACE_AURA_RADIUS, ZEYNEP_PALACE_ID, getZeynepPalaceEffects } from "@karayel/shared";
 import { DAMAGE_SHARE_CAP, IDLE_REGEN_DELAY_MS, LAST_STAND_HP, getVeteranHealthMultiplier, getWoundedDamageMultiplier } from "@karayel/shared";
+import { ARMOR_FEAR_ROLL_INTERVAL_MS, getArmorFearDurationMs, getHealthRangeAdd, getStructureArmor, rollArmorFearDie } from "@karayel/shared";
 import { AMBUSH_RANGE_HOLD_MS, AMBUSH_RANGE_IDLE_MS, FOCUS_RANGE_GRACE_MS, KILL_RANGE_LONG_MAX_KILLS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { createResourceLayoutRandom, getMapResourceNodes, type MapResourceNodeDefinition, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
@@ -385,6 +386,7 @@ import {
   getInventoryEquipRejectedCue,
   isGlobalShopItem,
   canTowerHoldTargetedCard,
+  canTargetedCardGoToTower,
   cardAppliesToTower,
   cardReachesTower,
   ownedCardAppliesToTower,
@@ -667,6 +669,8 @@ const MAX_TOWER_LEVEL = 10;
 /** Tek komutta gonderilebilecek en fazla dusman; yaratici mod da olsa oda kilitlenmemeli. */
 const CREATIVE_MAX_SPAWN_BURST = 40;
 const TOWER_BASE_HP = 100;
+/** Onizlemenin zirh satirini acan statlar (`sendTowerPreview`). */
+const ARMOR_PREVIEW_STATS = ["armorFlat", "highHealthArmor", "veteranArmor", "woundedArmor"] as const;
 const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 20;
 const TOWER_BASE_ENERGY = 100;
@@ -2312,6 +2316,17 @@ type TowerModel = EconomyStock & {
   lastStandUntil?: number;
   /** Sertlesen Govde (`veteranHealth`): kart varken yapinin ayakta bitirdigi dalga sayisi. */
   veteranWaves?: number;
+  /** Katmanli Zirh (`veteranArmor`): kart varken yapinin ayakta bitirdigi dalga sayisi. */
+  veteranArmorWaves?: number;
+  /**
+   * Dehset Zirhi (`armorFear`): zarin biriken oyun suresi, zarin doldurdugu
+   * vurus hakki ve hakkin harcandigi an. Hak harcandigi tick'in sonuna kadar
+   * suruyor (ayni vurusun alanindaki dusmanlar da korksun); kulenin sonraki
+   * tick'inde kapaniyor (`rollTowerArmorFear`).
+   */
+  armorFearMs?: number;
+  armorFearArmed?: boolean;
+  armorFearHitAt?: number;
   /** Efsanevi etki basina kulenin yeniden uygulayabilecegi an (`LEGENDARY_TOWER_TRIGGER_GAP_MS`). */
   legendaryReadyAt?: number[];
   /** `getTowerLegendaryRhythm` onbellegi. */
@@ -2944,6 +2959,8 @@ export class MatchRoom extends Room<MatchState> {
   cardRandom: () => number = this.runtime.seeded ? this.runtime.random : Math.random;
   /** Efsanevi vurus etkilerinin temas zari (`legendary`); testler sabit veriyor. */
   legendaryRandom: () => number = this.runtime.seeded ? this.runtime.random : Math.random;
+  /** Dehset Zirhi'nin saniyelik altili zari (`armorFear`); testler sabit veriyor. */
+  armorFearRandom: () => number = this.runtime.seeded ? this.runtime.random : Math.random;
   /**
    * Bu surecteki odalar: yalnizca sayim (oda siniri) icin.
    *
@@ -6667,9 +6684,9 @@ export class MatchRoom extends Room<MatchState> {
     if (card.scope.kind === "targeted") {
       const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
       // Kaynak binasi ve duvar ayni olcutle eleniyor: ates etmeyen yapi
-      // savas karti tasiyamaz.
+      // savas karti tasiyamaz; vurus isteyen kart (Dehset Zirhi) vurmayan kuleye de.
       if (!tower || tower.ownerId !== client.sessionId
-        || !canTowerHoldTargetedCard(tower.definition)
+        || !canTargetedCardGoToTower(card, tower.definition)
         || !canAcceptTargetedCard(tower.targetedCardIds)) {
         client.send("card:rejected", { reason: SERVER_TEXT["card.towerCannotTake"], key: "card.towerCannotTake" });
         client.send("card:choices", choices);
@@ -7679,6 +7696,7 @@ export class MatchRoom extends Room<MatchState> {
           tower.cooldownMs = Math.min(tower.cooldownMs, this.getTowerFireInterval(tower));
         }
       }
+      this.settleArmorFearCharge(tower);
       if (tower.hp <= 0) {
         continue;
       }
@@ -7687,6 +7705,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
       this.updateGrantedActiveSeconds(tower, deltaTime);
+      this.rollTowerArmorFear(tower, now, deltaTime);
       if (tower.performance > 0 && shouldConsumeTowerOperatingEnergy(tower.definition, this.setupPhase, tower.standby)) {
         // Kararli Akis: calisma enerjisi bir sure hic harcanmiyor.
         const upkeep = this.getWorkerBoost(tower, "upkeepFree", now)
@@ -15286,7 +15305,7 @@ export class MatchRoom extends Room<MatchState> {
     const card = this.pendingCardChoices.get(client.sessionId)?.find((entry) => entry.id === message.cardId && entry.scope.kind === "targeted");
     const item = message.itemId ? getShopItem(message.itemId) : undefined;
     if (!player || !tower || tower.ownerId !== client.sessionId || (!!message.cardId === !!message.itemId)) return reject("preview.invalidTarget");
-    if (message.cardId && (!card || !canTowerHoldTargetedCard(tower.definition) || !canAcceptTargetedCard(tower.targetedCardIds))) return reject("preview.cardRejected");
+    if (message.cardId && (!card || !canTargetedCardGoToTower(card, tower.definition) || !canAcceptTargetedCard(tower.targetedCardIds))) return reject("preview.cardRejected");
     if (message.itemId && (!item || !player.inventoryItemIds.includes(item.id))) return reject("preview.itemRejected");
     if (item) {
       // Takmayla ayni ret metni; ek ("envanterde kaldi") onizlemede yanlis olurdu.
@@ -15302,7 +15321,12 @@ export class MatchRoom extends Room<MatchState> {
     const after: TowerModel = { ...tower, grantCache: undefined, runModifiers: [...tower.runModifiers, ...changeEffects],
       targetedCardIds: card ? [...tower.targetedCardIds, card.id] : [...tower.targetedCardIds],
       equippedShopItemIds: item ? [...tower.equippedShopItemIds, item.id] : [...tower.equippedShopItemIds] };
-    after.maxHp *= this.getTowerHealthRescaleRatio(tower, changeEffects);
+    // Takmayla ayni oranli kural: can da olcekleniyor. Zirhin bir kismi can
+    // oranina bakiyor (Tam Govde, Reaktif Zirh); yalnizca azami can buyuseydi
+    // onizleme yarali bir kuleyi gosterirdi.
+    const healthRatio = this.getTowerHealthRescaleRatio(tower, changeEffects);
+    after.maxHp *= healthRatio;
+    after.hp *= healthRatio;
     // Etiketin anahtari `preview.stat.<anahtar>`; Turkce metni `SERVER_TEXT`te.
     type PreviewStat = [key: string, get: (value: TowerModel) => number];
     // Cifte Namlu: bedel tetikleme basina, yani mermi sayisiyla carpiliyor.
@@ -15328,8 +15352,9 @@ export class MatchRoom extends Room<MatchState> {
     const touchesSpeed = changeEffects.some((modifier) => modifier.stat === "projectileSpeed")
       || (item?.conversions ?? []).some((conversion) => conversion.to === "projectileSpeed" || conversion.from === "projectileSpeed");
     const speedStats: PreviewStat[] = touchesSpeed ? [["projectileSpeed", (value) => this.getTowerProjectileSpeedMultiplier(value)]] : [];
-    // Zirh satiri yalnizca degisiklik duz zirh tasiyorsa (Percinli Kaplama).
-    const armorStats: PreviewStat[] = changeEffects.some((modifier) => modifier.stat === "armorFlat") ? [["armor", (value) => this.getTowerArmor(value)]] : [];
+    // Zirh satiri yalnizca degisiklik zirha dokunuyorsa (Percinli Kaplama, Agir
+    // Plaka, Reaktif Zirh, Dehset Zirhi); kosullu pay bugunku canla.
+    const armorStats: PreviewStat[] = changeEffects.some((modifier) => (ARMOR_PREVIEW_STATS as readonly string[]).includes(modifier.stat)) ? [["armor", (value) => this.getTowerArmor(value)]] : [];
     const stats: PreviewStat[] = [
       // Vurus aninda eklenen kule bonuslari da sayiya dahil; yoksa Kan
       // Bankasi gibi her vurusa +%20 veren bir esya hicbir sey degistirmiyor
@@ -15429,8 +15454,13 @@ export class MatchRoom extends Room<MatchState> {
       // Saray Arsivi'nin payi kosullu havuzda ama dokumde kendi adiyla.
       const conditionalRange = this.getTowerConditionalRangeAdd(tower, modifiers);
       const palaceRange = Math.min(conditionalRange, this.getZeynepPalaceEffectsFor(tower).range);
+      // Kutle Telemetresi'nin payi esyanin kendi adiyla.
+      const healthRange = this.getTowerHealthRangeAdd(tower, modifiers);
+      const healthRangeSources: TowerStatSource[] = healthRange > 0
+        ? modifiers.filter((modifier) => modifier.stat === "healthRange").slice(0, 1).map((modifier) => [modifier.source, healthRange])
+        : [];
       block.r = closeTowerStatValue(range, this.scaleWorldDistance(getTowerBaseLevelRange(definition, tower.level)),
-        [...sourcesOf("range"), [`tower:${ZEYNEP_PALACE_ID}`, palaceRange], ["cond:range", conditionalRange - palaceRange]],
+        [...sourcesOf("range"), [`tower:${ZEYNEP_PALACE_ID}`, palaceRange], ["cond:range", conditionalRange - palaceRange], ...healthRangeSources],
         [["character:atakan-passive", this.getAtakanPassiveMultiplier(tower)], ...flatSources]);
     }
 
@@ -15623,6 +15653,9 @@ export class MatchRoom extends Room<MatchState> {
       const coolant = Math.min(COOLANT_SLOW_MAX, this.getTowerCoolingPerSecond(tower) * COOLANT_SLOW_PER_COOLING * magnitudeMultiplier);
       if (coolant > 0) effects.push(["coolant", roundTowerStat(coolant), Math.round(COOLANT_SLOW_DURATION_MS * durationMultiplier)]);
     }
+    // Dehset Zirhi: zirh puani basina korku saniyesi ve bugunku zirhla korku suresi.
+    const armorFear = getModifierAdd(modifiers, "armorFear");
+    if (armorFear > 0) effects.push(["armorFear", roundTowerStat(armorFear), Math.round(getArmorFearDurationMs(armorFear, this.getTowerArmor(tower), durationMultiplier))]);
     // Takipci'nin isareti dusmani seviyeye gore %30/%60/%90 fazla hasar alir yapiyor.
     if (definition.id === "warrior-1") effects.push(["mark", roundTowerStat(this.getTrackingStackLimit(tower.level) * TRACKING_MARK_DAMAGE_PER_STACK), Math.round(TRACKING_MARK_DURATION_MS * durationMultiplier)]);
     const armorBreak = getModifierAdd(modifiers, "armorBreak");
@@ -15938,9 +15971,23 @@ export class MatchRoom extends Room<MatchState> {
     return Math.hypot(a.x - b.x, a.y - b.y) <= reach;
   }
 
-  /** Yapinin zirhi: taban arti Percinli Kaplama'nin duz puani (aura carpani haric). */
+  /**
+   * Yapinin zirhi (aura carpani haric): taban, duz puanlar (Percinli Kaplama,
+   * Agir Plaka, Takviye Levhasi...), Tam Govde, Katmanli Zirh'in dalgalari ve
+   * yarali yapida Reaktif Zirh (`getStructureArmor`). Vurustan onceki cana bakiyor.
+   */
   private getTowerArmor(tower: TowerModel) {
-    return tower.armor + Math.max(0, getModifierAdd(this.getTowerRunModifiers(tower), "armorFlat"));
+    const modifiers = this.getTowerRunModifiers(tower);
+    return getStructureArmor({
+      base: tower.armor,
+      flat: getModifierAdd(modifiers, "armorFlat"),
+      highHealth: getModifierAdd(modifiers, "highHealthArmor"),
+      veteran: getModifierAdd(modifiers, "veteranArmor"),
+      veteranWaves: tower.veteranArmorWaves ?? 0,
+      wounded: getModifierAdd(modifiers, "woundedArmor"),
+      hp: tower.hp,
+      maxHp: tower.maxHp
+    });
   }
 
   /**
@@ -15971,6 +16018,68 @@ export class MatchRoom extends Room<MatchState> {
     if (ratio === 1) return;
     tower.maxHp *= ratio;
     tower.hp *= ratio;
+  }
+
+  /**
+   * Katmanli Zirh: dalga sonunda ayakta duran yapinin sayaci bir artiyor;
+   * zirh payi ve tavani (`VETERAN_ARMOR_MAX_WAVES`) `getStructureArmor`da.
+   * Sertlesen Govde gibi kart alindiktan sonra sayiyor.
+   */
+  private growVeteranArmor(tower: TowerModel) {
+    if (tower.hp <= 0 || !(getModifierAdd(this.getTowerRunModifiers(tower), "veteranArmor") > 0)) return;
+    tower.veteranArmorWaves = (tower.veteranArmorWaves ?? 0) + 1;
+  }
+
+  /**
+   * Dehset Zirhi: dalga sirasinda kule her oyun saniyesi altili zar atiyor;
+   * 6 gelirse sonraki vurusu korkutuyor. Dolu kule zar atmiyor (tek hak) ve
+   * sure biriktirmiyor; harcanan hak burada, vurusun tick'inden sonra
+   * kapaniyor. Kurulumda ve dalga sonu duraklamasinda dusman yok, zar da yok.
+   */
+  private rollTowerArmorFear(tower: TowerModel, now: number, deltaTime: number) {
+    this.settleArmorFearCharge(tower);
+    if (tower.armorFearArmed || this.isBoardIdle() || tower.offlineUntil > now) return;
+    if (!(getModifierAdd(this.getTowerStaticRunModifiers(tower), "armorFear") > 0)) return;
+    tower.armorFearMs = (tower.armorFearMs ?? 0) + deltaTime;
+    while (tower.armorFearMs >= ARMOR_FEAR_ROLL_INTERVAL_MS) {
+      tower.armorFearMs -= ARMOR_FEAR_ROLL_INTERVAL_MS;
+      if (rollArmorFearDie(this.armorFearRandom)) {
+        tower.armorFearArmed = true;
+        tower.armorFearMs = 0;
+        return;
+      }
+    }
+  }
+
+  /**
+   * Dehset Zirhi: onceki tick'te harcanan hak kapaniyor. `updateTowers` bunu
+   * her kule icin cagiriyor -- yikik ve bekleyen kule dahil: yoksa yikilan
+   * kulenin havadaki mermileri ve yanma cizgileri her tick korkuturdu.
+   */
+  private settleArmorFearCharge(tower: TowerModel) {
+    if (tower.armorFearHitAt === undefined) return;
+    tower.armorFearArmed = false;
+    tower.armorFearHitAt = undefined;
+    tower.armorFearMs = 0;
+  }
+
+  /**
+   * Dehset Zirhi: dolu kulenin dogrudan vurusu dusmani korkutuyor (yurumeyi
+   * biraktiriyor): zirh puani basina kartin `armorFear` saniyesi, tavan
+   * `ARMOR_FEAR_MAX_MS` (durum suresi carpanindan sonra). Hak ilk
+   * vurusta harcaniyor ama tick'in sonuna kadar suruyor: ayni vurusun
+   * alanindaki ve deldigi oteki dusmanlar da korkuyor. Sicrama ve durum
+   * tiki dogrudan vurus degil.
+   */
+  private applyArmorFearHit(tower: TowerModel, enemy: EnemyModel, now: number) {
+    if (!tower.armorFearArmed) return;
+    tower.armorFearHitAt ??= now;
+    if (enemy.hp <= 0) return;
+    // Tavan durum suresi carpanindan sonra: kart "en fazla 6 saniye" diyor.
+    const modifiers = this.getTowerRunModifiers(tower);
+    const durationMs = getArmorFearDurationMs(getModifierAdd(modifiers, "armorFear"), this.getTowerArmor(tower), getModifierMultiplier(modifiers, "statusDuration"));
+    if (durationMs <= 0) return;
+    this.applyEnemyStatusEffect(enemy, { type: "fear", magnitude: 1, durationMs, stacking: "refresh" }, now, { durationMs, sourceTowerId: tower.id, sourceOwnerId: tower.ownerId });
   }
 
   private tryEmergencyRebuild(tower: TowerModel) {
@@ -19529,6 +19638,9 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
+    // Dehset Zirhi: zarin doldurdugu vurus korkutuyor (alanindaki her dusman dahil).
+    if (directHit) this.applyArmorFearHit(damageSourceTower!, enemy, now);
+
     // Ek Bicak Yuvasi ve Infilak Basligi: vurus komsulara sicriyor. Sicrama
     // kendisi yeniden sicramiyor ve kritik atmiyor (`hitSplashActive`).
     if (damageSourceTower && damage > 0 && !this.hitSplashActive && !legendarySecondary && !sourceDefinitionId.startsWith("status:") && !isSyntheticKillSource(sourceDefinitionId)) {
@@ -21714,7 +21826,7 @@ export class MatchRoom extends Room<MatchState> {
     const modifiers = this.getTowerRunModifiers(tower);
     const flat = includeFlat ? this.getTowerFlatRange(modifiers) : 0;
     const applyRangeAura = (range: number, withFlat = true) => applyTowerAuraModifier(withFlat && range > 0 ? range + flat : range, this.getTowerAuraModifiers(tower), "range")
-      * Math.max(0, 1 + getModifierAdd(modifiers, "range") + this.getTowerConditionalRangeAdd(tower, modifiers))
+      * Math.max(0, 1 + getModifierAdd(modifiers, "range") + this.getTowerConditionalRangeAdd(tower, modifiers) + this.getTowerHealthRangeAdd(tower, modifiers))
       * (1 + (this.getWorkerBoost(tower, "range")?.value ?? 0))
       * (this.towerHasUnlock(tower, "isolationBonus") && this.isTowerIsolated(tower) ? 1.3 : 1);
     if (tower.definition.id === "warrior-2") {
@@ -21754,6 +21866,18 @@ export class MatchRoom extends Room<MatchState> {
       return footprintRadius + applyRangeAura(scaledRange);
     }
     return applyRangeAura(scaledRange);
+  }
+
+  /**
+   * Kutle Telemetresi (`healthRange`): azami can tabanini (seviyeli yapi cani;
+   * kart, esya ve buyume oncesi) her %100 astiginda menzile pay. Kart ve
+   * esyalarin `range` payiyla ayni toplamsal havuzda ama kosullu tavana
+   * girmiyor: menzili can yatirimi sinirliyor.
+   */
+  private getTowerHealthRangeAdd(tower: TowerModel, modifiers: readonly Modifier[]) {
+    const perHundred = getModifierAdd(modifiers, "healthRange");
+    if (!(perHundred > 0)) return 0;
+    return getHealthRangeAdd(perHundred, tower.maxHp, TOWER_BASE_HP * getStructureHealthMultiplier(tower.definition, tower.level));
   }
 
   /** Teleskopik Namlu (`rangeFlat`): kare cinsinden duz menzil, dunya biriminde. */
@@ -23952,6 +24076,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.shopKillStacks = 0;
       if (this.towerHasUnlock(tower, "stack:wave")) tower.shopWaveStacks += 1;
       this.growVeteranHealth(tower);
+      this.growVeteranArmor(tower);
       for (const definition of this.getTowerEngine(tower)?.stacks ?? []) {
         this.resetEngineStack(tower.stackStates, definition, "waveEnd");
       }

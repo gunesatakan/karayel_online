@@ -237,7 +237,10 @@ const KULE_KATMANINDAN_OKUNANLAR = new Set([
   "rangeFlat", "killRange", "neighborRange", "killRangeLong",
   // Dayaniklilik turu: `damageTower`, `updateTowers` ve `getTowerArmor` kulenin
   // listesinden; davranislari tests/durability-round.test.mjs'te gercek odada.
-  "damageShare", "idleRegen", "armorFlat"
+  "damageShare", "idleRegen", "armorFlat",
+  // Zirh turu: `getTowerArmor` ve `getTowerOwnRange` kulenin listesinden;
+  // davranislari tests/armor-round.test.mjs'te gercek odada.
+  "woundedArmor", "healthRange"
 ]);
 
 test("kuleye takılan eşyanın her statı kule katmanından okunuyor", () => {

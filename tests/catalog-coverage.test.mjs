@@ -50,7 +50,8 @@ const ALL_STATS = [
   "chainChance", "blastChance", "freezeChance", "executeChance", "shatterChance", "chronoChance", "linkChance", "gravityChance",
   "focusRange", "heatRange", "wallRange", "rangeFlat", "killRange", "neighborRange",
   "killRangeLong", "ambushRange",
-  "veteranHealth", "woundedDamageReduction", "lastStand", "damageShare", "idleRegen", "armorFlat"
+  "veteranHealth", "woundedDamageReduction", "lastStand", "damageShare", "idleRegen", "armorFlat",
+  "highHealthArmor", "veteranArmor", "woundedArmor", "armorFear", "healthRange"
 ];
 
 /**
@@ -80,10 +81,13 @@ const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated", "damageExpe
   "rangeFlat", "killRange", "neighborRange",
   // Ikinci kisim: Av Kayit Defteri (Atis Haritasi sayacinin uzun tavani).
   "killRangeLong",
-  // Dayaniklilik turu: bitisikteki yapilara, hasarsiz gecen sureye ve duz
-  // zirha bakan esyalar. Kart tarafinda karsiliklari ayri (Sertlesen Govde,
-  // Inatci Siper, Son Nefes).
-  "damageShare", "idleRegen", "armorFlat"];
+  // Dayaniklilik turu: bitisikteki yapilara ve hasarsiz gecen sureye bakan
+  // esyalar. Kart tarafinda karsiliklari ayri (Sertlesen Govde, Inatci Siper,
+  // Son Nefes). Duz zirh artik kartta da var (Takviye Levhasi, Dehset Zirhi).
+  "damageShare", "idleRegen",
+  // Zirh turu: yarali yapinin zirhi ve azami candan menzil tek yapiya baglanan
+  // esya mekanikleri. Kart tarafinda karsiliklari ayri (Tam Govde, Katmanli Zirh).
+  "woundedArmor", "healthRange"];
 
 const allTowers = Object.values(towerCatalog).flat();
 const statsUsedBy = (entries) => new Set(entries.flatMap((entry) => (entry.effects ?? []).map((modifier) => modifier.stat)));

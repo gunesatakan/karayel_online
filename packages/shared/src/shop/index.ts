@@ -616,6 +616,15 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("oz-onarim-cekirdegi", "Öz Onarım Çekirdeği", "Takıldığı yapı 4 saniye hasar almazsa saniyede azami canının %3'ünü yeniler; yalnızca dalga sırasında.", "utility", 120, { axes: ["barricade"], effects: [effect("oz-onarim-cekirdegi", "idleRegen", 0.03)] }),
   defineItem("percinli-kaplama", "Perçinli Kaplama", "Takıldığı yapının zırhı +4: her vuruştan 4 hasar daha düşülür (vuruş en az 1). Küçük ve sık vuruşlara karşı güçlü, kuşatmaya karşı zayıf.", "class", 75, { axes: ["barricade"], effects: [effect("percinli-kaplama", "armorFlat", 4)] }),
 
+  // Zirh turu (`durability-mechanics`). Ucu de kapsamsiz (her kule ve duvar,
+  // kaynak binasi degil). Agir Plaka'nin bedeli onarimda: altinla onarim
+  // yalniz kurulumda ve pahalilasiyor. Kutle Telemetresi azami cani menzile
+  // ceviriyor; kendi cani da sayiliyor, can esyalariyla buyuyor.
+  defineItem("agir-plaka", "Ağır Plaka", "Takıldığı yapının zırhı +6, onarım bedeli +%30: her vuruştan 6 hasar daha düşülür (vuruş en az 1).", "class", 100, { axes: ["barricade"], effects: [effect("agir-plaka", "armorFlat", 6), effect("agir-plaka", "repairCost", 0.3)] }),
+  defineItem("kompozit-govde", "Kompozit Gövde", "Takıldığı yapının canı +%45 ve zırhı +2.", "utility", 105, { axes: ["barricade"], effects: [effect("kompozit-govde", "towerHealth", 0.45), effect("kompozit-govde", "armorFlat", 2)] }),
+  defineItem("reaktif-zirh", "Reaktif Zırh", "Takıldığı yapının canı %50'nin altındayken zırhı %100 artar (iki katı).", "utility", 90, { axes: ["barricade"], effects: [effect("reaktif-zirh", "woundedArmor", 1)] }),
+  defineItem("kutle-telemetresi", "Kütle Telemetresi", "Takıldığı kulenin canı +%40; azami canı tabanını her %100 aştığında menzili +%12 (can +%200 ise menzil +%24). Menzili haritayı kaplayan kulelere takılmaz.", "power", 115, { axes: ["barricade", "dps"], scope: { kind: "tagged", boundedRange: true }, effects: [effect("kutle-telemetresi", "towerHealth", 0.4), effect("kutle-telemetresi", "healthRange", 0.12)] }),
+
   // Efsanevi: vurus etkileri (`legendary` modulu). Ayni etkinin kartindan
   // iki kat ihtimal, ama yalnizca takildigi kulede; kartla ayni kulede
   // toplaniyor (tavan `LEGENDARY_CHANCE_CAP`). Vitrinde seyrek ve pahali.

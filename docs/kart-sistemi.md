@@ -292,6 +292,51 @@ eşyaları gibi kapsamsız: her kuleye ve duvara takılır, kaynak binasına tak
 (kaynak binası yalnız ekonomi eşyası alıyor). Kartlar genel; her yapıya, duvara
 ve kaynak binasına işler (`structure` erişimi).
 
+#### Zırh turu
+
+Sahibin isteği (2026-10-24): yapılara can ya da zırh veren kart ve eşya sayısı
+artsın; kulenin canı arttıkça menzilini artıran bir eşya; zırh ve zırhla büyüyen,
+zarla gelen korkutma veren tek kulelik bir kart. Kartlarda zırh yoktu (yalnız
+Perçinli Kaplama eşyası). Dört kart, dört eşya; sabitler
+`packages/shared/src/durability-mechanics` (zırh: `getStructureArmor`), sunucuda
+`getTowerArmor`, dalga sonu (`advanceWaveGrowth`), `updateTowers`
+(`rollTowerArmorFear`), `damageEnemy` (`applyArmorFearHit`) ve `getTowerOwnRange`;
+testler `tests/armor-round.test.mjs`.
+
+- **Takviye Levhası** (yaygın, en fazla 2 kez, `armorFlat` 2): bütün yapıların
+  zırhı +2 (duvar ve kaynak binası dahil).
+- **Tam Gövde** (seyrek, `highHealthArmor` 4): canı %75 ve üstündeki yapının
+  zırhı +4. Eşiğin altında kalkar, onarılınca geri gelir: dalgada canı
+  tamirciler tuttuğu için Tamirci'yle aynı yöne bakıyor.
+- **Katmanlı Zırh** (nadir, `veteranArmor` 1): dalga sonunda ayakta duran her
+  yapının zırhı +1, en fazla 5 dalga (+5). Sertleşen Gövde gibi sayaç yapıya
+  ait (`veteranArmorWaves`) ve kart alındıktan sonra işler.
+- **Dehşet Zırhı** (nadir, hedefli, tek kule, `armorFlat` 3 + `armorFear` 0,25):
+  kulenin zırhı +3. Dalga sırasında kule her oyun saniyesi altılı zar atar
+  (`armorFearRandom`, kayıtlı odada tohumlu); yalnızca 6 sonraki vuruşu doldurur,
+  dolu kule zar atmaz. Dolu kulenin doğrudan vuruşu (patlamanın ve delmenin
+  değdiği her düşman; sıçrama ve durum tiki değil) düşmanı mevcut Korku
+  durumuyla durdurur: zırh puanı başına 0,25 oyun sn; kulenin durum süresi
+  çarpanları da işler ama tavan (6 sn) onlardan sonra; kabanın korku direnci
+  tavandan sonra kısaltır. Hak ilk vuruşta harcanır, aynı tick'in öbür
+  vuruşları da korkutur; sonraki tick'te kapanır (yıkılan ya da beklemeye
+  alınan kulede de: havadaki mermisi korkutmaz). Kurulumda ve dalga sonu
+  duraklamasında zar yok. Yalnız düşmana gerçekten vuran kuleye takılır
+  (`canTargetedCardGoToTower`): Sunucu, İzolasyon, Saray Arşivi ve Abartı'ya değil.
+- **Ağır Plaka** (eşya, 100 g, `armorFlat` 6, `repairCost` +0,3): zırh +6,
+  bedeli onarımda (altınla onarım yalnız kurulumda ve %30 pahalı).
+- **Kompozit Gövde** (eşya, 105 g, `towerHealth` 0,45, `armorFlat` 2): can ve
+  zırh birlikte.
+- **Reaktif Zırh** (eşya, 90 g, `woundedArmor` 1): canı %50'nin altındaki
+  yapının bütün zırhı iki katına çıkar (düz puanlar ve Katmanlı Zırh dahil).
+  Tam Gövde ile aynı anda işlemez: biri canın üst bandında, öbürü alt yarısında.
+- **Kütle Telemetresi** (eşya, 115 g, `towerHealth` 0,4, `healthRange` 0,12):
+  azami can tabanını (seviyeli yapı canı; kart, eşya ve büyüme öncesi) her %100
+  aştığında menzil +%12, kesirli aşım kesirli pay; tavansız, koşullu tavana
+  girmez. Kendi canı da sayılır; hasar menzili düşürmez (azami cana bakar).
+  Menzili haritayı kaplayan kuleye ve duvara takılmaz. Panelin menzil dökümünde
+  eşyanın kendi adıyla durur.
+
 Kataloğun yaklaşık yarısı düz stat, yarısı davranış olmalı. Düz stat tarafı
 şişerse oyuncu üç seçenek görürken kuruluşunu taşıyan kartı hiç göremez.
 

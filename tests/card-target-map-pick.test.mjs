@@ -40,7 +40,7 @@ test("secim kipinde dokunus yalnizca hedef seciyor; onizleme sonra kart", () => 
   const pick = pointer.indexOf("if (this.cardTargetPick && this.isBattlePointer(pointer))");
   assert.ok(pick > 0 && pick < pointer.indexOf("this.hitSellButton(pointer)"), "secim kipi satistan ve kule seciminden once bakilmali");
   const tap = method("resolveCardTargetTap");
-  assert.match(tap, /if \(tower\.ownerId !== this\.localSessionId \|\| !this\.canTowerHoldCard\(tower\)\) \{\n\s+this\.showNotice\(t\("scene\.card\.mapPickInvalid"\)\);\n\s+return;/);
+  assert.match(tap, /if \(tower\.ownerId !== this\.localSessionId \|\| !this\.canTowerHoldCard\(pick\.card, tower\)\) \{\n\s+this\.showNotice\(t\("scene\.card\.mapPickInvalid"\)\);\n\s+return;/);
   assert.match(tap, /this\.previewTowerChange\(\{ cardId, towerId: tower\.id \}, \(\) => \{\n\s+this\.endCardTargetPick\(\);\n\s+this\.submitCardChoice\(\{ cardId, towerId: tower\.id \}\);/);
 });
 
@@ -48,7 +48,7 @@ test("cerceve kare dongusunde; perde kapaninca secim bitiyor", () => {
   assert.match(scene, /this\.tickWallLine\(now\);\n\s+this\.renderMapPickFrame\(now\);/);
   const frame = method("renderMapPickFrame");
   assert.match(frame, /const pulse = still \? 1 :/, "hareket azaltmada sabit");
-  assert.match(frame, /this\.canTowerHoldCard\(tower\)/, "halka yalnizca karti alabilecek kulelerde");
+  assert.match(frame, /this\.canTowerHoldCard\(pick\.card, tower\)/, "halka yalnizca karti alabilecek kulelerde");
   assert.match(method("hideCardChoices"), /^  private hideCardChoices\(\) \{\n\s+this\.endCardTargetPick\(\);/);
   const end = method("endCardTargetPick");
   assert.match(end, /pick\.banner\.remove\(\);/);

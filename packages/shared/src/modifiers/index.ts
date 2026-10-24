@@ -346,7 +346,28 @@ export type ModifierStat =
   | "lastStand"
   | "damageShare"
   | "idleRegen"
-  | "armorFlat";
+  | "armorFlat"
+  /**
+   * Zirh turu (`durability-mechanics`): zirhi yapinin caninin bir yerine,
+   * hayatta kaldigi dalgaya ya da vurusa bagliyor; menzili azami cana.
+   *
+   * - `highHealthArmor`: cani `HIGH_HEALTH_ARMOR_HP_RATIO` ve ustundeki yapinin
+   *   zirhina duz puan (kart: Tam Govde).
+   * - `veteranArmor`: dalga sonunda ayakta duran yapinin zirhina dalga basina
+   *   bu puan, en fazla `VETERAN_ARMOR_MAX_WAVES` dalga (kart: Katmanli Zirh).
+   * - `woundedArmor`: cani `WOUNDED_ARMOR_HP_RATIO`in altindaki yapinin zirhi
+   *   bu oranda buyuyor (esya: Reaktif Zirh).
+   * - `armorFear`: kule her oyun saniyesi zar atiyor; 6 gelirse sonraki
+   *   vurusu dusmani zirh puani basina bu kadar oyun saniyesi korkutuyor,
+   *   en fazla `ARMOR_FEAR_MAX_MS` (kart: Dehset Zirhi).
+   * - `healthRange`: kulenin azami cani tabanini her %100 astiginda menzile
+   *   bu pay, tavansiz (esya: Kutle Telemetresi).
+   */
+  | "highHealthArmor"
+  | "veteranArmor"
+  | "woundedArmor"
+  | "armorFear"
+  | "healthRange";
 
 export type Modifier = {
   source: string;

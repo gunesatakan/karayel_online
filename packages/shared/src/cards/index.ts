@@ -716,6 +716,14 @@ export const cardCatalog: CardDefinition[] = [
   { id: "sertlesen-govde", name: "Sertleşen Gövde", description: "Dalga sonunda ayakta kalan her yapının azami canı +%8 artar; en fazla 8 dalga (+%64). Sayaç yapıya ait ve kart alındıktan sonra işler.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("sertlesen-govde", "veteranHealth", 0.08)] },
   { id: "inatci-siper", name: "İnatçı Siper", description: "Canı %50'nin altına inmiş yapılar %40 daha az hasar alır.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("inatci-siper", "woundedDamageReduction", 0.4)] },
   { id: "son-nefes", name: "Son Nefes", description: "Bir yapıyı yıkacak vuruş, dalga başına yapı başına bir kez, onu 1 canla bırakır; yapı ardından 3 saniye hasar almaz.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("son-nefes", "lastStand", 3)] },
+  // Zirh turu (`durability-mechanics`): kartlarda zirh yoktu (yalnizca
+  // Percinli Kaplama esyasi). Biri duz, biri canin ust bandina, biri hayatta
+  // kalinan dalgaya bagli; Dehset Zirhi tek kulenin zirhini zarla gelen
+  // korkuya ceviriyor (zirh buyudukce korku uzuyor).
+  { id: "takviye-levhasi", name: "Takviye Levhası", description: "Tüm yapıların zırhı +2: her vuruştan 2 hasar daha düşülür (vuruş en az 1).", axes: ["barricade"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("takviye-levhasi", "armorFlat", 2)] },
+  { id: "tam-govde", name: "Tam Gövde", description: "Canı %75 ve üstündeki yapıların zırhı +4; can eşiğin altına inince zırh payı kalkar, onarılınca geri gelir.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("tam-govde", "highHealthArmor", 4)] },
+  { id: "katmanli-zirh", name: "Katmanlı Zırh", description: "Dalga sonunda ayakta kalan her yapının zırhı +1 artar; en fazla 5 dalga (+5). Sayaç yapıya ait ve kart alındıktan sonra işler.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("katmanli-zirh", "veteranArmor", 1)] },
+  { id: "dehset-zirhi", name: "Dehşet Zırhı", description: "Bir kulenin zırhı +3. Kule her saniye zar atar; 6 gelirse sonraki vuruşu değdiği düşmanları zırh puanı başına 0,25 saniye korkutur (yürümez), en fazla 6 saniye.", axes: ["barricade", "cc"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("dehset-zirhi", "armorFlat", 3, "tower"), effect("dehset-zirhi", "armorFear", 0.25, "tower")] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
@@ -905,6 +913,30 @@ export function canTowerHoldTargetedCard(tower: CardTowerProfile) {
 }
 
 /**
+ * Hedefli kartin vurusla calisan statlari: tasiyan kule dusmana gercekten
+ * vurmali (`towerDealsDamage`). Dehset Zirhi'nin korkusu dogrudan vurusla
+ * geliyor; Sunucu, Izolasyon, Saray Arsivi ve Abarti hic vurmuyor, kart
+ * orada yalnizca zirh verip zari bosuna doldururdu.
+ */
+const TARGETED_HIT_STATS: ReadonlySet<ModifierStat> = new Set<ModifierStat>(["armorFear"]);
+
+/** Hedefli kartin vurus isteyen bir etkisi var mi (`TARGETED_HIT_STATS`). */
+export function targetedCardNeedsHits(card: Pick<CardDefinition, "effects">) {
+  return card.effects.some((modifier) => TARGETED_HIT_STATS.has(modifier.stat));
+}
+
+/**
+ * Hedefli kart bu kuleye gidebilir mi: `canTowerHoldTargetedCard` ve vurus
+ * isteyen kartta hasar veren kule. Sunucu secimde ve onizlemede, arayuz hedef
+ * listesinde ve haritadaki halkada bunu soruyor: biri suzup obur suzmeseydi
+ * oyuncu karti secip sonra reddedilirdi.
+ */
+export function canTargetedCardGoToTower(card: Pick<CardDefinition, "effects">, tower: CardTowerProfile) {
+  if (!canTowerHoldTargetedCard(tower)) return false;
+  return !targetedCardNeedsHits(card) || towerDealsDamage(tower);
+}
+
+/**
  * Kule dusmana hasar veriyor mu: ates eden (`canTowerHoldTargetedCard`) ve
  * hasarsiz bir aura binasi olmayan yapi. Tanimdaki `damage` alani tek basina
  * yetmiyor: Kin Kulesi ve Oluler Bagi tanimda 0 yaziyor ama dalgayla ve
@@ -1020,7 +1052,11 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   // Dayaniklilik turu: hepsi yapinin canina ya da aldigi hasara isliyor;
   // duvarda ve kaynak binasinda da.
   veteranHealth: "structure", woundedDamageReduction: "structure", lastStand: "structure",
-  damageShare: "structure", idleRegen: "structure", armorFlat: "structure"
+  damageShare: "structure", idleRegen: "structure", armorFlat: "structure",
+  // Zirh turu: zirh her yapida (duvar ve kaynak binasi dahil); korkutma
+  // kulenin vurusuyla, menzil payi kulenin menziliyle geliyor.
+  highHealthArmor: "structure", veteranArmor: "structure", woundedArmor: "structure",
+  armorFear: "combat", healthRange: "combat"
 };
 
 /**
@@ -1186,6 +1222,7 @@ export function drawCards(options: { count?: number; preferredAxes: TowerAxis[];
     const weights = pool.map((card) => {
       const axisWeight = card.axes.some((axis) => options.preferredAxes.slice(0, 2).includes(axis)) ? 2 : 1;
       const deadWeight = (card.scope.kind === "tagged" && !options.towers.some((tower) => cardAppliesToTower(card, tower)))
+        || (card.scope.kind === "targeted" && targetedCardNeedsHits(card) && !options.towers.some((tower) => canTargetedCardGoToTower(card, tower)))
         || (options.marksAvailable === false && isMarkOnlyChoice(card))
         || (options.sourceBonuses !== undefined && !isConversionCardReady(card, options.sourceBonuses))
         || (options.ownedUnlocks !== undefined && isCardUnlockAlreadyOwned(card, options.ownedUnlocks)) ? 0.15 : 1;

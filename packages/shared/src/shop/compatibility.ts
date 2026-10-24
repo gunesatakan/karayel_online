@@ -201,10 +201,12 @@ const STAT_NEEDS: Readonly<Record<string, readonly ShopItemCapabilityNeed[]>> = 
   focusRange: ["targeting"], heatRange: ["attacks", "heat"], wallRange: ["attacks"],
   rangeFlat: ["attacks"], killRange: ["damage"],
   // Menzil turu, ikinci kisim. Pusu Nobeti kulenin vurusuna bakiyor.
-  killRangeLong: ["damage"], ambushRange: ["damage"]
-  // Dayaniklilik turu (`damageShare`, `idleRegen`, `armorFlat`) bilerek
-  // yazilmadi: can gibi her yapida is goruyor, ates etmeyen duvarda da.
-  // Kaynak binasini kapsam disarida birakiyor (`combatStructure`).
+  killRangeLong: ["damage"], ambushRange: ["damage"],
+  // Zirh turu: Kutle Telemetresi'nin menzil payi menzil gibi okunuyor.
+  healthRange: ["attacks"]
+  // Dayaniklilik ve zirh turu (`damageShare`, `idleRegen`, `armorFlat`,
+  // `woundedArmor`) bilerek yazilmadi: can gibi her yapida is goruyor, ates
+  // etmeyen duvarda da. Kaynak binasini kapsam disarida birakiyor (`combatStructure`).
 };
 
 /** Kilidin is gordugu kule; yazilmayan kilit (altin, nexus, enkaz, onarim) bir sey sormuyor. Anahtar duz metin (bkz. `STAT_NEEDS`). */

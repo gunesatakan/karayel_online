@@ -55,6 +55,84 @@ export const DAMAGE_SHARE_CAP = 0.5;
 /**
  * Oz Onarim Cekirdegi: yapi bu kadar oyun suresi hasar almadiysa saniyede
  * azami caninin `idleRegen` payini yeniliyor. Yalnizca dalga sirasinda;
- * hazirlikta yapi altinla ya da tamirciyle onariliyor.
+ * kurulumda yapi altinla onariliyor (dalgada yalnizca tamirciler onariyor).
  */
 export const IDLE_REGEN_DELAY_MS = 4000;
+
+// ------------------------------------------------------------------ Zirh turu
+//
+// Sahibin istegi (2026-10-24): yapilara can ya da zirh veren kart ve esya
+// sayisi artsin; kulenin cani arttikca menzilini artiran bir esya; zirh ve
+// zirhla buyuyen, zarla gelen korkutma veren tek kulelik bir kart. Dort kart
+// (Takviye Levhasi, Tam Govde, Katmanli Zirh, Dehset Zirhi) ve dort esya
+// (Agir Plaka, Kompozit Govde, Reaktif Zirh, Kutle Telemetresi).
+
+/** Tam Govde: yapinin cani azami caninin bu oraninda ya da ustundeyken zirh payi isliyor. */
+export const HIGH_HEALTH_ARMOR_HP_RATIO = 0.75;
+/** Katmanli Zirh: dalga sonunda ayakta duran yapinin zirhi en fazla bu kadar dalga buyuyor. */
+export const VETERAN_ARMOR_MAX_WAVES = 5;
+/** Reaktif Zirh: yapinin cani azami caninin bu oraninin altindayken zirhi buyuyor. */
+export const WOUNDED_ARMOR_HP_RATIO = 0.5;
+
+export type StructureArmorInput = {
+  /** Yapinin kendi zirhi (`TOWER_BASE_ARMOR`). */
+  base: number;
+  /** Duz puanlar (`armorFlat`); eksi toplam sifira kirpiliyor. */
+  flat: number;
+  highHealth: number;
+  veteran: number;
+  veteranWaves: number;
+  wounded: number;
+  hp: number;
+  maxHp: number;
+};
+
+/**
+ * Yapinin zirhi (aura carpani haric). Duz puanlar, Tam Govde (cani esikte ya
+ * da ustunde) ve Katmanli Zirh'in dalga puanlari toplaniyor; Reaktif Zirh
+ * yarali yapida toplami buyutuyor. Tam Govde ile Reaktif Zirh ayni anda
+ * islemiyor: biri canin ust bandinda, obur alt yarisinda.
+ */
+export function getStructureArmor(input: StructureArmorInput) {
+  let armor = input.base + Math.max(0, input.flat);
+  const healthy = input.maxHp > 0 && input.hp >= input.maxHp * HIGH_HEALTH_ARMOR_HP_RATIO;
+  if (input.highHealth > 0 && healthy) armor += input.highHealth;
+  if (input.veteran > 0 && input.veteranWaves > 0) armor += input.veteran * Math.min(VETERAN_ARMOR_MAX_WAVES, Math.floor(input.veteranWaves));
+  const wounded = input.maxHp > 0 && input.hp < input.maxHp * WOUNDED_ARMOR_HP_RATIO;
+  if (input.wounded > 0 && wounded) armor *= 1 + input.wounded;
+  return armor;
+}
+
+/** Dehset Zirhi: zar bu kadar oyun suresinde bir atiliyor. */
+export const ARMOR_FEAR_ROLL_INTERVAL_MS = 1000;
+/** Dehset Zirhi: zarin yuzu; yalnizca en buyuk yuz (6) sonraki vurusu dolduruyor. */
+export const ARMOR_FEAR_DIE_FACES = 6;
+/**
+ * Dehset Zirhi: zirh ve durum suresi bonuslari ne kadar buyurse buyusun korku
+ * en fazla bu kadar oyun suresi (kart metni "en fazla 6 saniye").
+ */
+export const ARMOR_FEAR_MAX_MS = 6000;
+
+/** Altili zar: `random` [0, 1) verir; yalnizca 6 tutuyor (1/6). */
+export function rollArmorFearDie(random: () => number) {
+  return Math.min(ARMOR_FEAR_DIE_FACES, Math.floor(random() * ARMOR_FEAR_DIE_FACES) + 1) === ARMOR_FEAR_DIE_FACES;
+}
+
+/**
+ * Dehset Zirhi'nin korku suresi (oyun ms): zirh puani basina kartin `armorFear`
+ * saniyesi, kulenin durum suresi carpaniyla; tavan carpandan sonra.
+ */
+export function getArmorFearDurationMs(perArmorSeconds: number, armor: number, durationMultiplier = 1) {
+  if (!(perArmorSeconds > 0) || !(armor > 0) || !(durationMultiplier > 0)) return 0;
+  return Math.min(ARMOR_FEAR_MAX_MS, armor * perArmorSeconds * 1000 * durationMultiplier);
+}
+
+/**
+ * Kutle Telemetresi: azami can tabanini (kart, esya ve buyume oncesi) her
+ * %100 astiginda menzile `perHundred` pay; kesirli asim kesirli pay. Tavansiz
+ * (cevrimler gibi): menzili can yatirimi sinirliyor.
+ */
+export function getHealthRangeAdd(perHundred: number, maxHp: number, baseMaxHp: number) {
+  if (!(perHundred > 0) || !(baseMaxHp > 0) || !(maxHp > baseMaxHp)) return 0;
+  return perHundred * (maxHp / baseMaxHp - 1);
+}

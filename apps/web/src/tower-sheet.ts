@@ -626,6 +626,10 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
       value = `${t("sheet.fx.mark", { v: formatPercent(magnitude) })}${duration}`;
     } else if (kind === "armor" || kind === "armorAura") {
       value = t("sheet.fx.armor", { v: formatSmart(magnitude) });
+    } else if (kind === "armorFear") {
+      // Dehset Zirhi: bugunku zirhla korku suresi; alt satirda zar ve zirh basina pay.
+      value = t("sheet.unit.seconds", { v: formatNumber(realSeconds(durationMs ?? 0), 1) });
+      sub = t("sheet.fx.armorFear", { v: formatNumber(realSeconds(magnitude * 1000), 2) });
     } else if (kind.startsWith("arc:")) {
       // Saray Arsivi: alandaki kule sayisi ve seviyenin etkileri.
       value = kind === "arc:cover" ? t("sheet.fx.arc.cover", { n: magnitude })

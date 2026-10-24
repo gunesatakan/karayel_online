@@ -158,6 +158,10 @@ export const enShopItems: Readonly<Record<string, { name: string; description: s
   "yuk-dagitici-kiris": { name: "Load-Spreading Beam", description: "The equipped structure takes 35% of the damage dealt to adjacent friendly structures (towers, walls, resource buildings) onto itself; at most one beam shares a hit." },
   "oz-onarim-cekirdegi": { name: "Self-Repair Core", description: "If the equipped structure takes no damage for 4 seconds, it regenerates 3% of its max HP per second; during waves only." },
   "percinli-kaplama": { name: "Riveted Plating", description: "Equipped structure's armor +4: every hit deals 4 less damage (at least 1). Strong against small, frequent hits, weak against siege." },
+  "agir-plaka": { name: "Heavy Plate", description: "Equipped structure's armor +6, repair cost +30%: every hit deals 6 less damage (at least 1)." },
+  "kompozit-govde": { name: "Composite Hull", description: "Equipped structure's HP +45% and armor +2." },
+  "reaktif-zirh": { name: "Reactive Armor", description: "While the equipped structure is below 50% HP, its armor rises by 100% (doubles)." },
+  "kutle-telemetresi": { name: "Mass Telemetry", description: "Equipped tower's HP +40%; its range +12% for every 100% its max HP exceeds its base (+24% range at +200% HP). Does not fit towers whose range covers the map." },
   ...enLegendaryItems
 };
 
