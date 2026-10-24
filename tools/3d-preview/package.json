@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "sync:map": "node sync-map-contract.mjs",
+    "predev": "node sync-map-contract.mjs --check",
+    "prebuild": "node sync-map-contract.mjs --check",
+    "pretest": "node sync-map-contract.mjs --check",
     "dev": "vite --host 127.0.0.1 --port 5184 --strictPort",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5184 --strictPort",

@@ -1,0 +1,77 @@
+{
+  "source": "MatchRoom.configureArenaForScale + shared/map.ts",
+  "presets": [
+    {
+      "scale": 1,
+      "cols": 12,
+      "rows": 18,
+      "cellSize": 34,
+      "origin": {
+        "x": 0,
+        "y": 86
+      },
+      "bounds": {
+        "left": 0,
+        "top": 86,
+        "right": 408,
+        "bottom": 698,
+        "width": 408,
+        "height": 612
+      }
+    },
+    {
+      "scale": 2,
+      "cols": 16,
+      "rows": 24,
+      "cellSize": 34,
+      "origin": {
+        "x": 0,
+        "y": 86
+      },
+      "bounds": {
+        "left": 0,
+        "top": 86,
+        "right": 544,
+        "bottom": 902,
+        "width": 544,
+        "height": 816
+      }
+    },
+    {
+      "scale": 3,
+      "cols": 20,
+      "rows": 30,
+      "cellSize": 34,
+      "origin": {
+        "x": 0,
+        "y": 86
+      },
+      "bounds": {
+        "left": 0,
+        "top": 86,
+        "right": 680,
+        "bottom": 1106,
+        "width": 680,
+        "height": 1020
+      }
+    },
+    {
+      "scale": 4,
+      "cols": 24,
+      "rows": 36,
+      "cellSize": 34,
+      "origin": {
+        "x": 0,
+        "y": 86
+      },
+      "bounds": {
+        "left": 0,
+        "top": 86,
+        "right": 816,
+        "bottom": 1310,
+        "width": 816,
+        "height": 1224
+      }
+    }
+  ]
+}

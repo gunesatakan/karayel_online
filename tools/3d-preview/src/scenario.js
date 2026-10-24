@@ -1,13 +1,21 @@
 // This is a repeatable visual fixture, not a copy of Karayel's combat rules.
+import {
+  cellCenter,
+  TOWER_SCALE,
+  TOWER_BASE_Y,
+  ENEMY_HIT_Y,
+} from "./layout.js";
+import { TOWER_POSITION } from "./layout.js";
+export { TOWER_POSITION } from "./layout.js";
 export const CYCLE = 12;
 export const SHOT_PERIOD = 0.62;
 export const FLIGHT_TIME = 0.42;
-export const TOWER_POSITION = { x: -3.45, z: 0.65 };
 
 export function enemyPosition(time) {
+  const center = cellCenter(7, 9);
   return {
-    x: 3.3 + Math.sin(time * 0.53) * 0.65,
-    z: Math.sin(time * 0.64) * 2.7,
+    x: center.x + Math.sin(time * 0.53) * 0.2,
+    z: center.z + Math.sin(time * 0.64) * 2.7,
   };
 }
 
@@ -23,15 +31,19 @@ export function shotEnabled(at, mode) {
   return at >= 0 && weaponAt(at, mode) === "projectile";
 }
 
-export function muzzleAt(time, offset = 0, length = 1.7, height = 2.02) {
+export function muzzleAt(time, offset = 0, length = 1.7, height = 1.86) {
   const target = enemyPosition(time);
   const dx = target.x - TOWER_POSITION.x;
   const dz = target.z - TOWER_POSITION.z;
   const len = Math.hypot(dx, dz);
   return {
-    x: TOWER_POSITION.x + (dx / len) * length + (dz / len) * offset,
-    y: height,
-    z: TOWER_POSITION.z + (dz / len) * length - (dx / len) * offset,
+    x:
+      TOWER_POSITION.x +
+      ((dx / len) * length + (dz / len) * offset) * TOWER_SCALE,
+    y: TOWER_BASE_Y + height * TOWER_SCALE,
+    z:
+      TOWER_POSITION.z +
+      ((dz / len) * length - (dx / len) * offset) * TOWER_SCALE,
   };
 }
 
@@ -39,7 +51,7 @@ export function projectileAt(index, time) {
   const born = index * SHOT_PERIOD;
   const from = muzzleAt(born, index % 2 ? -0.25 : 0.25);
   const end = enemyPosition(born + FLIGHT_TIME);
-  const to = { x: end.x, y: 1.05, z: end.z };
+  const to = { x: end.x, y: ENEMY_HIT_Y, z: end.z };
   const progress = Math.max(0, Math.min(1, (time - born) / FLIGHT_TIME));
   return {
     from,

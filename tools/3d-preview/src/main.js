@@ -5,7 +5,17 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { buildArena, buildTower, buildEnemy } from "./models.js";
+import { buildTower, buildEnemy } from "./models.js";
+import { buildArena } from "./arena.js";
+import {
+  MAP,
+  MAP_WIDTH,
+  MAP_DEPTH,
+  TOWER_BASE_Y,
+  TOWER_SCALE,
+  ENEMY_SCALE,
+  ENEMY_HIT_Y,
+} from "./layout.js";
 import {
   beamActive,
   enemyPosition,
@@ -96,13 +106,13 @@ function start() {
   scene.add(floor);
   buildArena(scene);
   const tower = buildTower();
-  tower.root.position.set(TOWER_POSITION.x, 0.16, TOWER_POSITION.z);
+  tower.root.position.set(TOWER_POSITION.x, TOWER_BASE_Y, TOWER_POSITION.z);
   scene.add(tower.root);
   const enemy = buildEnemy();
   scene.add(enemy.root);
 
   const range = new THREE.Mesh(
-    new THREE.RingGeometry(7.2, 7.23, 100),
+    new THREE.RingGeometry(4.2, 4.21, 100),
     new THREE.MeshBasicMaterial({
       color: 0xa3cfcd,
       transparent: true,
@@ -153,21 +163,21 @@ function start() {
     return { core, trail };
   });
   const beams = [
-    { mesh: new THREE.Mesh(cylinder, effectMaterial(0xfff2cb)), radius: 0.026 },
+    { mesh: new THREE.Mesh(cylinder, effectMaterial(0xfff2cb)), radius: 0.008 },
     {
       mesh: new THREE.Mesh(cylinder, effectMaterial(0xff9b31, 0.55)),
-      radius: 0.075,
+      radius: 0.02,
     },
     {
       mesh: new THREE.Mesh(cylinder, effectMaterial(0xff9122, 0.07)),
-      radius: 0.2,
+      radius: 0.05,
     },
   ];
   beams.forEach((b) => scene.add(b.mesh));
   const contactLight = new THREE.PointLight(0xff9c41, 0, 4, 2);
   scene.add(contactLight);
   const contactBall = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.14, 1),
+    new THREE.IcosahedronGeometry(0.045, 1),
     effectMaterial(0xffe3ac),
   );
   scene.add(contactBall);
@@ -228,13 +238,14 @@ function start() {
         speed = 1 + (hash(n + 2) % 1) * 3;
       p.at = at;
       p.life = 0.35 + (hash(n + 3) % 1) * 0.5;
-      p.size = 0.018 + (hash(n + 4) % 1) * 0.032;
-      p.origin.set(target.x - 0.3, 1.15, target.z);
+      p.size = (0.018 + (hash(n + 4) % 1) * 0.032) * ENEMY_SCALE;
+      p.origin.set(target.x, ENEMY_HIT_Y, target.z);
       p.velocity.set(
         Math.cos(angle) * speed,
         1 + (hash(n + 8) % 1) * 3.8,
         Math.sin(angle) * speed,
       );
+      p.velocity.multiplyScalar(ENEMY_SCALE);
     }
     if (kind === "projectile") {
       const r = rings[ringCursor++ % rings.length];
@@ -242,7 +253,7 @@ function start() {
       r.mesh.position.set(target.x, 0.08, target.z);
       const s = smoke[smokeCursor++ % smoke.length];
       s.at = at;
-      s.origin.set(target.x, 1.2, target.z);
+      s.origin.set(target.x, ENEMY_HIT_Y, target.z);
     }
   }
 
@@ -263,13 +274,16 @@ function start() {
     close: { elevation: 30, yaw: 35, zoom: 1.22 },
     overhead: { elevation: 65, yaw: 16, zoom: 1 },
   };
+  $("map-metrics").textContent =
+    `${MAP.cols} × ${MAP.rows} HÜCRE · ${MAP.bounds.width} × ${MAP.bounds.height} BİRİM`;
   function resize() {
     const width = host.clientWidth,
       height = host.clientHeight;
     if (!width || !height) return;
     const aspect = width / height;
     // Keep the entire platform readable in narrow and wide panels.
-    const halfHeight = Math.max(8.15, 10.7 / aspect);
+    const halfDiagonal = Math.hypot(MAP_WIDTH, MAP_DEPTH) / 2 + 0.8;
+    const halfHeight = Math.max(halfDiagonal, halfDiagonal / aspect);
     camera.left = -halfHeight * aspect;
     camera.right = halfHeight * aspect;
     camera.top = halfHeight;
@@ -441,23 +455,23 @@ function start() {
         p.to.z - p.from.z,
       ).normalize();
       const back = {
-        x: p.position.x - dir.x * 0.42,
-        y: p.position.y - dir.y * 0.42,
-        z: p.position.z - dir.z * 0.42,
+        x: p.position.x - dir.x * 0.12,
+        y: p.position.y - dir.y * 0.12,
+        z: p.position.z - dir.z * 0.12,
       };
       const trailBack = {
-        x: p.position.x - dir.x * 1.15,
-        y: p.position.y - dir.y * 1.15,
-        z: p.position.z - dir.z * 1.15,
+        x: p.position.x - dir.x * 0.36,
+        y: p.position.y - dir.y * 0.36,
+        z: p.position.z - dir.z * 0.36,
       };
       view.core.visible = view.trail.visible = true;
-      segment(view.core, back, p.position, 0.045);
-      segment(view.trail, trailBack, p.position, 0.07);
+      segment(view.core, back, p.position, 0.014);
+      segment(view.trail, trailBack, p.position, 0.024);
     }
     for (; slot < bullets.length; slot++)
       bullets[slot].core.visible = bullets[slot].trail.visible = false;
-    const muzzle = muzzleAt(time, 0, 1.14, 1.7),
-      end = { x: target.x - 0.28, y: 1.15, z: target.z };
+    const muzzle = muzzleAt(time, 0, 1.14, 1.54),
+      end = { x: target.x, y: ENEMY_HIT_Y, z: target.z };
     beams.forEach(({ mesh, radius }) => {
       mesh.visible = beam;
       if (beam)
@@ -503,7 +517,7 @@ function start() {
       const age = time - r.at;
       r.mesh.visible = age >= 0 && age < 0.48;
       if (r.mesh.visible) {
-        r.mesh.scale.setScalar(0.25 + age * 2.2);
+        r.mesh.scale.setScalar((0.25 + age * 2.2) * ENEMY_SCALE);
         r.mesh.material.opacity = (1 - age / 0.48) * 0.38;
       }
     });
@@ -512,14 +526,18 @@ function start() {
       s.mesh.visible = age >= 0 && age < 1.3;
       if (s.mesh.visible) {
         s.mesh.position.copy(s.origin);
-        s.mesh.position.y += age * 0.8;
-        s.mesh.scale.setScalar(0.13 + age * 0.35);
+        s.mesh.position.y += age * 0.8 * ENEMY_SCALE;
+        s.mesh.scale.setScalar((0.13 + age * 0.35) * ENEMY_SCALE);
         s.mesh.rotation.y = age;
         s.mesh.material.opacity = (1 - age / 1.3) * 0.12;
       }
     });
-    label($("tower-label"), [TOWER_POSITION.x, 3.0, TOWER_POSITION.z]);
-    label($("enemy-label"), [target.x, 2.45, target.z]);
+    label($("tower-label"), [
+      TOWER_POSITION.x,
+      TOWER_BASE_Y + 3 * TOWER_SCALE,
+      TOWER_POSITION.z,
+    ]);
+    label($("enemy-label"), [target.x, 2.45 * ENEMY_SCALE, target.z]);
     if (time - lastUi > 0.1 || lastUi < 0) {
       $("hit-count").textContent = String(hits);
       $("elapsed").textContent =
