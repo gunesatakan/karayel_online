@@ -7,20 +7,26 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { towerPlacement, TOWER_BASE_Y } from "../src/layout.js";
 import { muzzleAt, enemyPosition } from "../src/scenario.js";
 
-function registerVariantTests(variant, triangleBudget) {
+function registerVariantTests(variant, triangleBudget, vertexPalette = false) {
   const bytes = readFileSync(new URL(`../public/game-assets/models/warrior-1-${variant}.glb`, import.meta.url));
   const report = JSON.parse(readFileSync(new URL(`../validation/takipci-${variant}.json`, import.meta.url), "utf8"));
   const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString());
 
-  test(`${variant} asset preserves embedded PBR maps and its reviewed processing output`, () => {
+  test(`${variant} asset preserves embedded shading and its reviewed processing output`, () => {
     assert.equal(createHash("sha256").update(bytes).digest("hex"), report.modelSha256);
     assert.ok(report.triangleCount <= triangleBudget);
     assert.ok(report.triangleCount > triangleBudget * 0.98);
-    assert.equal(json.images.length, 3);
+    assert.equal(json.images.length, vertexPalette ? 1 : 3);
     assert.ok(json.images.every((image) => image.bufferView !== undefined && !image.uri));
     for (const material of json.materials) {
-      assert.ok(material.pbrMetallicRoughness.baseColorTexture);
-      assert.ok(material.pbrMetallicRoughness.metallicRoughnessTexture);
+      if (vertexPalette) {
+        assert.ok(material.pbrMetallicRoughness.metallicFactor < .3);
+        assert.ok(material.pbrMetallicRoughness.roughnessFactor > .7);
+        assert.ok(json.meshes.every((mesh) => mesh.primitives.every((primitive) => primitive.attributes.COLOR_0 !== undefined)));
+      } else {
+        assert.ok(material.pbrMetallicRoughness.baseColorTexture);
+        assert.ok(material.pbrMetallicRoughness.metallicRoughnessTexture);
+      }
       assert.ok(material.normalTexture);
     }
   });
@@ -79,3 +85,4 @@ function registerVariantTests(variant, triangleBudget) {
 
 registerVariantTests("quality", 80000);
 registerVariantTests("stylized", 50000);
+registerVariantTests("pastel", 50000, true);

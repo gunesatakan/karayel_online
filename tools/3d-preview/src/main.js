@@ -114,7 +114,7 @@ async function start() {
     model.root.position.set(position.x, TOWER_BASE_Y, position.z);
     scene.add(model.root);
   }
-  let tower = towers.get(`${TOWER_ASSETS[0].id}:stylized`) ?? towers.get(`${TOWER_ASSETS[0].id}:quality`) ?? towers.get(TOWER_ASSETS[0].id);
+  let tower = towers.get(`${TOWER_ASSETS[0].id}:pastel`) ?? towers.get(`${TOWER_ASSETS[0].id}:stylized`) ?? towers.get(`${TOWER_ASSETS[0].id}:quality`) ?? towers.get(TOWER_ASSETS[0].id);
   let placement = towerPlacement(tower.asset.footprintSpan);
   tower.root.visible = true;
   const enemy = buildEnemy();
@@ -361,7 +361,7 @@ async function start() {
     tower.root.visible = true;
     const asset = tower.asset;
     $("quality-controls").hidden = !asset.qualityModel;
-    $("asset-version").textContent = asset.variant === "stylized" ? "STİLİZE" : asset.quality ? "GERÇEKÇİ" : "İLK TASLAK";
+    $("asset-version").textContent = ({ pastel: "PASTEL", stylized: "STİLİZE", quality: "GERÇEKÇİ" })[asset.variant] ?? "İLK TASLAK";
     placement = towerPlacement(asset.footprintSpan);
     arena.setFootprint(placement);
     range.position.set(placement.position.x, 0.07, placement.position.z);

@@ -1,6 +1,6 @@
 // First art pass: AttackLord level 1–4 silhouettes, read against the real tower art.
 export const TOWER_ASSETS = [
-  { id: "warrior-1", name: "Takipçi", role: "Hasar ve işaretleme", extension: "png", mode: "projectile", range: 56, qualityModel: "game-assets/models/warrior-1-quality.glb", stylizedModel: "game-assets/models/warrior-1-stylized.glb", muzzle: { length: 1.7, height: 1.86, offset: 0.25 }, detail: "Bakır çatı, yeşil döner gövde ve çift namlu." },
+  { id: "warrior-1", name: "Takipçi", role: "Hasar ve işaretleme", extension: "png", mode: "projectile", range: 56, qualityModel: "game-assets/models/warrior-1-quality.glb", stylizedModel: "game-assets/models/warrior-1-stylized.glb", pastelModel: "game-assets/models/warrior-1-pastel.glb", muzzle: { length: 1.7, height: 1.86, offset: 0.25 }, detail: "Bakır çatı, yeşil döner gövde ve çift namlu." },
   { id: "warrior-2", name: "Sunucu", role: "Global destek", extension: "webp", mode: "idle", range: 844, muzzle: { length: 0.8, height: 2.15, offset: 0 }, detail: "İç içe metal halkalar, yükseltilmiş veri çekirdeği. Kendisi ateş etmez." },
   { id: "warrior-3", name: "İzolasyon Kulesi", role: "Alan kontrolü", extension: "png", mode: "aura", range: 52, muzzle: { length: 0.9, height: 1.85, offset: 0 }, detail: "Dört bakır bobin, radyal kollar ve turkuaz alan çekirdeği." },
   { id: "warrior-4", name: "Obsesyon Kulesi", role: "Tek hedef hasarı", extension: "webp", mode: "impact", range: 59, muzzle: { length: 1.6, height: 1.85, offset: 0 }, detail: "Mor zırh dilimleri, altın halka ve odak merceği." },
