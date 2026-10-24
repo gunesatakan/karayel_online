@@ -9,6 +9,16 @@
     "status": "processed"
   },
   {
+    "key": "warrior-1-tier-2",
+    "towerId": "warrior-1",
+    "tier": 2,
+    "reference": "art-direction/warrior-1-tier-2.png",
+    "sourceId": "3be6b48e-7057-4669-9cca-dbc04a5c2207",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / ef68814f-567f-47ab-89bd-dc9aeb68ce6b/image_0",
+    "status": "processed"
+  },
+  {
     "key": "warrior-1-tier-3",
     "towerId": "warrior-1",
     "tier": 3,
@@ -24,6 +34,16 @@
     "reference": "art-direction/warrior-2-tier-1.png",
     "sourceId": "0f2ab63e-d0aa-4751-bfdc-04141a868495",
     "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-2-tier-2",
+    "towerId": "warrior-2",
+    "tier": 2,
+    "reference": "art-direction/warrior-2-tier-2.png",
+    "sourceId": "5f326caf-97fd-4110-ae06-7929daeace27",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / 57dfcab2-37bd-4971-b754-d736fd382477/image_0",
     "status": "processed"
   },
   {
@@ -45,6 +65,16 @@
     "status": "processed"
   },
   {
+    "key": "warrior-3-tier-2",
+    "towerId": "warrior-3",
+    "tier": 2,
+    "reference": "art-direction/warrior-3-tier-2.png",
+    "sourceId": "2ea10c28-2755-41bb-b699-3bdd3048fdd6",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / b536baa0-50f5-41ab-8b40-87a990aff4c9/image_0",
+    "status": "processed"
+  },
+  {
     "key": "warrior-3-tier-3",
     "towerId": "warrior-3",
     "tier": 3,
@@ -60,6 +90,16 @@
     "reference": "art-direction/warrior-4-tier-1.png",
     "sourceId": "0ca8bd33-680a-4551-b6b8-3c868963e61d",
     "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-4-tier-2",
+    "towerId": "warrior-4",
+    "tier": 2,
+    "reference": "art-direction/warrior-4-tier-2.png",
+    "sourceId": "b850449a-5fbb-4de6-ad5f-1437ac18eaaf",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / aff907a8-ddac-496e-87e5-ab3c77fbd282/image_1",
     "status": "processed"
   },
   {
@@ -81,6 +121,16 @@
     "status": "processed"
   },
   {
+    "key": "warrior-5-tier-2",
+    "towerId": "warrior-5",
+    "tier": 2,
+    "reference": "art-direction/warrior-5-tier-2.png",
+    "sourceId": "6b9d5eb8-f8b0-4478-893d-b77e3efe3775",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / 1968b351-42d1-4caa-a30d-3a7e14c46058/image_0",
+    "status": "processed"
+  },
+  {
     "key": "warrior-5-tier-3",
     "towerId": "warrior-5",
     "tier": 3,
@@ -96,6 +146,16 @@
     "reference": "art-direction/warrior-6-tier-1.png",
     "sourceId": "e889b728-f2b3-4263-a38e-416d3d690b64",
     "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-6-tier-2",
+    "towerId": "warrior-6",
+    "tier": 2,
+    "reference": "art-direction/warrior-6-tier-2.png",
+    "sourceId": "dc038887-a0cc-4894-944b-b1dac149d3b9",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / ca88d1ec-d2a3-42be-9b2f-4b351aca1cbc/image_1",
     "status": "processed"
   },
   {

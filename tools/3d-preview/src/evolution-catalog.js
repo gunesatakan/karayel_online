@@ -2,7 +2,7 @@ import { TOWER_ASSETS } from './asset-catalog.js';
 
 export const EVOLUTION_TIERS = [
   { id: 1, levels: '1–4', label: 'Steampunk', detail: 'Pirinç bağlantılar, bakır kaplama, boyalı metal ve mekanik enerji çekirdekleri.' },
-  { id: 2, levels: '5–9', label: 'Geçiş', detail: 'Bakır platform üzerinde yeni nesil enerji sistemi. Mekanik ve ileri teknoloji parçaları birlikte.' },
+  { id: 2, levels: '5–9', label: 'Geçiş', detail: 'Fırçalanmış çelik ve koyu metal zırh, süslerde kalan bakır ve pirinç, ilk camgöbeği enerji kanalları.' },
   { id: 3, levels: '10', label: 'İleri teknoloji', detail: 'Yarı mat koyu metal, keskin panel ayrımları, camgöbeği ve magenta enerji öğeleri.' },
 ];
 

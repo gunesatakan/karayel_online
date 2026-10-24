@@ -56,15 +56,17 @@ for material_index, material in enumerate(original_materials):
     pixels = np.empty(width * height * 4, dtype=np.float32)
     image.pixels.foreach_get(pixels)
     pixels = pixels.reshape(height, width, 4)
-    palette = ([(.005, .35, .8, 1), (.8, .005, .38, 1), (.01, .7, .2, 1)]
-               if tier == 3 else [(.02, .8, 1, 1), (1, .01, .62, 1), (.02, 1, .3, 1)])
+    # The middle tier glows in each texture's own hue (cyan, teal, violet); the outer tiers use a fixed palette.
+    palette = ([(.005, .35, .8, 1), (.8, .005, .38, 1), (.01, .7, .2, 1)] if tier == 3 else [None] if tier == 2
+               else [(.02, .8, 1, 1), (1, .01, .62, 1), (.02, 1, .3, 1)])
     slots = []
     for color in palette:
         luminous = material.copy()
         luminous.name = material.name + '-energy-' + str(len(slots))
         p = next(n for n in luminous.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
-        p.inputs['Emission Color'].default_value = color
-        p.inputs['Emission Strength'].default_value = 1.2 if tier == 3 else .8
+        if color: p.inputs['Emission Color'].default_value = color
+        else: luminous.node_tree.links.new(p.inputs['Base Color'].links[0].from_socket, p.inputs['Emission Color'])
+        p.inputs['Emission Strength'].default_value = {1: .8, 2: 1., 3: 1.2}[tier]
         p.inputs['Roughness'].default_value = .35
         p.inputs['Metallic'].default_value = .25
         slots.append(len(source.data.materials))
@@ -74,7 +76,11 @@ for material_index, material in enumerate(original_materials):
         if polygon.material_index != material_index: continue
         u, v = np.mean([uv[i].uv[:] for i in polygon.loop_indices], axis=0)
         r, g, b = pixels[min(height-1, max(0, int(v*height))), min(width-1, max(0, int(u*width))), :3]
-        cyan = b > .35 and g > .32 and r < min(b,g)*.7 if tier == 3 else b > .4 and g > .4 and r < .075
+        if tier == 2:
+            if max(r, g, b) > .45 and ((b > .35 and g > .32 and r < min(b,g)*.7) or (g > .45 and g > b*1.25 and r < g*.45)
+                                       or (r > .35 and b > .35 and g < min(r,b)*.6)): polygon.material_index = slots[0]
+            continue
+        cyan =b > .35 and g > .32 and r < min(b,g)*.7 if tier == 3 else b > .4 and g > .4 and r < .075
         if cyan: polygon.material_index = slots[0]
         elif r > .45 and b > .32 and g < min(r,b)*.62: polygon.material_index = slots[1]
         elif g > .6 and r < .05 and b < .2: polygon.material_index = slots[2]

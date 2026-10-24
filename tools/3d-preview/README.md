@@ -4,11 +4,11 @@ Canlı oyuna bağlanmayan yerel 3D önizleme. AttackLord'un altı ana kulesi, **
 
 ## Metal koleksiyonu ve evrim
 
-- İlk evrede pirinç, bakır ve boyalı metal; son evrede kullanıcının referansındaki koyu metal, camgöbeği ve magenta enerji dili kullanılır. Ara evre, ilk evrenin tabanı ve son evrenin çekirdeği/üst mekanizmasıyla hazırlanır.
-- 11 yeni açılı görsel yerleşik `image_gen` ile üretildi. Tam girdiler `art-direction/evolution-prompts.json`, kaynak görseller aynı klasördedir. Takipçi başlangıç görseli aracın denetiminde reddedildiği için tekrar denenmedi; mevcut stilize Tripo kaynağı yeni metal malzemeyle işlendi.
-- 11 yeni H3.1 tarayıcı üretimi **605 mevcut kredi** kullandı. Kaynak kimlikleri ve durumları `art-direction/evolution-sources.json` içindedir. API kullanılmadı.
-- `inspect-evolution-model.py -- --key warrior-N-tier-T` ham modeli 40.000 üçgene ve 2K dokulara indirir; eski Takipçi kaynağı 50.000 üçgendir. `build-evolution-model.py` ölçülen yön/yüksekliklerle taban ve üst mekanizmayı ayırır. İzolasyon'un dik üretilen başlangıç tabanı `--flatten` ile zemine yatırılır. `build-evolution-hybrids.py` altı ara evreyi üretir.
-- Metal için roughness 0,48, metallic 0,72 ve normal gücü 0,42; parlak enerji yüzeyleri ayrı emissive malzemeler kullanır. Renk ve normal haritaları GLB içine gömülüdür. Dosyalar yaklaşık 2,7–9,8 MB; ara evreler iki kaynağın dokularını içerir. Bütün modeller 60.000 üçgenin altındadır.
+- İlk evrede pirinç, bakır ve boyalı metal; son evrede kullanıcının referansındaki koyu metal, camgöbeği ve magenta enerji dili kullanılır. Ara evre, oyunun 5–9 görseline bağlı ayrı bir tasarımdır: fırçalanmış çelik ve koyu metal zırh, süslerde kalan bakır/pirinç ve ilk camgöbeği enerji kanalları.
+- İlk ve son evrenin 11 açılı görseli yerleşik `image_gen` ile üretildi. Takipçi başlangıç görseli aracın denetiminde reddedildiği için tekrar denenmedi; mevcut stilize Tripo kaynağı yeni metal malzemeyle işlendi. Ara evrenin 6 görseli Tripo Studio'da **GPT Image 2.5** ile üretildi; her birine oyunun 5–9 ikonu, onaylı 1–4 ve 10 görselleri referans verildi. Tam girdiler `art-direction/evolution-prompts.json`, seçilen görseller `art-direction/warrior-N-tier-2.png` dosyalarıdır.
+- İlk/son evrenin 11 H3.1 tarayıcı üretimi **605**, ara evrenin 6 üretimi **330 mevcut kredi** kullandı. Görsel üretimi Tripo'nun ücretsiz kotasından karşılandı. Kaynak kimlikleri ve durumları `art-direction/evolution-sources.json` içindedir. API kullanılmadı.
+- `inspect-evolution-model.py -- --key warrior-N-tier-T` ham modeli 40.000 üçgene ve 2K dokulara indirir; eski Takipçi kaynağı 50.000 üçgendir. `build-evolution-model.py` ölçülen yön/yüksekliklerle taban ve üst mekanizmayı ayırır. İzolasyon'un dik üretilen başlangıç tabanı `--flatten` ile zemine yatırılır. Önceki hibrit ara evrenin (ilk evre tabanı + son evre çekirdeği) Blender dosyaları `asset-work/evolution/warrior-N-tier-2/hybrid-processed.blend` olarak saklanır; onu üreten betik kaldırıldı.
+- Metal için roughness 0,48, metallic 0,72 ve normal gücü 0,42; parlak enerji yüzeyleri ayrı emissive malzemeler kullanır. İlk ve son evrede bu yüzeyler sabit camgöbeği/magenta/yeşil paletle, ara evrede dokunun kendi tonuyla (camgöbeği, turkuaz, mor) parlar. Renk ve normal haritaları GLB içine gömülüdür. Dosyalar yaklaşık 2,7–5,8 MB. Bütün modeller 60.000 üçgenin altındadır.
 - Modeller yalnız seçildiğinde yüklenir; önbellek en fazla üç modeli tutar, eskilerin GPU kaynaklarını serbest bırakır. Bu bir görsel kalite önizlemesidir; çok sayıda eşzamanlı kule için LOD ve doku sıkıştırması ayrıca gerekir.
 - `validation/warrior-N-tier-T.json` her çıktının hash, üçgen ve namlu bilgilerini kaydeder. 18 yeni geometri testi dönme/geri tepme boyunca hücre sınırını ve efekt çıkışını doğrular. Harita ve önceki testlerle birlikte **37 test** geçer.
 - Ham GLB ve Blender ara dosyaları deponun kardeşindeki `asset-work/evolution/` içinde kalır. Canlı istemci, sunucu ve oyun kuralları değiştirilmez.
@@ -99,7 +99,7 @@ npm run build
 
 ## Doğrulama
 
-- 19 Node testi: oyun koordinat dönüşümü, Ucube'nin gerçek 2 × 2 yerleşim kuralı, modellerin hareket ve yerleşim sınırı, namlu/efekt hizası, gerçekçi/stilize/pastel modellerin malzemeleri ve hash'leri, farklı kare hızlarında temas zamanlaması ve destek kulelerinin hasarsızlığı.
+- 37 Node testi: oyun koordinat dönüşümü, Ucube'nin gerçek 2 × 2 yerleşim kuralı, modellerin hareket ve yerleşim sınırı, namlu/efekt hizası, gerçekçi/stilize/pastel modellerin malzemeleri ve hash'leri, 18 evrim modelinin rig/malzeme/hücre sınırı, farklı kare hızlarında temas zamanlaması ve destek kulelerinin hasarsızlığı.
 - `npm run build`: yalnızca bu klasördeki `dist/` dizinine çıktı verir.
 - Tarayıcıda altı kule, beş zemin, detay kamerası, ızgara ve duraklatma kontrol edilir.
 - Blender 5.2.3 LTS arka plan içe aktarma kontrolü: `tests/blender_import.py`. Sonuç: `validation/blender-import.json`. Kullanıcının açık Blender belgesine dokunmaz; ayrı arka plan süreci kullanır.
@@ -109,6 +109,6 @@ npm run build
 - Kendi `package.json` ve kilit dosyası vardır; kök workspaces kapsamına girmez.
 - `apps/web`, `apps/server`, `packages/shared`, kök bağımlılıklar ve yayın ayarları değiştirilmez.
 - Oda, WebSocket, Colyseus, telemetri, hesap veya canlı sunucu bağlantısı yoktur. Vite yalnızca 127.0.0.1 üzerinde çalışır.
-- Üst seviye kule varyantları, diğer karakterlerin kuleleri, ikmal binaları, düşman varlıklarının aktarımı ve gerçek oyun sunum adaptörü sonraki kapsamdır.
-- Takipçi'nin yeni örneği aşınma ve PBR dokuları içerir. Diğer beş kulenin kalite geçişi ve çok sayıda kule için çizim çağrısı optimizasyonu sonraki kapsamdır.
+- Diğer karakterlerin kuleleri, ikmal binaları, düşman varlıklarının aktarımı ve gerçek oyun sunum adaptörü sonraki kapsamdır.
+- Altı kulenin üç evresi PBR dokularla tamamdır. Çok sayıda kule için LOD, doku sıkıştırması ve çizim çağrısı optimizasyonu sonraki kapsamdır.
 - Otomatik yayın veya push adımı yoktur.

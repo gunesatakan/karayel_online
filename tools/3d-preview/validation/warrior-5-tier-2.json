@@ -1,19 +1,17 @@
 {
   "key": "warrior-5-tier-2",
-  "sources": [
-    "warrior-5-tier-1",
-    "warrior-5-tier-3"
-  ],
-  "modelSha256": "cc7cc81a2ade7053c1f3934637351ccbe56c88815716cdb4b166e8aed3690250",
-  "modelBytes": 9714188,
-  "triangleCount": 50472,
+  "sourceId": "6b9d5eb8-f8b0-4478-893d-b77e3efe3775",
+  "modelSha256": "d22392206d93d7e73c57086e96bde98e6bbd3ed4b3da8890284a5becae269040",
+  "modelBytes": 5787820,
+  "triangleCount": 40000,
   "footprintSpan": 1,
   "radiusCells": 0.418,
   "muzzle": {
-    "length": 1.8896305561065674,
-    "height": 3.2606632968019134,
+    "length": 1.5321922302246094,
+    "height": 2.0249579548835754,
     "offset": 0.0,
-    "centerOffset": -0.0004232674837112427
+    "centerOffset": -0.014348797500133514
   },
-  "jointHeight": 1.042460423731222
+  "front": -87.9,
+  "split": 0.275
 }

@@ -1,19 +1,17 @@
 {
   "key": "warrior-3-tier-2",
-  "sources": [
-    "warrior-3-tier-1",
-    "warrior-3-tier-3"
-  ],
-  "modelSha256": "2821dbc05a82c41b78305cd003e968a08466287f1ac1f5fc56d031925ca82aab",
-  "modelBytes": 7147348,
-  "triangleCount": 59404,
+  "sourceId": "2ea10c28-2755-41bb-b699-3bdd3048fdd6",
+  "modelSha256": "a9dac6aef4cb7e1bf0e72bc141254a24600d2b85f08fba3510904ebd74b3fb07",
+  "modelBytes": 5455092,
+  "triangleCount": 40000,
   "footprintSpan": 1,
   "radiusCells": 0.418,
   "muzzle": {
-    "length": 0.082,
-    "height": 1.7327704612577688,
+    "length": 0.1,
+    "height": 1.0138018131256104,
     "offset": 0.0,
     "centerOffset": 0.0
   },
-  "jointHeight": 0.7086319398880004
+  "front": 90.0,
+  "split": 0.14
 }

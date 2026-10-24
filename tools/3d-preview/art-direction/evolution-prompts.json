@@ -11,6 +11,19 @@
     ]
   },
   {
+    "key": "warrior-1-tier-2",
+    "id": 1,
+    "tier": 2,
+    "name": "Takipçi",
+    "generator": "Tripo Studio / GPT Image 2.5 / 1:1 / 1K",
+    "prompt": "Use case: design-evolution midpoint.\nThree input images, identified by content (not by order):\n- the flat, top-down painted game icon = the original game's LEVEL 5–9 art for this tower; it defines this stage's identity, silhouette and part layout;\n- the copper / brass / green 3D render = the approved LEVEL 1–4 version (start of the evolution);\n- the black gunmetal 3D render with cyan and magenta light = the approved LEVEL 10 version (end of the evolution).\nCreate the LEVEL 5–9 MID-EVOLUTION version of Takipçi: a compact twin parallel cannon turret. Keep the broad circular radially plated copper roof of the game icon and the level 1–4 render, now with a thin steel rim and cleaner edges. The central rotating bearing becomes a machined steel gear housing with one thin cyan ring. Exactly two parallel long polished steel cannons, as in the game icon, with steel muzzle collars, steel barrel clamps and small cyan energy bands. Keep the upper cannon assembly clearly separated from the fixed roof.\nIt must read clearly as the halfway step between the LEVEL 1–4 render and the LEVEL 10 render: the same tower identity, the same circular footprint size, and the same camera, framing, lighting and render language as those two 3D renders. Mid-technology materials: the painted green iron of level 1–4 is upgraded to machined brushed steel and dark gunmetal armor (the steel look of the game icon); copper and brass remain only as legacy plates, trims, bearings and fasteners; riveted plates begin turning into crisp beveled armor panels with machined seams. The first integrated luminous cyan energy channels and lenses appear in a few deliberate places, more structured than level 1–4 and far less than level 10; magenta only as one or two tiny accents. Do not jump to the full black-and-neon finish of level 10.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-1-levels-5-9.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/takipci-stylized-v3.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-1-tier-3.png"
+    ]
+  },
+  {
     "key": "warrior-1-tier-3",
     "id": 1,
     "tier": 3,
@@ -29,6 +42,19 @@
     "refs": [
       "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-2-levels-1-4.webp",
       "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-2-tier-2",
+    "id": 2,
+    "tier": 2,
+    "name": "Sunucu",
+    "generator": "Tripo Studio / GPT Image 2.5 / 1:1 / 1K",
+    "prompt": "Use case: design-evolution midpoint.\nThree input images, identified by content (not by order):\n- the flat, top-down painted game icon = the original game's LEVEL 5–9 art for this tower; it defines this stage's identity, silhouette and part layout;\n- the copper / brass / green 3D render = the approved LEVEL 1–4 version (start of the evolution);\n- the black gunmetal 3D render with cyan and magenta light = the approved LEVEL 10 version (end of the evolution).\nCreate the LEVEL 5–9 MID-EVOLUTION version of Sunucu: a circular non-weapon data / power support tower. Concentric tiered rings of machined steel and gunmetal with radial vent ribs, as in the game icon; two curved armored conduit arms bend in from opposite sides to a raised central housing that holds one luminous cyan core lens; a few cyan indicator slots in the rings; brass only as small trims. No guns or projecting cannon barrel.\nIt must read clearly as the halfway step between the LEVEL 1–4 render and the LEVEL 10 render: the same tower identity, the same circular footprint size, and the same camera, framing, lighting and render language as those two 3D renders. Mid-technology materials: the painted green iron of level 1–4 is upgraded to machined brushed steel and dark gunmetal armor (the steel look of the game icon); copper and brass remain only as legacy plates, trims, bearings and fasteners; riveted plates begin turning into crisp beveled armor panels with machined seams. The first integrated luminous cyan energy channels and lenses appear in a few deliberate places, more structured than level 1–4 and far less than level 10; magenta only as one or two tiny accents. Do not jump to the full black-and-neon finish of level 10.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-2-levels-5-9.webp",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-2-tier-1.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-2-tier-3.png"
     ]
   },
   {
@@ -53,6 +79,19 @@
     ]
   },
   {
+    "key": "warrior-3-tier-2",
+    "id": 3,
+    "tier": 2,
+    "name": "İzolasyon",
+    "generator": "Tripo Studio / GPT Image 2.5 / 1:1 / 1K",
+    "prompt": "Use case: design-evolution midpoint.\nThree input images, identified by content (not by order):\n- the flat, top-down painted game icon = the original game's LEVEL 5–9 art for this tower; it defines this stage's identity, silhouette and part layout;\n- the copper / brass / green 3D render = the approved LEVEL 1–4 version (start of the evolution);\n- the black gunmetal 3D render with cyan and magenta light = the approved LEVEL 10 version (end of the evolution).\nCreate the LEVEL 5–9 MID-EVOLUTION version of İzolasyon: a low circular electromagnetic field generator. A segmented steel outer ring with a thick visible side wall and small violet-magenta light slots; exactly six radial solenoid coil modules evenly spaced around the center, each a raised cylinder with glowing violet-magenta energy windings in steel housings, as in the game icon; in the center a short raised steel pedestal ring with four clamps holding a glowing violet energy sphere with a cyan inner glow, clearly standing above the coils. IMPORTANT camera: render it exactly like the two 3D renders — an elevated 35-degree three-quarter perspective that clearly shows the side wall of the base, the height of the coil modules and the raised central sphere. Do NOT copy the flat top-down view of the game icon. No projecting gun barrel.\nIt must read clearly as the halfway step between the LEVEL 1–4 render and the LEVEL 10 render: the same tower identity, the same circular footprint size, and the same camera, framing, lighting and render language as those two 3D renders. Mid-technology materials: the painted green iron of level 1–4 is upgraded to machined brushed steel and dark gunmetal armor (the steel look of the game icon); copper and brass remain only as legacy plates, trims, bearings and fasteners; riveted plates begin turning into crisp beveled armor panels with machined seams. The first integrated luminous cyan energy channels and lenses appear in a few deliberate places, more structured than level 1–4 and far less than level 10; magenta only as one or two tiny accents. Do not jump to the full black-and-neon finish of level 10.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-3-levels-5-9.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-3-tier-1.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-3-tier-3.png"
+    ]
+  },
+  {
     "key": "warrior-3-tier-3",
     "id": 3,
     "tier": 3,
@@ -71,6 +110,19 @@
     "refs": [
       "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-4-levels-1-4.webp",
       "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-4-tier-2",
+    "id": 4,
+    "tier": 2,
+    "name": "Obsesyon",
+    "generator": "Tripo Studio / GPT Image 2.5 / 1:1 / 1K",
+    "prompt": "Use case: design-evolution midpoint.\nThree input images, identified by content (not by order):\n- the flat, top-down painted game icon = the original game's LEVEL 5–9 art for this tower; it defines this stage's identity, silhouette and part layout;\n- the copper / brass / green 3D render = the approved LEVEL 1–4 version (start of the evolution);\n- the black gunmetal 3D render with cyan and magenta light = the approved LEVEL 10 version (end of the evolution).\nCreate the LEVEL 5–9 MID-EVOLUTION version of Obsesyon: a compact precision targeting turret on a circular base with radial dark burgundy plated panels and a thin steel rim, as in the game icon. A machined steel rotating optic head with one short optical cannon, concentric steel focusing rings, a green-cyan front lens and a small green-cyan lens on the head. Clearly separate the fixed base and the rotating optic head.\nIt must read clearly as the halfway step between the LEVEL 1–4 render and the LEVEL 10 render: the same tower identity, the same circular footprint size, and the same camera, framing, lighting and render language as those two 3D renders. Mid-technology materials: the painted green iron of level 1–4 is upgraded to machined brushed steel and dark gunmetal armor (the steel look of the game icon); copper and brass remain only as legacy plates, trims, bearings and fasteners; riveted plates begin turning into crisp beveled armor panels with machined seams. The first integrated luminous cyan energy channels and lenses appear in a few deliberate places, more structured than level 1–4 and far less than level 10; magenta only as one or two tiny accents. Do not jump to the full black-and-neon finish of level 10.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-4-levels-5-9.webp",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-4-tier-1.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-4-tier-3.png"
     ]
   },
   {
@@ -95,6 +147,19 @@
     ]
   },
   {
+    "key": "warrior-5-tier-2",
+    "id": 5,
+    "tier": 2,
+    "name": "Debug Lazer",
+    "generator": "Tripo Studio / GPT Image 2.5 / 1:1 / 1K",
+    "prompt": "Use case: design-evolution midpoint.\nThree input images, identified by content (not by order):\n- the flat, top-down painted game icon = the original game's LEVEL 5–9 art for this tower; it defines this stage's identity, silhouette and part layout;\n- the copper / brass / green 3D render = the approved LEVEL 1–4 version (start of the evolution);\n- the black gunmetal 3D render with cyan and magenta light = the approved LEVEL 10 version (end of the evolution).\nCreate the LEVEL 5–9 MID-EVOLUTION version of Debug Lazer: a compact single-barrel laser tower. A circular base with a radial ring of glass capacitor tubes in machined steel fittings, glowing green-cyan inside, as in the game icon; a steel rotating optical head in the center with one straight laser emitter, a green-cyan front lens and one thin cyan focusing ring on the emitter. Clearly separate the fixed radial capacitor base and the moving emitter.\nIt must read clearly as the halfway step between the LEVEL 1–4 render and the LEVEL 10 render: the same tower identity, the same circular footprint size, and the same camera, framing, lighting and render language as those two 3D renders. Mid-technology materials: the painted green iron of level 1–4 is upgraded to machined brushed steel and dark gunmetal armor (the steel look of the game icon); copper and brass remain only as legacy plates, trims, bearings and fasteners; riveted plates begin turning into crisp beveled armor panels with machined seams. The first integrated luminous cyan energy channels and lenses appear in a few deliberate places, more structured than level 1–4 and far less than level 10; magenta only as one or two tiny accents. Do not jump to the full black-and-neon finish of level 10.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-5-levels-5-9.webp",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-5-tier-1.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-5-tier-3.png"
+    ]
+  },
+  {
     "key": "warrior-5-tier-3",
     "id": 5,
     "tier": 3,
@@ -113,6 +178,19 @@
     "refs": [
       "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-6-levels-1-4.webp",
       "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-6-tier-2",
+    "id": 6,
+    "tier": 2,
+    "name": "Ucube",
+    "generator": "Tripo Studio / GPT Image 2.5 / 1:1 / 1K",
+    "prompt": "Use case: design-evolution midpoint.\nThree input images, identified by content (not by order):\n- the flat, top-down painted game icon = the original game's LEVEL 5–9 art for this tower; it defines this stage's identity, silhouette and part layout;\n- the copper / brass / green 3D render = the approved LEVEL 1–4 version (start of the evolution);\n- the black gunmetal 3D render with cyan and magenta light = the approved LEVEL 10 version (end of the evolution).\nCreate the LEVEL 5–9 MID-EVOLUTION version of Ucube: a visibly heavy circular artillery fortress occupying four cells, wider and more massive than a normal tower. A copper radial plated roof with a steel rim, as in the game icon; a large machined steel gun housing with a big central steel gear; ONE thick heavy steel cannon barrel with a wide dark muzzle; three coil pods with glowing green-cyan windings clustered at the rear of the rotating assembly; thick steel fasteners. Clearly separate the fixed copper roof and the rotating gun housing.\nIt must read clearly as the halfway step between the LEVEL 1–4 render and the LEVEL 10 render: the same tower identity, the same circular footprint size, and the same camera, framing, lighting and render language as those two 3D renders. Mid-technology materials: the painted green iron of level 1–4 is upgraded to machined brushed steel and dark gunmetal armor (the steel look of the game icon); copper and brass remain only as legacy plates, trims, bearings and fasteners; riveted plates begin turning into crisp beveled armor panels with machined seams. The first integrated luminous cyan energy channels and lenses appear in a few deliberate places, more structured than level 1–4 and far less than level 10; magenta only as one or two tiny accents. Do not jump to the full black-and-neon finish of level 10.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-6-levels-5-9.webp",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-6-tier-1.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/warrior-6-tier-3.png"
     ]
   },
   {
