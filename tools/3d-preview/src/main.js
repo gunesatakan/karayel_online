@@ -6,7 +6,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { buildEnemy } from "./models.js";
-import { loadTowerAssets } from "./tower-assets.js";
+import { createTowerLibrary } from "./tower-library.js";
 import { TOWER_ASSETS, STAGE_ASSETS } from "./asset-catalog.js";
 import { buildArena } from "./arena.js";
 import {
@@ -44,7 +44,7 @@ async function start() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
+  renderer.toneMappingExposure = .95;
   renderer.domElement.setAttribute(
     "aria-label",
     "Açılı kamerada 3D kule, yürüyen mekanik düşman, mermiler ve ışın",
@@ -74,9 +74,9 @@ async function start() {
   controls.maxZoom = 18;
   controls.target.set(0, 0.25, 0);
 
-  const hemi = new THREE.HemisphereLight(0xc7e3ed, 0x424b38, 2.2);
+  const hemi = new THREE.HemisphereLight(0xc7e3ed, 0x424b38, 1.5);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffe4bb, 3.7);
+  const sun = new THREE.DirectionalLight(0xffe4bb, 3.0);
   sun.position.set(-6, 14, 8);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -90,7 +90,7 @@ async function start() {
   sun.shadow.bias = -0.00025;
   sun.shadow.radius = 3;
   scene.add(sun);
-  const rim = new THREE.DirectionalLight(0x7cb9d4, 2.1);
+  const rim = new THREE.DirectionalLight(0x7cb9d4, 1.4);
   rim.position.set(4, 5, -9);
   scene.add(rim);
   const floor = new THREE.Mesh(
@@ -105,16 +105,16 @@ async function start() {
   floor.position.y = -0.85;
   floor.receiveShadow = true;
   scene.add(floor);
-  const [arena, towers] = await Promise.all([
-    buildArena(scene, Math.min(8, renderer.capabilities.getMaxAnisotropy())),
-    loadTowerAssets(),
-  ]);
-  for (const model of towers.values()) {
+  const towers = createTowerLibrary((model) => {
     const { position } = towerPlacement(model.asset.footprintSpan);
     model.root.position.set(position.x, TOWER_BASE_Y, position.z);
     scene.add(model.root);
-  }
-  let tower = towers.get(`${TOWER_ASSETS[0].id}:pastel`) ?? towers.get(`${TOWER_ASSETS[0].id}:stylized`) ?? towers.get(`${TOWER_ASSETS[0].id}:quality`) ?? towers.get(TOWER_ASSETS[0].id);
+  });
+  const [arena, initialTower] = await Promise.all([
+    buildArena(scene, Math.min(8, renderer.capabilities.getMaxAnisotropy())),
+    towers.get(TOWER_ASSETS[0].id, 'evolution', 3),
+  ]);
+  let tower = initialTower;
   let placement = towerPlacement(tower.asset.footprintSpan);
   tower.root.visible = true;
   const enemy = buildEnemy();
@@ -287,7 +287,7 @@ async function start() {
     tactical: { elevation: 45, yaw: 25, zoom: 1 },
     close: { elevation: 30, yaw: 35, zoom: 1.22 },
     overhead: { elevation: 65, yaw: 16, zoom: 1 },
-    detail: { elevation: 38, yaw: 35, zoom: 12, focus: true },
+    detail: { elevation: 38, yaw: 35, zoom: 14, focus: true },
     top: { elevation: 89.9, yaw: 0, zoom: 12, focus: true },
   };
   $("map-metrics").textContent =
@@ -332,7 +332,7 @@ async function start() {
         b.setAttribute("aria-pressed", String(b.dataset.camera === name)),
       );
   }
-  preset("tactical");
+  preset("detail");
   resize();
   controls.addEventListener("start", () =>
     document
@@ -355,13 +355,33 @@ async function start() {
     smoke.forEach((s) => (s.at = -100));
     lastUi = -1;
   }
-  function selectTower(id) {
+  let selection = 0, requestedId = tower.asset.id;
+  let towerLabelHeight = 3 * placement.scale;
+  async function selectTower(id) {
+    requestedId = id;
+    const ticket = ++selection;
+    loading.textContent = 'Kule modeli yükleniyor…';
+    loading.classList.remove('hidden');
+    let next;
+    try {
+      next = await towers.get(id, $("model-style").value, $("visual-tier").value);
+    } catch (error) {
+      if (ticket !== selection) return;
+      console.error('Tower model could not load', error);
+      loading.textContent = 'Model yüklenemedi. Başka bir kule seçebilir veya tekrar deneyebilirsin.';
+      return;
+    }
+    if (ticket !== selection) return;
     tower.root.visible = false;
-    tower = towers.get(`${id}:${$("model-style").value}`) ?? towers.get(id);
+    tower = next;
     tower.root.visible = true;
+    towers.trim();
     const asset = tower.asset;
-    $("quality-controls").hidden = !asset.qualityModel;
-    $("asset-version").textContent = ({ pastel: "PASTEL", stylized: "STİLİZE", quality: "GERÇEKÇİ" })[asset.variant] ?? "İLK TASLAK";
+    if (asset.variant === 'draft') $("model-style").value = 'draft';
+    $("tier-controls").hidden = $("model-style").value !== 'evolution';
+    for (const option of $("model-style").options) option.disabled = !asset.qualityModel && ['pastel','stylized','quality'].includes(option.value);
+    $("asset-version").textContent = asset.stage ? 'YARI MAT METAL' : ({ pastel: "PASTEL", stylized: "STİLİZE", quality: "GERÇEKÇİ" })[asset.variant] ?? "İLK TASLAK";
+    $("asset-levels").textContent = `SEVİYE ${asset.stage?.levels ?? '1–4'}${asset.stage ? ' / '+asset.stage.label : ''}`;
     placement = towerPlacement(asset.footprintSpan);
     arena.setFootprint(placement);
     range.position.set(placement.position.x, 0.07, placement.position.z);
@@ -375,11 +395,13 @@ async function start() {
     $("tower-art").src = asset.art;
     $("tower-art").alt = `${asset.name} — oyundaki tepeden görünüm`;
     $("tower-detail").textContent = asset.detail;
+    towerLabelHeight = new THREE.Box3().setFromObject(tower.root).getSize(new THREE.Vector3()).y + .12;
     $("download-model").href = asset.model;
     $("download-model").download = `${asset.id}${asset.variant ? `-${asset.variant}` : ""}.glb`;
     range.scale.setScalar(asset.range / MAP.cellSize / 4.2);
     document.querySelectorAll("[data-tower]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.tower === id)));
     resetSimulation();
+    loading.classList.add('hidden');
   }
   for (const asset of TOWER_ASSETS) {
     const button = document.createElement("button");
@@ -402,8 +424,9 @@ async function start() {
   }
   $("stage-select").addEventListener("change", (event) => arena.setStage(Number(event.target.value)));
   $("show-grid").addEventListener("change", (event) => { arena.grid.visible = event.target.checked; });
-  $("model-style").addEventListener("change", () => selectTower(tower.asset.id));
-  selectTower(TOWER_ASSETS[0].id);
+  $("model-style").addEventListener("change", () => selectTower(requestedId));
+  $("visual-tier").addEventListener("change", () => selectTower(requestedId));
+  await selectTower(TOWER_ASSETS[0].id);
   document.querySelectorAll("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => {
       mode = b.dataset.mode;
@@ -613,7 +636,7 @@ async function start() {
     });
     label($("tower-label"), [
       placement.position.x,
-      TOWER_BASE_Y + 3 * placement.scale,
+      TOWER_BASE_Y + towerLabelHeight,
       placement.position.z,
     ]);
     label($("enemy-label"), [target.x, 2.45 * ENEMY_SCALE, target.z]);
@@ -635,6 +658,7 @@ async function start() {
     $("camera-angle").textContent =
       `${Math.round(90 - THREE.MathUtils.radToDeg(controls.getPolarAngle()))}°`;
     composer.render(dt);
+    renderer.domElement.dataset.asset = tower.asset.key;
     previous = time;
     frames++;
     if (real - meterTime > 750) {

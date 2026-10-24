@@ -1,0 +1,110 @@
+[
+  {
+    "key": "warrior-1-tier-1",
+    "towerId": "warrior-1",
+    "tier": 1,
+    "reference": "art-direction/takipci-stylized-v3.png",
+    "sourceId": "0caa9bd5-9882-487c-90dc-392a54843a78",
+    "credits": 0,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-1-tier-3",
+    "towerId": "warrior-1",
+    "tier": 3,
+    "reference": "art-direction/warrior-1-tier-3.png",
+    "sourceId": "e8ae20bd-612f-4f4d-891e-6f1606a5725a",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-2-tier-1",
+    "towerId": "warrior-2",
+    "tier": 1,
+    "reference": "art-direction/warrior-2-tier-1.png",
+    "sourceId": "0f2ab63e-d0aa-4751-bfdc-04141a868495",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-2-tier-3",
+    "towerId": "warrior-2",
+    "tier": 3,
+    "reference": "art-direction/warrior-2-tier-3.png",
+    "sourceId": "42d2bf7d-46f0-49fa-9ae0-fb6597180ded",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-3-tier-1",
+    "towerId": "warrior-3",
+    "tier": 1,
+    "reference": "art-direction/warrior-3-tier-1.png",
+    "sourceId": "5efe243f-887a-45f3-9640-35546b266526",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-3-tier-3",
+    "towerId": "warrior-3",
+    "tier": 3,
+    "reference": "art-direction/warrior-3-tier-3.png",
+    "sourceId": "24aec1bd-32e5-4757-a8ca-5d8294c42af0",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-4-tier-1",
+    "towerId": "warrior-4",
+    "tier": 1,
+    "reference": "art-direction/warrior-4-tier-1.png",
+    "sourceId": "0ca8bd33-680a-4551-b6b8-3c868963e61d",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-4-tier-3",
+    "towerId": "warrior-4",
+    "tier": 3,
+    "reference": "art-direction/warrior-4-tier-3.png",
+    "sourceId": "491392f4-9f8a-438c-bba8-b9744823c9b6",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-5-tier-1",
+    "towerId": "warrior-5",
+    "tier": 1,
+    "reference": "art-direction/warrior-5-tier-1.png",
+    "sourceId": "aaf8909c-4c99-4cdd-acea-f923bbc6cd0d",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-5-tier-3",
+    "towerId": "warrior-5",
+    "tier": 3,
+    "reference": "art-direction/warrior-5-tier-3.png",
+    "sourceId": "cc57cbc8-747f-4e4d-8a56-b1b3329e21c6",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-6-tier-1",
+    "towerId": "warrior-6",
+    "tier": 1,
+    "reference": "art-direction/warrior-6-tier-1.png",
+    "sourceId": "e889b728-f2b3-4263-a38e-416d3d690b64",
+    "credits": 55,
+    "status": "processed"
+  },
+  {
+    "key": "warrior-6-tier-3",
+    "towerId": "warrior-6",
+    "tier": 3,
+    "reference": "art-direction/warrior-6-tier-3.png",
+    "sourceId": "a5df9d92-1e05-48f2-bdb6-334f2d1bbfd4",
+    "credits": 55,
+    "status": "processed"
+  }
+]

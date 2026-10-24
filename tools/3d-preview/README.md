@@ -1,14 +1,25 @@
 # Karayel — bağımsız 3D varlık atölyesi
 
-Canlı oyuna bağlanmayan yerel 3D önizleme. İlk varlık geçişi AttackLord'un altı ana kulesinin **seviye 1–4** görünümlerini ve oyunun beş zemin dokusunu kapsar. İlk taslaklar Three.js geometrileriyle üretildi. **Takipçi için gerçekçi ve stilize Tripo modelleri, ayrıca pastel malzeme varyantı eklendi**; tarayıcı bu GLB dosyalarını yükler. Varsayılan görünüm pasteldir.
+Canlı oyuna bağlanmayan yerel 3D önizleme. AttackLord'un altı ana kulesi, **1–4 / 5–9 / 10** seviye evreleriyle toplam **18 GLB** olarak hazırdır. Varsayılan görünüm yarı mat metal koleksiyonunun son seviye Takipçi modelidir. Oyunun beş orijinal zemin dokusu ve hücre ölçeği korunur.
+
+## Metal koleksiyonu ve evrim
+
+- İlk evrede pirinç, bakır ve boyalı metal; son evrede kullanıcının referansındaki koyu metal, camgöbeği ve magenta enerji dili kullanılır. Ara evre, ilk evrenin tabanı ve son evrenin çekirdeği/üst mekanizmasıyla hazırlanır.
+- 11 yeni açılı görsel yerleşik `image_gen` ile üretildi. Tam girdiler `art-direction/evolution-prompts.json`, kaynak görseller aynı klasördedir. Takipçi başlangıç görseli aracın denetiminde reddedildiği için tekrar denenmedi; mevcut stilize Tripo kaynağı yeni metal malzemeyle işlendi.
+- 11 yeni H3.1 tarayıcı üretimi **605 mevcut kredi** kullandı. Kaynak kimlikleri ve durumları `art-direction/evolution-sources.json` içindedir. API kullanılmadı.
+- `inspect-evolution-model.py -- --key warrior-N-tier-T` ham modeli 40.000 üçgene ve 2K dokulara indirir; eski Takipçi kaynağı 50.000 üçgendir. `build-evolution-model.py` ölçülen yön/yüksekliklerle taban ve üst mekanizmayı ayırır. İzolasyon'un dik üretilen başlangıç tabanı `--flatten` ile zemine yatırılır. `build-evolution-hybrids.py` altı ara evreyi üretir.
+- Metal için roughness 0,48, metallic 0,72 ve normal gücü 0,42; parlak enerji yüzeyleri ayrı emissive malzemeler kullanır. Renk ve normal haritaları GLB içine gömülüdür. Dosyalar yaklaşık 2,7–9,8 MB; ara evreler iki kaynağın dokularını içerir. Bütün modeller 60.000 üçgenin altındadır.
+- Modeller yalnız seçildiğinde yüklenir; önbellek en fazla üç modeli tutar, eskilerin GPU kaynaklarını serbest bırakır. Bu bir görsel kalite önizlemesidir; çok sayıda eşzamanlı kule için LOD ve doku sıkıştırması ayrıca gerekir.
+- `validation/warrior-N-tier-T.json` her çıktının hash, üçgen ve namlu bilgilerini kaydeder. 18 yeni geometri testi dönme/geri tepme boyunca hücre sınırını ve efekt çıkışını doğrular. Harita ve önceki testlerle birlikte **37 test** geçer.
+- Ham GLB ve Blender ara dosyaları deponun kardeşindeki `asset-work/evolution/` içinde kalır. Canlı istemci, sunucu ve oyun kuralları değiştirilmez.
 
 Tepeden bir görsel yükseklik ve yan yüz bilgisi içermez. Bu modellerde yan yüzler tasarım yorumudur; otomatik ve birebir 2D→3D rekonstrüksiyon iddiası yoktur.
 
-## Takipçi kalite örneği
+## Önceki Takipçi kalite denemeleri
 
 Görsel yön tercihi: **güçlü siluet ve zengin detay, beyazlamayan yumuşak renkler**. Ana parçalar ve renk grupları küçük ölçekte okunmalı; bakır platform, adaçayı yeşili mekanizma ve sıcak altın bağlantılar birbirinden ayrılmalı. Pastel ayarı doygunluğu ve parlaklığı dengelerken orta tonların rengini korumalı. Belirgin bevel'lar ve büyük plaka ayrımları korunur. Hücre ve harita ölçüsü bu sanat tercihinden bağımsızdır.
 
-### Pastel örnek (varsayılan)
+### Pastel örnek (önceki deneme)
 
 - `build-pastel-model.py`, stilize GLB'nin geometrisini, UV'lerini ve hareket düğümlerini koruyarak ayrı `warrior-1-pastel.glb` üretir. Yeni Tripo üretimi veya kredi kullanımı yoktur.
 - Orijinal albedo mesh'in köşe renklerine örneklenip yumuşak bakır, adaçayı yeşili, koyu mavi-yeşil ve sıcak altın paletine eşlenir; raster görsel düzenlenmez. Önceki fazla açık palet koyulaştırıldı ve gölge tonlarının beyaza doğru yükseltilmesi azaltıldı. Parlaklık azaltılır: metallic 0,22; roughness 0,76; normal strength 0,78. Yüzey detayı 2K normal haritasıyla korunur.
@@ -28,7 +39,7 @@ Görsel yön tercihi: **güçlü siluet ve zengin detay, beyazlamayan yumuşak r
 - Referans, oturumu açık Tripo tarayıcısında **H3.1** ile mesh'e dönüştürüldü; **55 mevcut kredi** kullanıldı. Kaynak model bağlantısı ve SHA-256 kayıtları `validation/takipci-quality.json` içindedir.
 - Kaynak 1.922.775 üçgen ve yaklaşık 73 MB idi. Blender'da 80.000 üçgene indirildi; 4K renk, metallic/roughness ve normal haritaları korundu. Önizleme GLB'si yaklaşık 20,4 MB. Bu dosya yakın kalite incelemesi içindir; canlı oyunda çok sayıda kule için LOD ve doku sıkıştırması hâlâ gerekir.
 - Sabit bakır platform, dönen merkez ve namlular ayrı parçalara ayrıldı. Namlu çıkış bilgisi GLB içinde saklanır. Model, geri tepme ve efektlerle birlikte tek hücre sınırını korur.
-- Takipçi seçiliyken **Model görünümü** menüsü pastel, canlı stilize, gerçekçi ve ilk taslak arasında karşılaştırma sağlar. Diğer beş kule önceki taslaklardır; Ucube 2 × 2 ölçüsünü korur.
+- Takipçi seçiliyken **Model görünümü** menüsü eski pastel, canlı stilize ve gerçekçi denemeleri karşılaştırma için korur. Altı kulenin ilk taslakları da seçilebilir; Ucube 2 × 2 ölçüsünü korur.
 - İşleme için ham kaynak, deponun kardeşindeki `asset-work/takipci-v2/source.glb` dosyasında saklanır. `inspect-quality-model.py` sadeleştirme ve kontrol görüntülerini, `build-quality-model.py` parça ayrımı ve GLB çıktısını üretir. Bunlar ayrı Blender arka plan sürecinde çalışır; açık kullanıcının belgesini değiştirmez.
 
 ## Çalıştırma
@@ -43,7 +54,7 @@ npm run dev
 Adres: http://127.0.0.1:5184
 
 - Üstteki altı karttan kule seçilir; sağda orijinal oyun görseli bulunur.
-- Takipçi'nin pastel modeli varsayılan olarak açıktır; **Model görünümü** menüsünden önceki modeller seçilebilir.
+- **Görsel evre** menüsünden steampunk, geçiş ve ileri teknoloji seçilir. **Model görünümü** menüsü eski denemeleri karşılaştırmak içindir.
 - **Harita / Yüksek** tüm alanı gösterir. **Kule detayı / Tepeden** yalnızca kamerayı yaklaştırır.
 - Harita menüsü Taş Kuşatma, Çelik Hat, Sürü, Düşüş ve Katlanma dokularını değiştirir.
 - Altın çerçeve yerleşim sınırıdır: **Ucube 2 × 2 (4 kare)**, diğer beş kule **1 × 1** hücre kaplar. Izgara açılıp kapatılabilir.

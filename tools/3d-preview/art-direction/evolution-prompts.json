@@ -1,0 +1,128 @@
+[
+  {
+    "key": "warrior-1-tier-1",
+    "id": 1,
+    "tier": 1,
+    "name": "Takipçi",
+    "prompt": "Use case: style-transfer.\nInput image 1 is the original low-level tower identity; image 2 is the approved finish and rendering-language reference, not the technology era.\nCreate the LEVEL 1–4 STEAMPUNK version of Takipçi: a compact twin parallel cannon turret. Retain its broad circular radially plated copper roof, centered green rotating bearing and exactly two parallel long cannons with brass muzzle collars. Keep the upper cannon assembly clearly separated from the fixed roof.\nPreserve the recognizable silhouette of image 1 while reconstructing unseen sides. Early mechanical technology: copper, brass, painted deep green iron, exposed coil windings, riveted plates and a few small energy lenses. The overall look should match image 2's sharp, detailed, semi-matte metallic game render quality. Do not use the sci-fi cyan-magenta palette for this early stage; reserve that for evolution.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-1-levels-1-4.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-1-tier-3",
+    "id": 1,
+    "tier": 3,
+    "name": "Takipçi",
+    "prompt": "Use case: precise-object-edit.\nInput image 1 is the user's exact approved maximum-level design and palette reference.\nReproduce ONLY the upper-left twin cannon tower in image 1. Keep its exact segmented circular foundation, two parallel armored barrels, central angular nose, inset cyan channels and magenta accents. Remove the other two towers.\nKeep the reference's dark gunmetal/black metal, saturated luminous cyan and magenta palette exactly. Preserve angular layered armor, precise machined construction and contrasting luminous cores. Show ONE complete tower only, at a slightly lower 35-degree elevated three-quarter view for 3D reconstruction. No extra towers.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-2-tier-1",
+    "id": 2,
+    "tier": 1,
+    "name": "Sunucu",
+    "prompt": "Use case: style-transfer.\nInput image 1 is the original low-level tower identity; image 2 is the approved finish and rendering-language reference, not the technology era.\nCreate the LEVEL 1–4 STEAMPUNK version of Sunucu: a circular non-weapon data / power support tower. Concentric tiered brass and green iron rings surrounding a restrained luminous cyan core, a stout vertical central generator column with three protective metal struts and vents. No guns or projecting cannon barrel.\nPreserve the recognizable silhouette of image 1 while reconstructing unseen sides. Early mechanical technology: copper, brass, painted deep green iron, exposed coil windings, riveted plates and a few small energy lenses. The overall look should match image 2's sharp, detailed, semi-matte metallic game render quality. Do not use the sci-fi cyan-magenta palette for this early stage; reserve that for evolution.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-2-levels-1-4.webp",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-2-tier-3",
+    "id": 2,
+    "tier": 3,
+    "name": "Sunucu",
+    "prompt": "Use case: precise-object-edit.\nInput image 1 is the user's exact approved maximum-level design and palette reference.\nReproduce ONLY the upper-right vertical crystal reactor tower in image 1. Keep its exact segmented circular foundation, tall armored central column and vertical faceted cyan energy crystal held in metal jaws, inset cyan channels and magenta accents. Remove the other two towers.\nKeep the reference's dark gunmetal/black metal, saturated luminous cyan and magenta palette exactly. Preserve angular layered armor, precise machined construction and contrasting luminous cores. Show ONE complete tower only, at a slightly lower 35-degree elevated three-quarter view for 3D reconstruction. No extra towers.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-3-tier-1",
+    "id": 3,
+    "tier": 1,
+    "name": "İzolasyon",
+    "prompt": "Use case: style-transfer.\nInput image 1 is the original low-level tower identity; image 2 is the approved finish and rendering-language reference, not the technology era.\nCreate the LEVEL 1–4 STEAMPUNK version of İzolasyon: a low circular electromagnetic field generator. Exactly four substantial copper solenoid coil modules positioned radially at 90 degrees around a central small cyan lens / energy sphere. Stepped steel plates, substantial brass clamps and clear deep mechanical slots. No projecting gun barrel.\nPreserve the recognizable silhouette of image 1 while reconstructing unseen sides. Early mechanical technology: copper, brass, painted deep green iron, exposed coil windings, riveted plates and a few small energy lenses. The overall look should match image 2's sharp, detailed, semi-matte metallic game render quality. Do not use the sci-fi cyan-magenta palette for this early stage; reserve that for evolution.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-3-levels-1-4.png",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-3-tier-3",
+    "id": 3,
+    "tier": 3,
+    "name": "İzolasyon",
+    "prompt": "Use case: precise-object-edit.\nInput image 1 is the user's exact approved maximum-level design and palette reference.\nReproduce ONLY the lower central spherical field-generator tower in image 1. Keep its exact segmented circular foundation, bright spherical faceted cyan/magenta energy core, three evenly spaced armored retaining arms and layered circular support rings. Remove the other two towers.\nKeep the reference's dark gunmetal/black metal, saturated luminous cyan and magenta palette exactly. Preserve angular layered armor, precise machined construction and contrasting luminous cores. Show ONE complete tower only, at a slightly lower 35-degree elevated three-quarter view for 3D reconstruction. No extra towers.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-4-tier-1",
+    "id": 4,
+    "tier": 1,
+    "name": "Obsesyon",
+    "prompt": "Use case: style-transfer.\nInput image 1 is the original low-level tower identity; image 2 is the approved finish and rendering-language reference, not the technology era.\nCreate the LEVEL 1–4 STEAMPUNK version of Obsesyon: a compact precision targeting turret on a circular base with radial dark burgundy plated panels, aged brass ribs and a green iron center. One short optical cannon with concentric brass focusing rings and a small purple lens. Clearly separate fixed base and rotating optic head.\nPreserve the recognizable silhouette of image 1 while reconstructing unseen sides. Early mechanical technology: copper, brass, painted deep green iron, exposed coil windings, riveted plates and a few small energy lenses. The overall look should match image 2's sharp, detailed, semi-matte metallic game render quality. Do not use the sci-fi cyan-magenta palette for this early stage; reserve that for evolution.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-4-levels-1-4.webp",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-4-tier-3",
+    "id": 4,
+    "tier": 3,
+    "name": "Obsesyon",
+    "prompt": "Use case: precise-object-edit.\nInput image 1 is the user's exact approved maximum-level design and palette reference.\nCreate a PRECISION FOCUS TURRET belonging exactly to the same family as all three reference towers. One short substantial armored optical barrel with concentric focusing rings and a prominent magenta front lens; angular dark gunmetal targeting head. Use the identical segmented circular platform design, dark metallic armored surfaces, cyan channels, magenta geometric energy accents and small triangular symbols. Keep a distinct compact precision-weapon silhouette, not twin barrels.\nKeep the reference's dark gunmetal/black metal, saturated luminous cyan and magenta palette exactly. Preserve angular layered armor, precise machined construction and contrasting luminous cores. Show ONE complete tower only, at a slightly lower 35-degree elevated three-quarter view for 3D reconstruction. No extra towers.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-5-tier-1",
+    "id": 5,
+    "tier": 1,
+    "name": "Debug Lazer",
+    "prompt": "Use case: style-transfer.\nInput image 1 is the original low-level tower identity; image 2 is the approved finish and rendering-language reference, not the technology era.\nCreate the LEVEL 1–4 STEAMPUNK version of Debug Lazer: a compact single-barrel laser tower. Circular base ring of 12 turquoise glass capacitor tubes with thick brass fittings, inward radial arrangement. Green iron rotating optical head in the center with a single straight laser emitter and a blue cyan front lens. Clearly separate fixed radial capacitor base and moving emitter.\nPreserve the recognizable silhouette of image 1 while reconstructing unseen sides. Early mechanical technology: copper, brass, painted deep green iron, exposed coil windings, riveted plates and a few small energy lenses. The overall look should match image 2's sharp, detailed, semi-matte metallic game render quality. Do not use the sci-fi cyan-magenta palette for this early stage; reserve that for evolution.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-5-levels-1-4.webp",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-5-tier-3",
+    "id": 5,
+    "tier": 3,
+    "name": "Debug Lazer",
+    "prompt": "Use case: precise-object-edit.\nInput image 1 is the user's exact approved maximum-level design and palette reference.\nCreate a LASER EMITTER TURRET belonging exactly to the same family as all three reference towers. A single elongated dark armored laser emitter with cyan open focusing aperture, paired side capacitor banks, three thin emissive focusing rings along the emitter. Use the identical segmented circular platform design, black / gunmetal armored panels, cyan channels, magenta geometric accents and small triangular symbols. Keep one barrel and a distinct laser silhouette.\nKeep the reference's dark gunmetal/black metal, saturated luminous cyan and magenta palette exactly. Preserve angular layered armor, precise machined construction and contrasting luminous cores. Show ONE complete tower only, at a slightly lower 35-degree elevated three-quarter view for 3D reconstruction. No extra towers.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-6-tier-1",
+    "id": 6,
+    "tier": 1,
+    "name": "Ucube",
+    "prompt": "Use case: style-transfer.\nInput image 1 is the original low-level tower identity; image 2 is the approved finish and rendering-language reference, not the technology era.\nCreate the LEVEL 1–4 STEAMPUNK version of Ucube: a visibly heavy circular artillery fortress occupying four cells, wider and more massive than a normal tower. Copper radial plated roof, central large green iron gear housing, one thick heavy cannon barrel with a wide dark muzzle opening. Three substantial copper / green coil pods clustered at the rear of the rotating assembly, thick brass fasteners. Clearly separate fixed copper roof and rotating gun housing.\nPreserve the recognizable silhouette of image 1 while reconstructing unseen sides. Early mechanical technology: copper, brass, painted deep green iron, exposed coil windings, riveted plates and a few small energy lenses. The overall look should match image 2's sharp, detailed, semi-matte metallic game render quality. Do not use the sci-fi cyan-magenta palette for this early stage; reserve that for evolution.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/apps/web/public/images/towers/tower-warrior-6-levels-1-4.webp",
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  },
+  {
+    "key": "warrior-6-tier-3",
+    "id": 6,
+    "tier": 3,
+    "name": "Ucube",
+    "prompt": "Use case: precise-object-edit.\nInput image 1 is the user's exact approved maximum-level design and palette reference.\nCreate a HEAVY SIEGE TURRET belonging exactly to the same family as all three reference towers, a boss-scale weapon occupying a 2x2 footprint. Broad massive segmented circular foundation, huge central armored gun housing, ONE thick heavy barrel with a wide dark muzzle, three large charged coil / capacitor pods at its rear. Black and gunmetal beveled armor, cyan energy channels and magenta angular accents, small triangular symbols. Its silhouette must be clearly heavier than the upper-left twin cannon. One barrel, not twin barrels.\nKeep the reference's dark gunmetal/black metal, saturated luminous cyan and magenta palette exactly. Preserve angular layered armor, precise machined construction and contrasting luminous cores. Show ONE complete tower only, at a slightly lower 35-degree elevated three-quarter view for 3D reconstruction. No extra towers.\nStyle: premium stylized-realistic hard-surface 3D game asset. Semi-matte metal with controlled edge reflections, crisp bevels and machined panel gaps, rich midtones, strong contact shadows and clear material separation. Detailed functional construction, vent grilles, screws and seams. Clean manufacturing with restrained edge wear, no blanket grime or pitting, no chalky pastel white, no plastic toy / clay / low-poly look. Controlled bright energy surfaces as small accents; no bloom haze obscuring geometry. One entire isolated object on a plain neutral light-grey background, centered at 85% of a square image, nothing cropped. Elevated 35-degree three-quarter view showing front and side. All cannon tips and all hardware stay inside the circular base footprint. No text, captions, grid, floor props or watermark. This is an image-to-3D input: clearly separated solid parts and unambiguous geometry, no floating external effects.",
+    "refs": [
+      "C:/Users/aliat/Desktop/3D-fabrika/karayel_online/tools/3d-preview/art-direction/evolution-final-reference.png"
+    ]
+  }
+]

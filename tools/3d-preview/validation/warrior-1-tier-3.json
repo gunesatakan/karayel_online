@@ -1,0 +1,17 @@
+{
+  "key": "warrior-1-tier-3",
+  "sourceId": "e8ae20bd-612f-4f4d-891e-6f1606a5725a",
+  "modelSha256": "43178d5bdaefd7ca900f7b5f93674d035b8c05b11ce61d417f16a4d9c6f30693",
+  "modelBytes": 4644232,
+  "triangleCount": 40000,
+  "footprintSpan": 1,
+  "radiusCells": 0.418,
+  "muzzle": {
+    "length": 1.6264292001724243,
+    "height": 1.1549076437950134,
+    "offset": 0.44746805210961915,
+    "centerOffset": -0.0017830431461334229
+  },
+  "front": 90.0,
+  "split": 0.17
+}

@@ -1,0 +1,19 @@
+{
+  "key": "warrior-5-tier-2",
+  "sources": [
+    "warrior-5-tier-1",
+    "warrior-5-tier-3"
+  ],
+  "modelSha256": "cc7cc81a2ade7053c1f3934637351ccbe56c88815716cdb4b166e8aed3690250",
+  "modelBytes": 9714188,
+  "triangleCount": 50472,
+  "footprintSpan": 1,
+  "radiusCells": 0.418,
+  "muzzle": {
+    "length": 1.8896305561065674,
+    "height": 3.2606632968019134,
+    "offset": 0.0,
+    "centerOffset": -0.0004232674837112427
+  },
+  "jointHeight": 1.042460423731222
+}
