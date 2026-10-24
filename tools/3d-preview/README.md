@@ -1,16 +1,27 @@
 # Karayel — bağımsız 3D varlık atölyesi
 
-Canlı oyuna bağlanmayan yerel 3D önizleme. İlk varlık geçişi AttackLord'un altı ana kulesinin **seviye 1–4** görünümlerini ve oyunun beş zemin dokusunu kapsar. İlk taslaklar Three.js geometrileriyle üretildi. **Takipçi için ayrıca dokulu bir Tripo kalite örneği eklendi**; tarayıcı bu GLB dosyalarını yükler.
+Canlı oyuna bağlanmayan yerel 3D önizleme. İlk varlık geçişi AttackLord'un altı ana kulesinin **seviye 1–4** görünümlerini ve oyunun beş zemin dokusunu kapsar. İlk taslaklar Three.js geometrileriyle üretildi. **Takipçi için gerçekçi ve stilize Tripo modelleri eklendi**; tarayıcı bu GLB dosyalarını yükler. Varsayılan görünüm stilizedir.
 
 Tepeden bir görsel yükseklik ve yan yüz bilgisi içermez. Bu modellerde yan yüzler tasarım yorumudur; otomatik ve birebir 2D→3D rekonstrüksiyon iddiası yoktur.
 
 ## Takipçi kalite örneği
 
+Görsel yön tercihi: **güçlü siluet, zengin detay ve canlı renklerle stilize oyun sanatı**. Ana parçalar ve renk grupları küçük ölçekte okunmalı; bakır-turuncu platform, turkuaz mekanizma ve altın bağlantılar birbirinden ayrılmalı. İnce kir/gürültü yerine belirgin bevel'lar, büyük plaka ayrımları ve seçici aşınma kullanılmalı. Hücre ve harita ölçüsü bu sanat tercihinden bağımsızdır.
+
+### Stilize örnek (varsayılan)
+
+- Yerleşik **image_gen** referansı: `art-direction/takipci-stylized-v3.png`; tam prompt: `art-direction/takipci-stylized-v3-prompt.txt`. Daha kalın namlular, iri bakır plakalar, turkuaz gövde ve altın bağlantılar içerir.
+- Tripo H3.1 tarayıcı üretiminde **55 mevcut kredi** kullanıldı. Kaynak 1.913.178 üçgen / 67,5 MB; önizleme çıktısı **50.000 üçgen / 5,3 MB**. Üç PBR haritası 2K'ya indirildi; renk ve metallic/roughness JPEG, normal haritası PNG olarak gömülüdür. Çok sayıda kule için LOD ve ek sıkıştırma sonraki kapsamdır.
+- Kaynak `asset-work/takipci-v3/source.glb`, ara Blender dosyaları aynı kardeş klasördedir. Yeniden işlemek için `inspect-quality-model.py` ve `build-quality-model.py` Blender'a `-- --variant stylized` ile verilir. Varsayılan argümansız çalışma gerçekçi örneği işler.
+- Kaynak bağlantısı, hash'ler, parça sayıları ve namlu çıkışı `validation/takipci-stylized.json` içindedir. Tarayıcı kontrolleri: `validation/takipci-stylized-detail.png` ve `validation/takipci-stylized-map.png`.
+
+### Gerçekçi örnek (karşılaştırma)
+
 - Yerleşik **image_gen** ile orijinal sprite'a bağlı açılı referans üretildi: `art-direction/takipci-quality-v2.png`. Tam prompt: `art-direction/takipci-quality-v2-prompt.txt`.
 - Referans, oturumu açık Tripo tarayıcısında **H3.1** ile mesh'e dönüştürüldü; **55 mevcut kredi** kullanıldı. Kaynak model bağlantısı ve SHA-256 kayıtları `validation/takipci-quality.json` içindedir.
 - Kaynak 1.922.775 üçgen ve yaklaşık 73 MB idi. Blender'da 80.000 üçgene indirildi; 4K renk, metallic/roughness ve normal haritaları korundu. Önizleme GLB'si yaklaşık 20,4 MB. Bu dosya yakın kalite incelemesi içindir; canlı oyunda çok sayıda kule için LOD ve doku sıkıştırması hâlâ gerekir.
 - Sabit bakır platform, dönen merkez ve namlular ayrı parçalara ayrıldı. Namlu çıkış bilgisi GLB içinde saklanır. Model, geri tepme ve efektlerle birlikte tek hücre sınırını korur.
-- Takipçi seçiliyken **Yeni detaylı model** anahtarı ilk taslakla karşılaştırma sağlar. Diğer beş kule önceki taslaklardır; Ucube 2 × 2 ölçüsünü korur.
+- Takipçi seçiliyken **Model görünümü** menüsü stilize, gerçekçi ve ilk taslak arasında karşılaştırma sağlar. Diğer beş kule önceki taslaklardır; Ucube 2 × 2 ölçüsünü korur.
 - İşleme için ham kaynak, deponun kardeşindeki `asset-work/takipci-v2/source.glb` dosyasında saklanır. `inspect-quality-model.py` sadeleştirme ve kontrol görüntülerini, `build-quality-model.py` parça ayrımı ve GLB çıktısını üretir. Bunlar ayrı Blender arka plan sürecinde çalışır; açık kullanıcının belgesini değiştirmez.
 
 ## Çalıştırma
@@ -25,7 +36,7 @@ npm run dev
 Adres: http://127.0.0.1:5184
 
 - Üstteki altı karttan kule seçilir; sağda orijinal oyun görseli bulunur.
-- Takipçi'nin yeni modeli varsayılan olarak açıktır; anahtar kapatıldığında ilk taslak gösterilir.
+- Takipçi'nin stilize modeli varsayılan olarak açıktır; **Model görünümü** menüsünden gerçekçi model veya ilk taslak seçilebilir.
 - **Harita / Yüksek** tüm alanı gösterir. **Kule detayı / Tepeden** yalnızca kamerayı yaklaştırır.
 - Harita menüsü Taş Kuşatma, Çelik Hat, Sürü, Düşüş ve Katlanma dokularını değiştirir.
 - Altın çerçeve yerleşim sınırıdır: **Ucube 2 × 2 (4 kare)**, diğer beş kule **1 × 1** hücre kaplar. Izgara açılıp kapatılabilir.
@@ -70,7 +81,7 @@ npm run build
 
 ## Doğrulama
 
-- 15 Node testi: oyun koordinat dönüşümü, Ucube'nin gerçek 2 × 2 yerleşim kuralı, modellerin hareket ve yerleşim sınırı, namlu/efekt hizası, kalite modelinin PBR haritaları ve hash'i, farklı kare hızlarında temas zamanlaması ve destek kulelerinin hasarsızlığı.
+- 17 Node testi: oyun koordinat dönüşümü, Ucube'nin gerçek 2 × 2 yerleşim kuralı, modellerin hareket ve yerleşim sınırı, namlu/efekt hizası, gerçekçi ve stilize modellerin PBR haritaları ve hash'leri, farklı kare hızlarında temas zamanlaması ve destek kulelerinin hasarsızlığı.
 - `npm run build`: yalnızca bu klasördeki `dist/` dizinine çıktı verir.
 - Tarayıcıda altı kule, beş zemin, detay kamerası, ızgara ve duraklatma kontrol edilir.
 - Blender 5.2.3 LTS arka plan içe aktarma kontrolü: `tests/blender_import.py`. Sonuç: `validation/blender-import.json`. Kullanıcının açık Blender belgesine dokunmaz; ayrı arka plan süreci kullanır.

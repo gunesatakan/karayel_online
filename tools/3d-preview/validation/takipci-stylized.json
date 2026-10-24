@@ -1,0 +1,25 @@
+{
+  "source": "https://studio.tripo3d.ai/tr/workspace/generate/0caa9bd5-9882-487c-90dc-392a54843a78",
+  "credits": 55,
+  "sourceSha256": "7c6e01f482b254a6a23bdc495b3cf74fe54499f04d13a27b169a62b2adab77bd",
+  "modelSha256": "3741748aad0ddd01862159dcdd01a4802713f4a7d3502e599a51dc7e2de572d7",
+  "modelBytes": 5287176,
+  "triangleCount": 50000,
+  "parts": {
+    "fixed-copper-platform": 35341,
+    "rotating-bearing": 5865,
+    "twin-cannons": 8794
+  },
+  "muzzle": {
+    "length": 1.778131490557739,
+    "height": 1.4946632981300354,
+    "offset": 0.2404370310646209,
+    "centerOffset": -0.1742279827594757
+  },
+  "groundRadiusCells": 0.4268,
+  "maps": [
+    "base color 2048x2048",
+    "metallic/roughness 2048x2048",
+    "normal 2048x2048"
+  ]
+}

@@ -6,7 +6,8 @@ export async function loadTowerAssets() {
   const loader = new GLTFLoader();
   const variants = TOWER_ASSETS.flatMap((asset) => [
     { ...asset, key: asset.id },
-    ...(asset.qualityModel ? [{ ...asset, key: `${asset.id}:quality`, model: asset.qualityModel, quality: true, detail: "Kabartılı bakır kaplama, aşınmış yeşil metal ve 4K yüzey dokuları. İlk taslakla karşılaştırabilirsin." }] : []),
+    ...(asset.qualityModel ? [{ ...asset, key: `${asset.id}:quality`, variant: "quality", model: asset.qualityModel, quality: true, detail: "Kabartılı bakır kaplama, aşınmış yeşil metal ve 4K yüzey dokuları. Gerçekçi yorum." }] : []),
+    ...(asset.stylizedModel ? [{ ...asset, key: `${asset.id}:stylized`, variant: "stylized", model: asset.stylizedModel, quality: true, detail: "Kalın çift namlu, belirgin bakır plakalar, canlı turkuaz metal ve altın bağlantılar. Küçük ölçekte güçlü siluet." }] : []),
   ]);
   const entries = await Promise.all(variants.map(async (asset) => {
     const gltf = await loader.loadAsync(asset.model);

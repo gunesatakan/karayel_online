@@ -114,7 +114,7 @@ async function start() {
     model.root.position.set(position.x, TOWER_BASE_Y, position.z);
     scene.add(model.root);
   }
-  let tower = towers.get(`${TOWER_ASSETS[0].id}:quality`) ?? towers.get(TOWER_ASSETS[0].id);
+  let tower = towers.get(`${TOWER_ASSETS[0].id}:stylized`) ?? towers.get(`${TOWER_ASSETS[0].id}:quality`) ?? towers.get(TOWER_ASSETS[0].id);
   let placement = towerPlacement(tower.asset.footprintSpan);
   tower.root.visible = true;
   const enemy = buildEnemy();
@@ -357,11 +357,11 @@ async function start() {
   }
   function selectTower(id) {
     tower.root.visible = false;
-    tower = ($("high-detail").checked && towers.get(`${id}:quality`)) || towers.get(id);
+    tower = towers.get(`${id}:${$("model-style").value}`) ?? towers.get(id);
     tower.root.visible = true;
     const asset = tower.asset;
     $("quality-controls").hidden = !asset.qualityModel;
-    $("asset-version").textContent = asset.quality ? "YENİ MODEL" : "İLK TASLAK";
+    $("asset-version").textContent = asset.variant === "stylized" ? "STİLİZE" : asset.quality ? "GERÇEKÇİ" : "İLK TASLAK";
     placement = towerPlacement(asset.footprintSpan);
     arena.setFootprint(placement);
     range.position.set(placement.position.x, 0.07, placement.position.z);
@@ -376,7 +376,7 @@ async function start() {
     $("tower-art").alt = `${asset.name} — oyundaki tepeden görünüm`;
     $("tower-detail").textContent = asset.detail;
     $("download-model").href = asset.model;
-    $("download-model").download = `${asset.id}${asset.quality ? "-quality" : ""}.glb`;
+    $("download-model").download = `${asset.id}${asset.variant ? `-${asset.variant}` : ""}.glb`;
     range.scale.setScalar(asset.range / MAP.cellSize / 4.2);
     document.querySelectorAll("[data-tower]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.tower === id)));
     resetSimulation();
@@ -402,7 +402,7 @@ async function start() {
   }
   $("stage-select").addEventListener("change", (event) => arena.setStage(Number(event.target.value)));
   $("show-grid").addEventListener("change", (event) => { arena.grid.visible = event.target.checked; });
-  $("high-detail").addEventListener("change", () => selectTower(tower.asset.id));
+  $("model-style").addEventListener("change", () => selectTower(tower.asset.id));
   selectTower(TOWER_ASSETS[0].id);
   document.querySelectorAll("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => {

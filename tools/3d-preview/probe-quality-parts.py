@@ -1,7 +1,12 @@
 import bpy
 import numpy as np
+import argparse
+import sys
 from pathlib import Path
-work = Path(__file__).resolve().parents[3] / "asset-work" / "takipci-v2"
+parser = argparse.ArgumentParser()
+parser.add_argument("--variant", choices=["quality", "stylized"], default="quality")
+args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
+work = Path(__file__).resolve().parents[3] / "asset-work" / ("takipci-v3" if args.variant == "stylized" else "takipci-v2")
 bpy.ops.wm.open_mainfile(filepath=str(work / "simplified.blend"))
 obj = next(o for o in bpy.context.scene.objects if o.type == "MESH")
 mesh = obj.data

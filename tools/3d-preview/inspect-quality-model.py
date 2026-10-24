@@ -1,10 +1,17 @@
 """Inspect and simplify the downloaded Tripo source in a separate Blender process."""
 import bpy
 import json
+import argparse
+import sys
 from pathlib import Path
 from mathutils import Vector
 
-work = Path(__file__).resolve().parents[3] / "asset-work" / "takipci-v2"
+parser = argparse.ArgumentParser()
+parser.add_argument("--variant", choices=["quality", "stylized"], default="quality")
+args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
+stylized = args.variant == "stylized"
+budget = 50000 if stylized else 80000
+work = Path(__file__).resolve().parents[3] / "asset-work" / ("takipci-v3" if stylized else "takipci-v2")
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=str(work / "source.glb"))
 obj = next(o for o in bpy.context.scene.objects if o.type == "MESH")
@@ -13,10 +20,16 @@ obj.select_set(True)
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 original = len(obj.data.polygons)
 decimate = obj.modifiers.new("Web preview triangle budget", "DECIMATE")
-decimate.ratio = min(1, 80000 / original)
+decimate.ratio = min(1, budget / original)
 decimate.use_collapse_triangulate = True
 bpy.ops.object.modifier_apply(modifier=decimate.name)
 obj.name = "takipci-detail"
+if stylized:
+    # Smaller texture maps keep the stylized pilot practical in the web preview.
+    for image in bpy.data.images:
+        if image.size[0] > 2048:
+            image.scale(2048, 2048)
+            image.pack()
 points = [v.co for v in obj.data.vertices]
 report = {
     "original_triangles": original,

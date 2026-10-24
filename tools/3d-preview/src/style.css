@@ -11,7 +11,8 @@
   box-sizing: border-box;
 }
 .quality-controls[hidden] { display: none; }
-.quality-controls { border: 1px solid #8e7748; padding: 8px 10px; background: #baa06b0a; }
+.quality-controls { display: grid; gap: 8px; border: 1px solid #8e7748; padding: 10px; background: #baa06b0a; font-size: 11px; }
+.quality-controls select { width: 100%; min-width: 0; background: #101b1c; color: #e0d4bb; border: 1px solid #44534b; padding: 9px 6px; font: inherit; cursor: pointer; }
 body {
   margin: 0;
 }
