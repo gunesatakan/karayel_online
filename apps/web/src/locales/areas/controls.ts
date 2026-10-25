@@ -246,6 +246,8 @@ export const trControls = {
   "hud.view.option.2d": "2D",
   "hud.view.option.top": "3D kuleler, tepeden",
   "hud.view.option.angled": "3D kuleler, açılı",
+  "hud.view.cameraHelp": "Açılı görünümde iki parmakla: kıstırarak yaklaştır, çevirerek döndür, birlikte yukarı-aşağı kaydırarak eğ, birlikte sürükleyerek kaydır. Farede tekerlek yaklaştırır, orta tuş döndürür.",
+  "hud.view.cameraReset": "Kamerayı sıfırla",
   "hud.atlas.speaking": "ATLAS telsizde konuşuyor",
   // ATLAS-VESAYET konusmasi: dusman yapay zekanin satirinda ayni gostergenin adi.
   "hud.vesayet.speaking": "Düşman yapay zekâ VESAYET telsize sızdı",
@@ -495,6 +497,8 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "hud.view.option.2d": "2D",
   "hud.view.option.top": "3D towers, top-down",
   "hud.view.option.angled": "3D towers, angled",
+  "hud.view.cameraHelp": "In the angled view, with two fingers: pinch to zoom, twist to rotate, move both up or down to tilt, drag both to pan. With a mouse, the wheel zooms and the middle button rotates.",
+  "hud.view.cameraReset": "Reset camera",
   "hud.atlas.speaking": "ATLAS is speaking on the radio",
   "hud.vesayet.speaking": "Enemy AI VESAYET has breached the radio",
   "hud.quit.button": "Quit to menu",

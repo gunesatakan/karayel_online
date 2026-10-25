@@ -7,7 +7,7 @@ import { AMMO_TYPE_ORDER, ammoTypeLabels, cardRarityLabels, towerAxisLabels } fr
 import { describeTowerAmmo, makeAmmoMarker } from "./tower-ammo";
 import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper, type MessageKey } from "./i18n";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
-import { parseTowerView, readTowerViewPreference, setTowerViewPreference, supportsTowers3d } from "./render3d/renderer-mode";
+import { parseTowerView, readTowerViewPreference, requestTowerCameraReset, setTowerViewPreference, supportsTowers3d } from "./render3d/renderer-mode";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
 import { describeWorkerRow, formatTransportProduct, formatWorkerCargo, formatWorkerReserve, formatWorkerRole, getWorkerPickHint, getWorkerProductOptions, getWorkerRosterStructureKey, type WorkerRosterState } from "./worker-roster";
 import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey, isTowerSheetExpanded, patchTowerSheet, renderTowerSheet, type TowerSheetInput, type TowerSheetModel } from "./tower-sheet";
@@ -3274,6 +3274,9 @@ export function setupGameHudUi(game: Phaser.Game) {
           + (["2d", "top", "angled"] as const).map((view) => `<option value="${view}"${readTowerViewPreference() === view ? " selected" : ""}>${escapeHudText(t(`hud.view.option.${view}`))}</option>`).join("")
           + `</select></label>`
           + `<p id="game-hud-towers3d-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("hud.view.towers3dNote"))}</p>`
+          + `<p class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("hud.view.cameraHelp"))}</p>`
+          // Kabin dogrudan cocugu olan dugme kapatma dugmesinin kosesine oturuyor (`> button`): sarili.
+          + `<div><button type="button" class="game-hud__popup-button" data-tower-camera-reset>${escapeHudText(t("hud.view.cameraReset"))}</button></div>`
         : "")
       + `</section>`;
   };
@@ -3323,6 +3326,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       const view = parseTowerView(select.value);
       if (view) setTowerViewPreference(view);
     }));
+    popupsNode.querySelectorAll<HTMLButtonElement>("[data-tower-camera-reset]").forEach((button) => button.addEventListener("click", () => requestTowerCameraReset()));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"telemetry\"]").forEach((input) => input.addEventListener("change", () => {
       setTelemetryEnabled(input.checked);
     }));

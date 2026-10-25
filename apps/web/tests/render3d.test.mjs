@@ -6,14 +6,17 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import {
   ANGLED_ELEVATION_DEGREES,
+  ANGLED_ELEVATION_RANGE,
   angledFrustum,
+  classifyTwoFingerGesture,
+  clampOrbit,
+  twoFingerDelta,
   angledGroundToScreen,
   angledScreenToGround,
   EDGE_MODEL_IDS,
   MODEL_BODY_DIAMETER_CELLS,
   TOWER_MODEL_IDS,
   edgeModelTransform,
-  northShiftForRise,
   orthoFromWorldView,
   standeeCenterHeight,
   towerModelPath,
@@ -57,30 +60,57 @@ test("ortografik kesit Phaser'in dunya gorunumunu birebir kapsiyor", () => {
   assert.equal(ortho.top - ortho.bottom, 612);
 });
 
-test("egik gorunum: ekran -> zemin -> ekran ayni noktaya donuyor, tahtanin tamami kesitte", () => {
-  const view = { width: 408, height: 674 };
-  const center = { x: 204, z: 392 };
-  const frustum = angledFrustum(view, 766 / 1266, 52, 70);
-  for (const [x, z] of [[204, 392], [0, 55], [408, 729], [120, 600], [350, 100]]) {
-    const ndc = angledGroundToScreen(x, z, 0, center, frustum);
-    assert.ok(Math.abs(ndc.x) <= 1 + 1e-9 && Math.abs(ndc.y) <= 1 + 1e-9, `kesit disi ${x},${z}`);
-    const back = angledScreenToGround(ndc.x, ndc.y, center, frustum);
-    assert.ok(Math.abs(back.x - x) < 1e-9 && Math.abs(back.z - z) < 1e-9, `${x},${z}`);
+const orbitAt = (yaw, elevation, zoom = 1, target = { x: 204, z: 392 }) => {
+  const base = angledFrustum({ width: 408, height: 674 }, 766 / 1266, elevation, 70);
+  return { target, yaw, frustum: { ...base, halfWidth: base.halfWidth / zoom, halfHeight: base.halfHeight / zoom } };
+};
+
+test("egik kamera: ekran -> zemin -> ekran her donus, egim ve yakinlasmada ayni noktaya donuyor", () => {
+  for (const [yaw, elevation, zoom] of [[0, 45, 1], [0.44, 38, 1.7], [2.44, 35, 1.5], [-1.05, 15, 3], [Math.PI, 70, 0.5]]) {
+    const view = orbitAt(yaw, elevation, zoom, { x: 150, z: 300 });
+    for (const [x, z] of [[204, 392], [0, 55], [408, 729], [120, 600], [350, 100]]) {
+      const ndc = angledGroundToScreen(x, z, 0, view);
+      const back = angledScreenToGround(ndc.x, ndc.y, view);
+      assert.ok(Math.abs(back.x - x) < 1e-9 && Math.abs(back.z - z) < 1e-9, `${yaw},${elevation}: ${x},${z}`);
+    }
   }
-  // Kuzey (kucuk z) ekranda yukarida; yukselen nokta ekranda yukari kayiyor.
-  assert.ok(angledGroundToScreen(204, 100, 0, center, frustum).y > angledGroundToScreen(204, 600, 0, center, frustum).y);
-  assert.ok(angledGroundToScreen(204, 392, 30, center, frustum).y > 0);
 });
 
-test("ayakta duran panonun alt kenari ekranda ayagina degiyor; kuzey kaymasi ayni yukselisi veriyor", () => {
+test("egik kamera: donmeden tahtanin tamami kesitte, kuzey yukarida; yukselen nokta ekranda yukari", () => {
+  const view = orbitAt(0, 52);
+  for (const [x, z] of [[0, 55], [408, 729], [350, 100]]) {
+    const ndc = angledGroundToScreen(x, z, 0, view);
+    assert.ok(Math.abs(ndc.x) <= 1 + 1e-9 && Math.abs(ndc.y) <= 1 + 1e-9, `kesit disi ${x},${z}`);
+  }
+  assert.ok(angledGroundToScreen(204, 100, 0, view).y > angledGroundToScreen(204, 600, 0, view).y);
+  assert.ok(angledGroundToScreen(204, 392, 30, view).y > 0);
+  // 180 derece donunce kuzey asagida.
+  const turned = orbitAt(Math.PI, 52);
+  assert.ok(angledGroundToScreen(204, 100, 0, turned).y < angledGroundToScreen(204, 600, 0, turned).y);
+});
+
+test("egim sinirlari ve iki parmak jesti: kistirma, burma, birlikte dikey kaydirma egim", () => {
+  assert.equal(clampOrbit(5, ANGLED_ELEVATION_RANGE), ANGLED_ELEVATION_RANGE.min);
+  assert.equal(clampOrbit(89, ANGLED_ELEVATION_RANGE), ANGLED_ELEVATION_RANGE.max);
+  const pinch = twoFingerDelta([{ x: 100, y: 100 }, { x: 200, y: 100 }], [{ x: 50, y: 100 }, { x: 250, y: 100 }]);
+  assert.ok(Math.abs(pinch.scale - 2) < 1e-9 && Math.abs(pinch.rotation) < 1e-9);
+  const twist = twoFingerDelta([{ x: 100, y: 100 }, { x: 200, y: 100 }], [{ x: 150, y: 50 }, { x: 150, y: 150 }]);
+  assert.ok(Math.abs(twist.rotation - Math.PI / 2) < 1e-9);
+  const up = twoFingerDelta([{ x: 100, y: 300 }, { x: 200, y: 300 }], [{ x: 100, y: 260 }, { x: 200, y: 260 }]);
+  assert.equal(classifyTwoFingerGesture(up.moveX, up.moveY, up.scale, up.rotation, up.parallelVertical), "tilt");
+  const drag = twoFingerDelta([{ x: 100, y: 300 }, { x: 200, y: 300 }], [{ x: 150, y: 290 }, { x: 250, y: 290 }]);
+  assert.equal(classifyTwoFingerGesture(drag.moveX, drag.moveY, drag.scale, drag.rotation, drag.parallelVertical), "transform");
+  assert.equal(classifyTwoFingerGesture(pinch.moveX, pinch.moveY, pinch.scale, pinch.rotation, pinch.parallelVertical), "transform");
+});
+
+test("ayakta duran panonun alt kenari ekranda ayagina degiyor", () => {
   const center = { x: 204, z: 392 };
   const frustum = angledFrustum({ width: 408, height: 674 }, 766 / 1266, ANGLED_ELEVATION_DEGREES, 70);
-  const toScreen = (z, height) => angledGroundToScreen(204, z, height, center, frustum).y * frustum.halfHeight;
+  const view = { target: center, yaw: 0, frustum };
+  const toScreen = (z, height) => angledGroundToScreen(204, z, height, view).y * frustum.halfHeight;
   for (const size of [12, 23, 40]) {
     // Kameraya donuk pano ekranda tam boyunda: merkez yarim boy yukarida.
     assert.ok(Math.abs(toScreen(300, standeeCenterHeight(size)) - toScreen(300, 0) - size / 2) < 1e-9, `${size}`);
-    // Zeminde kuzeye kayan nokta ayni yukseklige cikiyor.
-    assert.ok(Math.abs(toScreen(300 - northShiftForRise(size), 0) - toScreen(300, 0) - size) < 1e-9, `${size}`);
   }
 });
 

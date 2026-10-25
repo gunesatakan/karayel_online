@@ -54,8 +54,29 @@ export function edgeModelTransform(cellSize: number, visualScale: number, orient
   return { scale: cellSize * visualScale, yaw: orientation === "vertical" ? Math.PI / 2 : 0 };
 }
 
-/** Egik gorunumun kamera yuksekligi (derece): on izlemedeki "Harita 45°" acisi. */
+/** Egik gorunumun acilistaki kamera yuksekligi (derece): on izlemedeki "Taktik" kamera. */
 export const ANGLED_ELEVATION_DEGREES = 45;
+
+/**
+ * Serbest egik kameranin sinirlari (on izlemedeki yorunge kamerasi gibi): iki
+ * parmakla egim 15-70 derece, yakinlasma haritanin sigdigi olcunun 0,5-5 kati.
+ * 70 dereceden diki tepeden gorunum (ayri secenek); 15'in alti zemin cizgisi.
+ */
+export const ANGLED_ELEVATION_RANGE = { min: 15, max: 70 } as const;
+export const ANGLED_ZOOM_RANGE = { min: 0.5, max: 5 } as const;
+
+export type OrbitView = {
+  /** Kameranin baktigi zemin noktasi. */
+  target: { x: number; z: number };
+  /** Kameranin hedef cevresindeki donusu (radyan); 0'da kamera guneyde, kuzeye bakiyor. */
+  yaw: number;
+  /** Yakinlasma uygulanmis ortografik yari kesit ve yukseklik acisinin sin/cos'u. */
+  frustum: { halfWidth: number; halfHeight: number; sin: number; cos: number };
+};
+
+export function clampOrbit(value: number, range: { min: number; max: number }) {
+  return Math.min(range.max, Math.max(range.min, value));
+}
 
 /**
  * Egik ortografik kameranin kesiti: tahtanin tamami genislige otursun; egik
@@ -75,28 +96,79 @@ export function angledFrustum(view: { width: number; height: number }, aspect: n
 }
 
 /**
- * Egik tahtada ekran noktasi -> zemin noktasi (y = 0). Ortografik kamera, hedef
- * (cx, 0, cz) ve kameradan hedefe bakis (0, -sin, -cos): ekrandaki (u, v) kaydi
- * (u * yariGenislik, v * yariYukseklik) kamera duzleminde; o duzlemden bakis
- * yonunde zemine inis.
+ * Kameranin ekseni. Kameradan hedefe bakis `forward` = -(sin a cos e, sin e,
+ * cos a cos e); ekranin sagi `right` = (cos a, 0, -sin a); ekranin yukarisi
+ * `up` = right x forward. three.js'in `lookAt`i (yukari +Y) ayni ekseni kuruyor.
  */
-export function angledScreenToGround(ndcX: number, ndcY: number, center: { x: number; z: number }, frustum: { halfWidth: number; halfHeight: number; sin: number; cos: number }) {
-  const right = ndcX * frustum.halfWidth;
-  const up = ndcY * frustum.halfHeight;
-  // Kameranin "yukari" vektoru (0, cos, -sin); duzlemdeki nokta hedef + up * o vektor.
-  const pointY = up * frustum.cos;
-  const pointZ = center.z - up * frustum.sin;
-  // Bakis yonunde y = 0'a kadar ilerle: t = pointY / sin.
-  const t = pointY / frustum.sin;
-  return { x: center.x + right, z: pointZ - t * frustum.cos };
+export function orbitBasis(yaw: number, sin: number, cos: number) {
+  const sy = Math.sin(yaw);
+  const cy = Math.cos(yaw);
+  const forward = { x: -sy * cos, y: -sin, z: -cy * cos };
+  const right = { x: cy, y: 0, z: -sy };
+  const up = { x: -sy * sin, y: cos, z: -cy * sin };
+  return { forward, right, up };
 }
 
-/** Zemin noktasi -> egik tahtada ekran (NDC); `angledScreenToGround`un tersi. */
-export function angledGroundToScreen(x: number, z: number, height: number, center: { x: number; z: number }, frustum: { halfWidth: number; halfHeight: number; sin: number; cos: number }) {
-  const dz = z - center.z;
-  // Kamera "yukari" vektoru (0, cos, -sin) uzerine izdusum.
-  const up = height * frustum.cos - dz * frustum.sin;
-  return { x: (x - center.x) / frustum.halfWidth, y: up / frustum.halfHeight };
+/**
+ * Egik kamerada ekran noktasi (NDC) -> zemin noktasi (y = 0): ekrandaki kayit
+ * kamera duzleminde (hedef + sag * u + yukari * v), oradan bakis yonunde zemine.
+ */
+export function angledScreenToGround(ndcX: number, ndcY: number, view: OrbitView) {
+  const { forward, right, up } = orbitBasis(view.yaw, view.frustum.sin, view.frustum.cos);
+  const u = ndcX * view.frustum.halfWidth;
+  const v = ndcY * view.frustum.halfHeight;
+  const px = view.target.x + right.x * u + up.x * v;
+  const py = up.y * v;
+  const pz = view.target.z + right.z * u + up.z * v;
+  const t = -py / forward.y;
+  return { x: px + forward.x * t, z: pz + forward.z * t };
+}
+
+/** Zemin ustundeki nokta -> egik kamerada ekran (NDC); `angledScreenToGround`un tersi. */
+export function angledGroundToScreen(x: number, z: number, height: number, view: OrbitView) {
+  const { right, up } = orbitBasis(view.yaw, view.frustum.sin, view.frustum.cos);
+  const dx = x - view.target.x;
+  const dz = z - view.target.z;
+  return {
+    x: (dx * right.x + dz * right.z) / view.frustum.halfWidth,
+    y: (dx * up.x + height * up.y + dz * up.z) / view.frustum.halfHeight
+  };
+}
+
+/**
+ * Iki parmagin jesti: bir onceki ve simdiki iki nokta -> yakinlasma carpani,
+ * donus (radyan, ekranda saat yonu arti) ve orta noktanin kaymasi. Egim kipi
+ * parmaklar ayni yone, cogunlukla dikey ve araliklari degismeden kayinca.
+ */
+export function twoFingerDelta(previous: readonly [{ x: number; y: number }, { x: number; y: number }], current: readonly [{ x: number; y: number }, { x: number; y: number }]) {
+  const span = (points: readonly [{ x: number; y: number }, { x: number; y: number }]) => Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+  const angle = (points: readonly [{ x: number; y: number }, { x: number; y: number }]) => Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x);
+  let rotation = angle(current) - angle(previous);
+  if (rotation > Math.PI) rotation -= 2 * Math.PI;
+  if (rotation < -Math.PI) rotation += 2 * Math.PI;
+  const previousMid = { x: (previous[0].x + previous[1].x) / 2, y: (previous[0].y + previous[1].y) / 2 };
+  const currentMid = { x: (current[0].x + current[1].x) / 2, y: (current[0].y + current[1].y) / 2 };
+  return {
+    scale: span(current) / Math.max(1, span(previous)),
+    rotation,
+    mid: currentMid,
+    previousMid,
+    moveX: currentMid.x - previousMid.x,
+    moveY: currentMid.y - previousMid.y,
+    // Iki parmagin dikey kaymalari ayni yonde mi (egim icin).
+    parallelVertical: (current[0].y - previous[0].y) * (current[1].y - previous[1].y) > 0
+  };
+}
+
+/**
+ * Jestin kipi, parmaklar yeterince kaydiginda bir kez seciliyor: ikisi ayni
+ * yone cogunlukla dikey kaydiysa ve aralik ile aci az degistiyse egim; yoksa
+ * yakinlasma + donus + kaydirma.
+ */
+export function classifyTwoFingerGesture(totalMoveX: number, totalMoveY: number, totalScale: number, totalRotation: number, parallelVertical: boolean) {
+  const vertical = Math.abs(totalMoveY) > Math.abs(totalMoveX) * 1.6;
+  const steady = Math.abs(Math.log(totalScale)) < 0.08 && Math.abs(totalRotation) < 0.12;
+  return parallelVertical && vertical && steady ? "tilt" : "transform";
 }
 
 /**
@@ -106,14 +178,6 @@ export function angledGroundToScreen(x: number, z: number, height: number, cente
  */
 export function standeeCenterHeight(size: number, elevationDegrees = ANGLED_ELEVATION_DEGREES) {
   return size / 2 / Math.cos((elevationDegrees * Math.PI) / 180);
-}
-
-/**
- * Egik tahtada zemindeki bir noktayi ekranda `rise` kadar yukari gosteren
- * kuzey kaymasi (dunya birimi): kuzeye `d` kayan nokta ekranda `d * sin` yukarida.
- */
-export function northShiftForRise(rise: number, elevationDegrees = ANGLED_ELEVATION_DEGREES) {
-  return rise / Math.sin((elevationDegrees * Math.PI) / 180);
 }
 
 /** Phaser kamerasinin dunya gorunumu -> ortografik kamera merkezi ve kesiti. */

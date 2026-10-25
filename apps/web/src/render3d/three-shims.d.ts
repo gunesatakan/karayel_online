@@ -20,6 +20,8 @@ declare module "three" {
   export const MeshBasicMaterial: any;
   export const ShaderMaterial: any; export type ShaderMaterial = any;
   export const CircleGeometry: any;
+  export const ShadowMaterial: any;
+  export const PCFShadowMap: number;
   export const Color: any;
   export const Vector2: any;
   export const Vector4: any;

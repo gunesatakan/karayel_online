@@ -11,6 +11,12 @@ export type TowerView = "2d" | "top" | "angled";
 
 const STORAGE_KEY = "karayel_towers_3d";
 export const TOWERS_3D_CHANGED_EVENT = "karayel:towers-3d";
+/** Oyun ici menu: egik kamerayi acilis haline (45 derece, kuzey yukarida, harita sigiyor) dondur. */
+export const TOWERS_3D_CAMERA_RESET_EVENT = "karayel:towers-3d-camera-reset";
+
+export function requestTowerCameraReset() {
+  window.dispatchEvent(new CustomEvent(TOWERS_3D_CAMERA_RESET_EVENT));
+}
 
 export function isTowers3dBuildEnabled() {
   return String(import.meta.env.VITE_TOWERS_3D ?? "on").toLowerCase() !== "off";
