@@ -36,6 +36,7 @@ import {
   clampOrbit,
   orbitBasis,
   orthoFromWorldView,
+  rotateTargetAround,
   standeeCenterHeight,
   MINE_CELL_SCALE,
   WORKER_MODEL_PATH,
@@ -770,8 +771,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       }
       const ground = zoneHeight(input.x, input.y);
       // Suzuluyor: hucrenin yarisi kadar yukarida, hafifce inip kalkiyor.
-      const hover = input.size * 1.1 + Math.sin(now * 3 + worker.phase) * input.size * 0.08;
-      worker.root.position.set(input.x, ground + hover, input.y);
+      // Yerde yuruyor: modelin alti (kiskac) zemine degiyor, sallanma yok.
+      worker.root.position.set(input.x, ground, input.y);
       worker.root.scale.setScalar(input.size);
       if (input.role !== "repairer") worker.root.rotation.y = Math.PI / 2 - input.rotation + WORKER_MODEL_YAW_OFFSET;
       worker.cargo.visible = input.carrying && (input.role === "gatherer" || input.role === "carrier");
@@ -1100,8 +1101,13 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     if (anchor && moved && after) setTarget({ x: after.target.x + anchor.x - moved.x, z: after.target.z + anchor.z - moved.z });
   }
 
-  function rotateCamera(radians: number, clientX: number, clientY: number) {
-    keepAnchored(clientX, clientY, () => { orbit.yaw += radians; });
+  function rotateCamera(radians: number, _clientX: number, _clientY: number) {
+    // Donus her zaman haritanin merkezi cevresinde (parmaklarin altinda degil):
+    // birkac hareketten sonra da harita ortada toplanabiliyor.
+    const current = orbitView();
+    orbit.yaw += radians;
+    // Siniri yok: kirpilsa merkez kayardi (kaydirma ve yakinlasma hedefi yine haritada tutuyor).
+    if (current && lastWorld) orbit.target = rotateTargetAround(current.target, mapCenter(lastWorld), radians);
   }
 
   function tiltCamera(degrees: number) {

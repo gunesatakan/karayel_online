@@ -473,7 +473,7 @@ import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../teleme
 import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
-import { EDGE_MODEL_IDS, MINE_KINDS, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
+import { EDGE_MODEL_IDS, MINE_KINDS, STANDEE_SIZE_SCALE, WORKER_SIZE_SCALE, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
 import type { Enemy3dInput, EnemyBar, Mine3dInput, Tower3dInput, TowerLayer, Worker3dInput } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
@@ -10926,7 +10926,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (!sprite.active || !sprite.visible || sprite.alpha <= 0) continue;
       const frame = sprite.frame;
       // Ezilme alani koruyor: ayak yuksekligi ezilmeyle sallanmasin.
-      const size = Math.sqrt(Math.abs(sprite.displayWidth * sprite.displayHeight));
+      const size = Math.sqrt(Math.abs(sprite.displayWidth * sprite.displayHeight)) * STANDEE_SIZE_SCALE;
       enemies.push({
         id,
         textureKey: sprite.texture.key,
@@ -10934,8 +10934,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         frame: { x: frame.cutX, y: frame.cutY, width: frame.cutWidth, height: frame.cutHeight, sourceWidth: frame.source.width, sourceHeight: frame.source.height },
         x: sprite.x,
         y: sprite.y,
-        width: Math.abs(sprite.displayWidth),
-        height: Math.abs(sprite.displayHeight),
+        width: Math.abs(sprite.displayWidth) * STANDEE_SIZE_SCALE,
+        height: Math.abs(sprite.displayHeight) * STANDEE_SIZE_SCALE,
         rotation: sprite.rotation,
         alpha: sprite.alpha,
         tint: sprite.tintTopLeft,
@@ -10974,7 +10974,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         x: sprite.x,
         y: sprite.y,
         rotation: sprite.rotation,
-        size: Math.max(cellSize * 0.34, Math.abs(sprite.displayWidth) * 1.15) * (drone.advanced ? 1.15 : 1),
+        size: Math.max(cellSize * 0.34, Math.abs(sprite.displayWidth) * 1.15) * (drone.advanced ? 1.15 : 1) * WORKER_SIZE_SCALE,
         color: look?.color ?? (drone.mode === "attack" ? 0xef4444 : 0x22d3ee),
         role: lookRole ?? "drone",
         carrying: (drone.cargo ?? 0) > 0

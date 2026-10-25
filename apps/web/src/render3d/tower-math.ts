@@ -116,6 +116,26 @@ export type OrbitView = {
   frustum: { halfWidth: number; halfHeight: number; sin: number; cos: number };
 };
 
+/**
+ * Egik 3D gorunumde dusman panolari ve isci dronlari 2D sprite'larinin bu
+ * kadari (yalnizca gorunus; isabet govdeleri sunucuda, degismiyor).
+ */
+export const STANDEE_SIZE_SCALE = 0.5;
+export const WORKER_SIZE_SCALE = 0.5;
+
+/**
+ * Donus haritanin merkezi cevresinde: kamera `yaw`u `radians` kadar donerken
+ * hedef de merkezin cevresinde ayni kadar donuyor; merkez ekranda yerinde
+ * kaliyor (sag/yukari eksenleri ayni donusle donuyor, merkezin onlara gore yeri ayni).
+ */
+export function rotateTargetAround(target: { x: number; z: number }, center: { x: number; z: number }, radians: number) {
+  const dx = target.x - center.x;
+  const dz = target.z - center.z;
+  const c = Math.cos(radians);
+  const s = Math.sin(radians);
+  return { x: center.x + dx * c + dz * s, z: center.z - dx * s + dz * c };
+}
+
 export function clampOrbit(value: number, range: { min: number; max: number }) {
   return Math.min(range.max, Math.max(range.min, value));
 }

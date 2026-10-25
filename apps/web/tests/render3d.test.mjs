@@ -10,6 +10,7 @@ import {
   angledFrustum,
   classifyTwoFingerGesture,
   clampOrbit,
+  rotateTargetAround,
   twoFingerDelta,
   angledGroundToScreen,
   angledScreenToGround,
@@ -94,6 +95,17 @@ test("egik kamera: donmeden tahtanin tamami kesitte, kuzey yukarida; yukselen no
   // 180 derece donunce kuzey asagida.
   const turned = orbitAt(Math.PI, 52);
   assert.ok(angledGroundToScreen(204, 100, 0, turned).y < angledGroundToScreen(204, 600, 0, turned).y);
+});
+
+test("donus haritanin merkezi cevresinde: merkez ekranda yerinde kaliyor", () => {
+  const center = { x: 204, z: 392 };
+  let view = orbitAt(0.3, 40, 2, { x: 120, z: 300 });
+  const before = angledGroundToScreen(center.x, center.z, 0, view);
+  for (const step of [0.4, 1.1, -2.5, 0.05]) {
+    view = { ...view, yaw: view.yaw + step, target: rotateTargetAround(view.target, center, step) };
+    const after = angledGroundToScreen(center.x, center.z, 0, view);
+    assert.ok(Math.abs(after.x - before.x) < 1e-9 && Math.abs(after.y - before.y) < 1e-9, `${step}`);
+  }
 });
 
 test("egim sinirlari ve iki parmak jesti: kistirma, burma, birlikte dikey kaydirma egim", () => {
