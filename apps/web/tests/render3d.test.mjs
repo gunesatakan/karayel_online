@@ -5,6 +5,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import {
+  angledFrustum,
+  angledGroundToScreen,
+  angledScreenToGround,
   EDGE_MODEL_IDS,
   MODEL_BODY_DIAMETER_CELLS,
   TOWER_MODEL_IDS,
@@ -49,6 +52,27 @@ test("ortografik kesit Phaser'in dunya gorunumunu birebir kapsiyor", () => {
   assert.equal(ortho.centerZ, 392);
   assert.equal(ortho.right - ortho.left, 390);
   assert.equal(ortho.top - ortho.bottom, 612);
+});
+
+test("egik gorunum: ekran -> zemin -> ekran ayni noktaya donuyor, tahtanin tamami kesitte", () => {
+  const view = { width: 408, height: 674 };
+  const center = { x: 204, z: 392 };
+  const frustum = angledFrustum(view, 766 / 1266, 52, 70);
+  for (const [x, z] of [[204, 392], [0, 55], [408, 729], [120, 600], [350, 100]]) {
+    const ndc = angledGroundToScreen(x, z, 0, center, frustum);
+    assert.ok(Math.abs(ndc.x) <= 1 + 1e-9 && Math.abs(ndc.y) <= 1 + 1e-9, `kesit disi ${x},${z}`);
+    const back = angledScreenToGround(ndc.x, ndc.y, center, frustum);
+    assert.ok(Math.abs(back.x - x) < 1e-9 && Math.abs(back.z - z) < 1e-9, `${x},${z}`);
+  }
+  // Kuzey (kucuk z) ekranda yukarida; yukselen nokta ekranda yukari kayiyor.
+  assert.ok(angledGroundToScreen(204, 100, 0, center, frustum).y > angledGroundToScreen(204, 600, 0, center, frustum).y);
+  assert.ok(angledGroundToScreen(204, 392, 30, center, frustum).y > 0);
+});
+
+test("dar ekranda kesit derinlige gore buyuyor", () => {
+  const frustum = angledFrustum({ width: 408, height: 674 }, 2, 52, 70);
+  assert.ok(frustum.halfHeight * 2 >= 674 * frustum.sin + 70 * frustum.cos - 1e-9);
+  assert.ok(Math.abs(frustum.halfWidth / frustum.halfHeight - 2) < 1e-9);
 });
 
 test("modeli olan her kulenin uc kademesi de var; rig dugumleri ve kademe bilgisi tasiniyor", () => {

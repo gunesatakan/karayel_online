@@ -472,7 +472,7 @@ import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } 
 import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../telemetry";
 import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
-import { isTowers3dActive, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
+import { getActiveTowerView, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
 import { EDGE_MODEL_IDS, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
 import type { Tower3dInput, TowerLayer } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
@@ -3626,7 +3626,9 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  private getTowerDragPreviewPointFromClient(clientX: number, clientY: number) {
+  private getTowerDragPreviewPointFromClient(rawClientX: number, rawClientY: number) {
+    // Egik 3D gorunumde ekran noktasi once egimden cozuluyor (render3d).
+    const { x: clientX, y: clientY } = this.untiltClient(rawClientX, rawClientY);
     const rect = this.game.canvas.getBoundingClientRect();
     const screenX = ((clientX - rect.left) / rect.width) * this.cameras.main.width;
     const screenY = ((clientY - rect.top) / rect.height) * this.cameras.main.height;
@@ -10675,19 +10677,27 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * authored pointing right (+X), matching atan2's zero.
    */
   /**
-   * 3D kule katmani (render3d/, asama 1). Varsayilan kapali; acikken modeli olan
-   * kuleleri three.js ciziyor ve onlarin 2D govdesi gizleniyor. Halka, menzil,
-   * can cubugu, efektler ve dokunma 2D'de kaliyor. three.js yalnizca 3D acilinca
-   * ayri parca olarak yukleniyor; itch paketinde (VITE_TOWERS_3D=off) hic yok.
+   * 3D kule katmani (render3d/). Varsayilan kapali; acikken modeli olan kuleleri
+   * three.js ciziyor ve onlarin 2D govdesi gizleniyor. Halka, menzil, can cubugu
+   * ve efektler Phaser'da kaliyor. Tepeden gorunumde Phaser tuvali oldugu gibi;
+   * egik gorunumde onun karesi egik tahtaya doku oluyor ve dokunma egimden geri
+   * cozuluyor (`untiltClient`). three.js yalnizca 3D acilinca ayri parca olarak
+   * yukleniyor; itch paketinde (VITE_TOWERS_3D=off) hic yok.
    */
   private towerLayer3d?: TowerLayer;
   private towerLayer3dLoading = false;
   private towers3dShown: ReadonlySet<string> = new Set();
+  private restorePointerTransform?: () => void;
 
   private setupTowerLayer3d() {
     const apply = () => {
-      if (isTowers3dActive()) void this.enableTowerLayer3d();
-      else this.disableTowerLayer3d();
+      const view = getActiveTowerView();
+      if (view === "2d") {
+        this.disableTowerLayer3d();
+        return;
+      }
+      if (this.towerLayer3d) this.applyTowerLayerView(view);
+      else void this.enableTowerLayer3d();
     };
     window.addEventListener(TOWERS_3D_CHANGED_EVENT, apply);
     this.game.events.on(Phaser.Core.Events.POST_RENDER, this.renderTowerLayer3d, this);
@@ -10708,8 +10718,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.towerLayer3dLoading = true;
     try {
       const { createTowerLayer } = await import("../render3d/tower-layer");
-      if (!isTowers3dActive() || !this.sys.isActive()) return;
-      this.towerLayer3d = createTowerLayer({ host, resolveUrl: assetUrl, onModelReady: () => this.refreshTowers3d() });
+      const view = getActiveTowerView();
+      if (view === "2d" || !this.sys.isActive()) return;
+      this.towerLayer3d = createTowerLayer({ host, source: this.game.canvas, view, resolveUrl: assetUrl, onModelReady: () => this.refreshTowers3d() });
+      this.applyTowerLayerView(view);
       this.refreshTowers3d();
     } catch (error) {
       // Katman kurulamadi (WebGL, ag): oyun 2D devam ediyor.
@@ -10721,10 +10733,53 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private disableTowerLayer3d() {
+    this.applyTowerLayerView("top");
     this.towerLayer3d?.dispose();
     this.towerLayer3d = undefined;
     this.towers3dShown = new Set();
     this.applyTowers3dVisibility();
+  }
+
+  /**
+   * Egik gorunumde Phaser tuvali gorunmez (karesi egik tahtaya doku) ama girdiyi
+   * almaya devam ediyor; Phaser'in kendi isaretci donusumu de egimden geciyor.
+   * Tepeden gorunume ya da 2D'ye donunce ikisi de eski haline.
+   */
+  private applyTowerLayerView(view: "top" | "angled") {
+    this.towerLayer3d?.setView(view);
+    this.game.canvas.style.opacity = view === "angled" ? "0" : "";
+    if (view === "angled" && !this.restorePointerTransform) {
+      const input = this.game.input as unknown as { transformPointer: (pointer: Phaser.Input.Pointer, pageX: number, pageY: number, wasMove: boolean) => void };
+      const original = input.transformPointer;
+      input.transformPointer = (pointer, pageX, pageY, wasMove) => {
+        const flat = this.untiltClient(pageX - window.scrollX, pageY - window.scrollY);
+        original.call(input, pointer, flat.x + window.scrollX, flat.y + window.scrollY, wasMove);
+      };
+      this.restorePointerTransform = () => { input.transformPointer = original; };
+    } else if (view !== "angled" && this.restorePointerTransform) {
+      this.restorePointerTransform();
+      this.restorePointerTransform = undefined;
+    }
+  }
+
+  /**
+   * Egik gorunumde ekran noktasi -> ayni dunya noktasinin egik olmayan Phaser
+   * tuvalindeki ekran noktasi. Haritanin butun girdisi (DOM koprusu, kule
+   * surukleme, Phaser isaretcisi) bundan geciyor; boylece dokunma kurallari ve
+   * sunucuya giden koordinatlar hic degismiyor. Diger gorunumlerde ayni nokta.
+   */
+  private untiltClient(clientX: number, clientY: number) {
+    const world = this.towerLayer3d?.clientToWorld(clientX, clientY);
+    if (!world) return { x: clientX, y: clientY };
+    const camera = this.cameras.main;
+    const rect = this.game.canvas.getBoundingClientRect();
+    const scaleX = rect.width / Math.max(1, this.scale.gameSize.width);
+    const scaleY = rect.height / Math.max(1, this.scale.gameSize.height);
+    const view = camera.worldView;
+    return {
+      x: rect.left + (camera.x + ((world.x - view.x) / view.width) * camera.width) * scaleX,
+      y: rect.top + (camera.y + ((world.y - view.y) / view.height) * camera.height) * scaleY
+    };
   }
 
   /** Model yuklendiginde ya da katman acildiginda: snapshot beklemeden kuleler 3D'ye gecsin. */
@@ -10766,11 +10821,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const layer = this.towerLayer3d;
     if (!layer) return;
     const camera = this.cameras.main;
-    const canvasRect = this.game.canvas.getBoundingClientRect();
-    const scaleX = canvasRect.width / Math.max(1, this.scale.gameSize.width);
-    const scaleY = canvasRect.height / Math.max(1, this.scale.gameSize.height);
+    const gameSize = this.scale.gameSize;
     layer.render(
-      new DOMRect(canvasRect.left + camera.x * scaleX, canvasRect.top + camera.y * scaleY, camera.width * scaleX, camera.height * scaleY),
+      this.game.canvas.getBoundingClientRect(),
+      { x: camera.x, y: camera.y, width: camera.width, height: camera.height, gameWidth: gameSize.width, gameHeight: gameSize.height },
       camera.worldView
     );
   }
@@ -14350,8 +14404,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // haritanin baska bir yerine goturur; hicbir sey yapmamak dogrusu.
       return undefined;
     }
-    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+    // Egik 3D gorunumde ekran noktasi once egimden cozuluyor (render3d).
+    const flat = this.untiltClient(event.clientX, event.clientY);
+    const x = (flat.x - rect.left) * (canvas.width / rect.width);
+    const y = (flat.y - rect.top) * (canvas.height / rect.height);
     const world = this.cameras.main.getWorldPoint(x, y);
     return { x, y, worldX: world.x, worldY: world.y, id: event.pointerId, domEvent: event } as unknown as Phaser.Input.Pointer;
   }

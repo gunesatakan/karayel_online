@@ -15,6 +15,10 @@ declare module "three" {
   export const Object3D: any; export type Object3D = any;
   export const Mesh: any; export type Mesh = any;
   export const Texture: any; export type Texture = any;
+  export const CanvasTexture: any; export type CanvasTexture = any;
+  export const PlaneGeometry: any;
+  export const MeshBasicMaterial: any;
+  export const LinearFilter: number;
   export const ACESFilmicToneMapping: number;
   export const SRGBColorSpace: string;
 }

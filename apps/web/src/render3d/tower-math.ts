@@ -54,6 +54,51 @@ export function edgeModelTransform(cellSize: number, visualScale: number, orient
   return { scale: cellSize * visualScale, yaw: orientation === "vertical" ? Math.PI / 2 : 0 };
 }
 
+/** Egik gorunumun kamera yuksekligi (derece): on izlemedeki "Harita 45°" ile "Kule detayi 38°" arasi. */
+export const ANGLED_ELEVATION_DEGREES = 52;
+
+/**
+ * Egik ortografik kameranin kesiti: tahtanin tamami genislige otursun; egik
+ * derinligi ve kulelerin yuksekligi sigmiyorsa kesit buyusun.
+ */
+export function angledFrustum(view: { width: number; height: number }, aspect: number, elevationDegrees = ANGLED_ELEVATION_DEGREES, headroom = 0) {
+  const sin = Math.sin((elevationDegrees * Math.PI) / 180);
+  const cos = Math.cos((elevationDegrees * Math.PI) / 180);
+  const projectedDepth = view.height * sin + headroom * cos;
+  let halfWidth = view.width / 2;
+  let halfHeight = halfWidth / aspect;
+  if (projectedDepth / 2 > halfHeight) {
+    halfHeight = projectedDepth / 2;
+    halfWidth = halfHeight * aspect;
+  }
+  return { halfWidth, halfHeight, sin, cos };
+}
+
+/**
+ * Egik tahtada ekran noktasi -> zemin noktasi (y = 0). Ortografik kamera, hedef
+ * (cx, 0, cz) ve kameradan hedefe bakis (0, -sin, -cos): ekrandaki (u, v) kaydi
+ * (u * yariGenislik, v * yariYukseklik) kamera duzleminde; o duzlemden bakis
+ * yonunde zemine inis.
+ */
+export function angledScreenToGround(ndcX: number, ndcY: number, center: { x: number; z: number }, frustum: { halfWidth: number; halfHeight: number; sin: number; cos: number }) {
+  const right = ndcX * frustum.halfWidth;
+  const up = ndcY * frustum.halfHeight;
+  // Kameranin "yukari" vektoru (0, cos, -sin); duzlemdeki nokta hedef + up * o vektor.
+  const pointY = up * frustum.cos;
+  const pointZ = center.z - up * frustum.sin;
+  // Bakis yonunde y = 0'a kadar ilerle: t = pointY / sin.
+  const t = pointY / frustum.sin;
+  return { x: center.x + right, z: pointZ - t * frustum.cos };
+}
+
+/** Zemin noktasi -> egik tahtada ekran (NDC); `angledScreenToGround`un tersi. */
+export function angledGroundToScreen(x: number, z: number, height: number, center: { x: number; z: number }, frustum: { halfWidth: number; halfHeight: number; sin: number; cos: number }) {
+  const dz = z - center.z;
+  // Kamera "yukari" vektoru (0, cos, -sin) uzerine izdusum.
+  const up = height * frustum.cos - dz * frustum.sin;
+  return { x: (x - center.x) / frustum.halfWidth, y: up / frustum.halfHeight };
+}
+
 /** Phaser kamerasinin dunya gorunumu -> ortografik kamera merkezi ve kesiti. */
 export function orthoFromWorldView(view: { x: number; y: number; width: number; height: number }) {
   return {

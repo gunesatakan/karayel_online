@@ -5772,6 +5772,7 @@ button.wave-report:active { transform: scale(0.99); }
 /* Gizlilik satiriyla ses paneli yatay telefonda ekrandan uzayabiliyor: kaysin. */
 .game-hud__popup--audio { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
 /* Titresim kutusu kaydiricilarla ayni izgarada; satiri doldurmuyor, etiketin tamami dokunma alani. */
+.game-hud__popup select { min-height: 32px; padding: 4px 8px; border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 6px; background: #0f172a; color: #e2e8f0; font: inherit; }
 .game-hud__popup input[type="checkbox"] { justify-self: start; width: 20px; height: 20px; margin: 0; accent-color: #38bdf8; }
 /*
  * Menuye donus: menu panelinin en ustunde, basligin hemen altinda, tam
