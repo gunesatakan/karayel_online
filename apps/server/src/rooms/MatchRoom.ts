@@ -6,7 +6,7 @@ import { ARMOR_FEAR_ROLL_INTERVAL_MS, getArmorFearDurationMs, getHealthRangeAdd,
 import { AMBUSH_RANGE_HOLD_MS, AMBUSH_RANGE_IDLE_MS, FOCUS_RANGE_GRACE_MS, KILL_RANGE_LONG_MAX_KILLS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { createResourceLayoutRandom, getMapResourceNodes, type MapResourceNodeDefinition, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
-import { createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
+import { BUILD_ZONE_TERRAIN_SPEED_MULTIPLIER, createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
 import { clipCounterSurgeLane, getWavePatternDelayMs, getWavePatternEntryColumns, getWavePatternSlotType, planWavePattern, type WavePatternPlan } from "@karayel/shared";
 // Ogretici asamasi (Eğitim): yavas, seyrek dusman; olmeyen nexus; adim olcumu.
@@ -3686,7 +3686,15 @@ export class MatchRoom extends Room<MatchState> {
    */
   private announceFlowShift() {
     this.mainGateDirty = false;
-    const gate = this.findMainGateCell();
+    // Kaynak dugumleri sabit engel: cevrelerindeki yogunlasma oyuncunun
+    // kurdugu huni degil. Ana kapi aranirken yok sayiliyor.
+    this.flowAnalysisIgnoresNodes = true;
+    let gate: ReturnType<MatchRoom["findMainGateCell"]>;
+    try {
+      gate = this.findMainGateCell();
+    } finally {
+      this.flowAnalysisIgnoresNodes = false;
+    }
     const previous = this.lastMainGate;
     this.lastMainGate = gate;
 
@@ -6551,6 +6559,41 @@ export class MatchRoom extends Room<MatchState> {
    * Dugumlerin kareleri: mac basinda dagitilan yerlesim; arena kurulmadiysa
    * (ya da harita olcusu degistiyse) eski sabit yerlesim.
    */
+  /** Kara birliginin bu karede hiz carpani: yasak bolge (tepe/cukur) yavas. */
+  private getTerrainSpeedMultiplier(movementKind: string, col: number, row: number) {
+    if (movementKind === "air") return 1;
+    return this.getBuildZoneLookup().has(col, row) ? BUILD_ZONE_TERRAIN_SPEED_MULTIPLIER : 1;
+  }
+
+  private resourceNodeCellCache?: { cells: Record<string, ResourceLayoutCell>; cols: number; indexes: Set<number> };
+
+  /** Kaynak dugumlerinin kare indeksleri (`row * cols + col`); yerlesim degisince yeniden. */
+  private getResourceNodeCellIndexes(): ReadonlySet<number> {
+    const cells = this.getResourceNodeCells();
+    const cols = this.activeMap.cols;
+    const cached = this.resourceNodeCellCache;
+    if (cached && cached.cells === cells && cached.cols === cols) return cached.indexes;
+    const indexes = new Set<number>();
+    for (const cell of Object.values(cells)) {
+      if (isInsideMap(this.activeMap, cell.col, cell.row)) indexes.add(cell.row * cols + cell.col);
+    }
+    this.resourceNodeCellCache = { cells, cols, indexes };
+    return indexes;
+  }
+
+  /** Ana kapi analizi suruyor (`announceFlowShift`): dugumler yok sayiliyor. */
+  private flowAnalysisIgnoresNodes = false;
+  /**
+   * Kaynak dugumleri kara dusmanina engel (kural). Sabit geometriyle calisan
+   * yol bulma testleri, dugumlerin rastgele dizilimden bagimsiz olsun diye kapatiyor.
+   */
+  resourceNodesSolid = true;
+
+  private isResourceNodeCell(col: number, row: number) {
+    if (this.flowAnalysisIgnoresNodes || !this.resourceNodesSolid) return false;
+    return this.getResourceNodeCellIndexes().has(row * this.activeMap.cols + col);
+  }
+
   private getResourceNodeCells(): Record<string, ResourceLayoutCell> {
     const { cols, rows } = this.activeMap;
     const layout = this.resourceLayout;
@@ -10591,6 +10634,9 @@ export class MatchRoom extends Room<MatchState> {
       }
       const frozen = getTowerStatusOutcomes(enemy.statusEffects, now).frozen;
       const enemyCell = worldToGrid(enemy.x, enemy.y, this.activeMap);
+      // Tepe ve cukur (yasak bolge): kara dusmani yavas geciyor. Oyuncunun
+      // yavaslatmasi degil; yavaslatma istatistigine ve Derin Dondurma'ya girmiyor.
+      const terrainMultiplier = this.getTerrainSpeedMultiplier(enemy.movementKind, enemyCell.col, enemyCell.row);
       const tarMultiplier = this.tarredCells.has(`${enemyCell.col}:${enemyCell.row}`) ? 0.75 : 1;
       const debrisMultiplier = (this.debrisCells.get(`${enemyCell.col}:${enemyCell.row}`) ?? 0) > now ? 0.6 : 1;
       const crystalTrapMultiplier = this.getCrystalTrapMultiplier(enemy, now);
@@ -10638,7 +10684,7 @@ export class MatchRoom extends Room<MatchState> {
       // Avci ve yiyici kendi yol alanindan; hedef kalmadiysa normal yola dusuyor.
       const special = enemy.special;
       if (special?.kind === "harvester") {
-        this.updateHarvester(enemy, seconds, isFeared ? 0 : speedMultiplier);
+        this.updateHarvester(enemy, seconds, isFeared ? 0 : speedMultiplier * terrainMultiplier);
         continue;
       }
       const specialRoute = special && special.kind !== "heater" ? this.findSpecialEnemyRoute(enemy, special.kind) : undefined;
@@ -10698,7 +10744,7 @@ export class MatchRoom extends Room<MatchState> {
         const dx = point.x - enemy.x;
         const dy = point.y - enemy.y;
         const distance = Math.max(0.001, Math.hypot(dx, dy));
-        const movement = Math.min(distance, enemy.speed * speedMultiplier * seconds);
+        const movement = Math.min(distance, enemy.speed * speedMultiplier * terrainMultiplier * seconds);
         // Surekli uzayda son kapi: adim bir Metal Kalkan'i kesiyorsa atilmaz.
         // Yonlendirme zaten kalkani dolasiyor; burasi hucre kararinin
         // goremedigi egik gecisleri (kose kesme, cikis satiri) tutuyor.
@@ -10927,6 +10973,7 @@ export class MatchRoom extends Room<MatchState> {
     const edges = this.getEdgeStructureGrid();
     const stride = edges.stride;
     const shielded = this.metalShields.length > 0;
+    const nodeCells: ReadonlySet<number> = this.resourceNodesSolid ? this.getResourceNodeCellIndexes() : new Set<number>();
     while (heap.size > 0) {
       const current = heap.pop();
       const base = cost[current];
@@ -10946,6 +10993,10 @@ export class MatchRoom extends Room<MatchState> {
         if (neighborCol < 0 || neighborCol >= cols || neighborRow < 0 || neighborRow >= rows) continue;
         const neighbor = neighborRow * cols + neighborCol;
         if (target[neighbor]) continue;
+        // Kaynak dugumu duvar gibi: icinden gecilmiyor. Adim degeri yaziliyor
+        // ama dugumden yayilim yok -- ustunde kalmis bir birim (dugumun
+        // karesinde dogan, itilen) disari cikabiliyor, baskasi oradan gecemiyor.
+        const solidNode = nodeCells.has(neighbor);
         // Metal Kalkan'in kestigi gecis yok hukmunde: kirilamaz, bedeli yok,
         // alan onu hicbir zaman "kirilacak engel" olarak secemez.
         if (shielded && this.isShieldBetweenCells(neighborCol, neighborRow, col, row)) continue;
@@ -10958,7 +11009,7 @@ export class MatchRoom extends Room<MatchState> {
         if (total < cost[neighbor]) {
           cost[neighbor] = total;
           next[neighbor] = current;
-          heap.push(neighbor, total);
+          if (!solidNode) heap.push(neighbor, total);
         }
       }
     }
@@ -12726,8 +12777,10 @@ export class MatchRoom extends Room<MatchState> {
     }
     const product = worker.assignment?.product;
     const researchSpeed = product ? this.getEconomyResearchMultiplier(worker, "transportSpeed", product === "energy" ? "energy" : product === "materials" ? worker.cargoResource ?? "iron" : AMMO_RECIPES[product]) : 1;
+    const cell = worldToGrid(worker.x, worker.y, this.activeMap);
     const speed = researchSpeed * this.scaleWorldSpeed(worker.speed ?? LOGISTICS_WORKER_SPEED)
-      * getModifierMultiplier(this.getWorkerModifiers(worker), "workerSpeed");
+      * getModifierMultiplier(this.getWorkerModifiers(worker), "workerSpeed")
+      * this.getTerrainSpeedMultiplier("ground", cell.col, cell.row);
     worker.vx = (dx / Math.max(1, distance)) * speed;
     worker.vy = (dy / Math.max(1, distance)) * speed;
     worker.x += worker.vx * seconds;
@@ -14648,6 +14701,11 @@ export class MatchRoom extends Room<MatchState> {
   /** Yapi ve harita siniri acisindan gecilebilirlik (kalkan haric). */
   private isStructurePassable(from: { col: number; row: number }, col: number, row: number) {
     if (col < 0 || col >= this.activeMap.cols || row < 0 || row >= this.activeMap.rows) {
+      return false;
+    }
+    // Kaynak dugumleri gercekten yer kapliyor: kara dusmani ustunden gecemiyor
+    // (dolasiyor). Kirilamaz; tukenmis dugum de yerinde duruyor.
+    if (this.isResourceNodeCell(col, row)) {
       return false;
     }
     const standing = this.getTowerCellIndex().get(`${col}:${row}`);

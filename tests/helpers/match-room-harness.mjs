@@ -83,6 +83,9 @@ export function syncEnemyBodies(room) {
 
 export function clearBuildZones(room) {
   room.buildZones = undefined;
+  // Sabit karelere yapi kuran testler: rastgele dizilen kaynak dugumleri de yolu
+  // etkilemesin (dugumlerin engel olmasi ayri testte, resource-node-terrain).
+  room.resourceNodesSolid = false;
   return room;
 }
 

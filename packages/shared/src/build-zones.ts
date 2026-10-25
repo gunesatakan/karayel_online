@@ -53,6 +53,12 @@ export type BuildZoneLayout = BuildZoneMap & {
   attempts: number;
 };
 
+/**
+ * Yasak bolgeler arazide tepe ya da cukur (3D gorunum, apps/web/src/render3d/terrain.ts):
+ * kara dusmanlari ve isciler bolge karesinden bu hizla geciyor. Ucanlar etkilenmiyor.
+ */
+export const BUILD_ZONE_TERRAIN_SPEED_MULTIPLIER = 0.66;
+
 /** Toplam bolgenin insa edilebilir karelere orani: alt ve ust sinir. */
 export const BUILD_ZONE_SHARE_MIN = 0.08;
 export const BUILD_ZONE_SHARE_MAX = 0.12;
