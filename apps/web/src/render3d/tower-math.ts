@@ -54,8 +54,8 @@ export function edgeModelTransform(cellSize: number, visualScale: number, orient
   return { scale: cellSize * visualScale, yaw: orientation === "vertical" ? Math.PI / 2 : 0 };
 }
 
-/** Egik gorunumun kamera yuksekligi (derece): on izlemedeki "Harita 45°" ile "Kule detayi 38°" arasi. */
-export const ANGLED_ELEVATION_DEGREES = 52;
+/** Egik gorunumun kamera yuksekligi (derece): on izlemedeki "Harita 45°" acisi. */
+export const ANGLED_ELEVATION_DEGREES = 45;
 
 /**
  * Egik ortografik kameranin kesiti: tahtanin tamami genislige otursun; egik

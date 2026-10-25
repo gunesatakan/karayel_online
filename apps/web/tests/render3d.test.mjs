@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import {
+  ANGLED_ELEVATION_DEGREES,
   angledFrustum,
   angledGroundToScreen,
   angledScreenToGround,
@@ -73,7 +74,7 @@ test("egik gorunum: ekran -> zemin -> ekran ayni noktaya donuyor, tahtanin tamam
 
 test("ayakta duran panonun alt kenari ekranda ayagina degiyor; kuzey kaymasi ayni yukselisi veriyor", () => {
   const center = { x: 204, z: 392 };
-  const frustum = angledFrustum({ width: 408, height: 674 }, 766 / 1266, 52, 70);
+  const frustum = angledFrustum({ width: 408, height: 674 }, 766 / 1266, ANGLED_ELEVATION_DEGREES, 70);
   const toScreen = (z, height) => angledGroundToScreen(204, z, height, center, frustum).y * frustum.halfHeight;
   for (const size of [12, 23, 40]) {
     // Kameraya donuk pano ekranda tam boyunda: merkez yarim boy yukarida.

@@ -10,7 +10,7 @@ Canlı istemcide modeli olan kuleleri three.js ile çizen isteğe bağlı katman
 
 ## Açılı görünüm (aşama 2a + 2b)
 
-- Phaser'ın zemin karesi her karede doku olarak 52° eğik bir tahtaya serilir; 3D kuleler onun üstünde ayakta durur. Phaser tuvali görünmez (`opacity: 0`) ama girdiyi almaya devam eder.
+- Phaser'ın zemin karesi her karede doku olarak 45° eğik bir tahtaya serilir; 3D kuleler onun üstünde ayakta durur. Phaser tuvali görünmez (`opacity: 0`) ama girdiyi almaya devam eder.
 - **Düşmanlar ayakta (2b):** düşman sprite'ları Phaser'da çizilmez (yalnızca kamera süzgeci; konum ve durumları değişmez). Her karede son halleri (doku, boy, dönüş, ton, vuruş flaşı, saydamlık) 3D sahnede kameraya dönük panolara kopyalanır; panonun alt kenarı ekranda ayağına değer, altında yumuşak bir gölge var. Uçan düşmanlar 0,45 hücre daha yukarıda. Kulelerle derinlik doğru: önündeki kule düşmanı örter.
 - **Efektler kalkık (2b):** Phaser'ın ikinci kamerası (`air3d`) zemin alındıktan sonra aynı tuvale yalnızca ışın, mermi, iz, namlu/çarpma, kırıntı, nişangâh ve hasar sayılarını çizer (`ANGLED_AIR_DEPTH_BANDS`). Bu kare tahtanın bir piyade gövdesi yüksekliğindeki ikinci düzleme "ekran" karışımıyla serilir: mermiler ve vuruşlar ayakta duran düşmanın gövdesine denk gelir. Düşmanın can çubuğu ve işaretleri de bu düzlemde, panonun başının üstünde.
 - Haritanın bütün girdisi (DOM köprüsü `createBridgePointer`, kule sürükleme `getTowerDragPreviewPointFromClient`, Phaser işaretçisi `transformPointer`) `untiltClient` ile eğimden geri çözülür. Sunucuya giden koordinatlar ve dokunma kuralları değişmez; efekt kamerası girdi almaz.
