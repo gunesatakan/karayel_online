@@ -27,8 +27,12 @@ args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
 work = base.parents[2] / 'asset-work' / 'evolution' / args.key
 tower_id = '-'.join(args.key.split('-')[:2])
 tier = int(args.key[-1])
-span = 2 if tower_id == 'warrior-6' else 1
-static = tower_id in ['warrior-2', 'warrior-3']
+# ZentaX (zeynep-*) is organic bone and chitin rather than metal, and glows in its own texture colours.
+organic = tower_id.startswith('zeynep-')
+span = 2 if tower_id in ['warrior-6', 'zeynep-7'] else 1
+# Abarti is not a cell tower but a rail two cells long, laid on a cell edge.
+edge = tower_id == 'zeynep-8'
+static = tower_id in ['warrior-2', 'warrior-3', 'zeynep-2', 'zeynep-3', 'zeynep-7', 'zeynep-8']
 bpy.ops.wm.open_mainfile(filepath=str(work / 'simplified.blend'))
 source = next(o for o in bpy.context.scene.objects if o.type == 'MESH')
 for obj in list(bpy.context.scene.objects):
@@ -42,7 +46,7 @@ for image in bpy.data.images:
 for material in source.data.materials:
     nodes = material.node_tree.nodes
     shader = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
-    for channel, value in [('Roughness', .48), ('Metallic', .72)]:
+    for channel, value in ([('Roughness', .42), ('Metallic', .18)] if organic else [('Roughness', .48), ('Metallic', .72)]):
         for link in list(shader.inputs[channel].links): material.node_tree.links.remove(link)
         shader.inputs[channel].default_value = value
     for node in nodes:
@@ -60,7 +64,7 @@ for material_index, material in enumerate(original_materials):
     image.pixels.foreach_get(pixels)
     pixels = pixels.reshape(height, width, 4)
     # The middle tier glows in each texture's own hue (cyan, teal, violet); the outer tiers use a fixed palette.
-    palette = ([(.005, .35, .8, 1), (.8, .005, .38, 1), (.01, .7, .2, 1)] if tier == 3 else [None] if tier == 2
+    palette = ([None] if organic or tier == 2 else [(.005, .35, .8, 1), (.8, .005, .38, 1), (.01, .7, .2, 1)] if tier == 3
                else [(.02, .8, 1, 1), (1, .01, .62, 1), (.02, 1, .3, 1)])
     slots = []
     for color in palette:
@@ -69,7 +73,7 @@ for material_index, material in enumerate(original_materials):
         p = next(n for n in luminous.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
         if color: p.inputs['Emission Color'].default_value = color
         else: luminous.node_tree.links.new(p.inputs['Base Color'].links[0].from_socket, p.inputs['Emission Color'])
-        p.inputs['Emission Strength'].default_value = {1: .8, 2: 1., 3: 1.2}[tier]
+        p.inputs['Emission Strength'].default_value = ({1: .7, 2: .9, 3: 1.1} if organic else {1: .8, 2: 1., 3: 1.2})[tier]
         p.inputs['Roughness'].default_value = .35
         p.inputs['Metallic'].default_value = .25
         slots.append(len(source.data.materials))
@@ -79,6 +83,11 @@ for material_index, material in enumerate(original_materials):
         if polygon.material_index != material_index: continue
         u, v = np.mean([uv[i].uv[:] for i in polygon.loop_indices], axis=0)
         r, g, b = pixels[min(height-1, max(0, int(v*height))), min(width-1, max(0, int(u*width))), :3]
+        if organic:
+            # Bright, saturated texels are the energy cores; ivory bone is pale and chitin is dark.
+            top, low = max(r, g, b), min(r, g, b)
+            if top > .62 and (top - low) / top > .62: polygon.material_index = slots[0]
+            continue
         if tier == 2:
             if max(r, g, b) > .45 and ((b > .35 and g > .32 and r < min(b,g)*.7) or (g > .45 and g > b*1.25 and r < g*.45)
                                        or (r > .35 and b > .35 and g < min(r,b)*.6)): polygon.material_index = slots[0]
@@ -96,9 +105,18 @@ if args.flatten:
     source.data.transform(Vector(normal).rotation_difference(Vector((0,0,1))).to_matrix().to_4x4())
     p = np.array([v.co[:] for v in source.data.vertices])
     source.data.transform(Matrix.Translation((-(p[:,0].max()+p[:,0].min())/2, -(p[:,1].max()+p[:,1].min())/2, -p[:,2].min())))
-source.data.transform(Matrix.Rotation(math.radians(-90 - args.front), 4, 'Z'))
+if edge:
+    # Lay the rail's long axis on X, centred, and fit its length to the two-cell edge.
+    p = np.array([v.co[:] for v in source.data.vertices])
+    _, axes = np.linalg.eigh(np.cov(p[:, :2].T))
+    long_axis = axes[:, 1]
+    source.data.transform(Matrix.Rotation(-math.atan2(long_axis[1], long_axis[0]), 4, 'Z'))
+    p = np.array([v.co[:] for v in source.data.vertices])
+    source.data.transform(Matrix.Translation((-(p[:,0].max()+p[:,0].min())/2, -(p[:,1].max()+p[:,1].min())/2, 0)))
+else:
+    source.data.transform(Matrix.Rotation(math.radians(-90 - args.front), 4, 'Z'))
 points = np.array([v.co[:] for v in source.data.vertices])
-factor = 1.90 / np.linalg.norm(points[:, :2], axis=1).max()
+factor = (0.98/.22 / np.abs(points[:, 0]).max()) if edge else 1.90 / np.linalg.norm(points[:, :2], axis=1).max()
 bottom = points[:, 2].min()
 centers = np.array([p.center[:] for p in source.data.polygons])
 upper = centers[:, 2] > args.split
@@ -152,7 +170,8 @@ def part(name, mask, parent):
 root = empty(tower_id)
 root.scale = (.22*span,) * 3
 root['assetId'] = tower_id
-root['footprintCells'] = span*span
+root['footprintCells'] = 0 if edge else span*span
+if edge: root['edgeCells'] = 2
 root['tier'] = tier
 root['splitHeight'] = (args.split-bottom)*factor
 yaw = empty('turret-yaw', root)
@@ -174,17 +193,20 @@ else:
     center_x, height, length, offset = 0., float(max(v.co.z for v in moving.data.vertices)), .1, 0.
 socket.location = (center_x, -length, height)
 root['muzzle'] = dict(length=length, height=height, offset=offset, centerOffset=center_x)
-sources = json.loads((base/'art-direction/evolution-sources.json').read_text(encoding='utf-8-sig'))
+sources = json.loads((base/('art-direction/zentax/zentax-sources.json' if organic else 'art-direction/evolution-sources.json')).read_text(encoding='utf-8-sig'))
 entry = next(e for e in sources if e['key'] == args.key)
 root['source'] = 'Tripo H3.1 / ' + entry['sourceId']
-root['quality'] = 'Semi-matte PBR / 2K / 40k triangles'
+root['quality'] = ('Organic bone and chitin PBR' if organic else 'Semi-matte PBR') + ' / 2K / 40k triangles'
 bpy.data.objects.remove(source, do_unlink=True)
 output = base/'public/game-assets/models/evolution'/f'{args.key}.glb'
 output.parent.mkdir(parents=True, exist_ok=True)
-bpy.ops.export_scene.gltf(filepath=str(output), export_format='GLB', export_extras=True, export_materials='EXPORT', export_image_format='AUTO')
+# Tripo's model-file textures carry no extension, so AUTO would keep the 2K colour map as a multi-megabyte PNG.
+bpy.ops.export_scene.gltf(filepath=str(output), export_format='GLB', export_extras=True, export_materials='EXPORT',
+                          **(dict(export_image_format='JPEG', export_jpeg_quality=90) if organic else dict(export_image_format='AUTO')))
 bpy.ops.wm.save_as_mainfile(filepath=str(work/'processed.blend'))
 report = dict(key=args.key, sourceId=entry['sourceId'], modelSha256=hashlib.sha256(output.read_bytes()).hexdigest(), modelBytes=output.stat().st_size,
     triangleCount=sum(len(p.data.polygons) for p in [fixed,moving]), footprintSpan=span, radiusCells=1.90*.22*span, muzzle=dict(root['muzzle']), front=args.front, split=args.split)
+if edge: report.update(edgeCells=2, radiusCells=None, halfLengthCells=.98)
 if level: report['levelBarrel'] = level
 (base/'validation'/f'{args.key}.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
 print('EVOLUTION_EXPORT', json.dumps(report))

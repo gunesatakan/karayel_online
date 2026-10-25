@@ -1,0 +1,17 @@
+{
+  "key": "zeynep-1-tier-3",
+  "sourceId": "781a5220-8aac-40f9-a623-9f83fe9a72c2",
+  "modelSha256": "a022d87afa452a016a4324da8e1d412b048f823f0965e276d2ab66d1c3e44653",
+  "modelBytes": 2033824,
+  "triangleCount": 40000,
+  "footprintSpan": 1,
+  "radiusCells": 0.418,
+  "muzzle": {
+    "length": 1.8610848188400269,
+    "height": 0.7028653919696808,
+    "offset": 0.0,
+    "centerOffset": -0.15765077248215675
+  },
+  "front": 90.0,
+  "split": 0.16
+}

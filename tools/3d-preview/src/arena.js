@@ -49,9 +49,10 @@ export async function buildArena(scene, anisotropy = 4) {
   }
   return {
     root, grid, floor,
-    setFootprint({ position, span }) {
+    setFootprint({ position, span, edge, length }) {
       footprint.position.set(position.x, 0, position.z);
-      footprint.scale.set(span, 1, span);
+      // An edge rail's frame is the thin strip the game draws along the cell edge.
+      footprint.scale.set(edge ? length : span, 1, edge ? 0.18 : span);
     },
     setStage(id) {
       if (!textures[id - 1]) throw new Error(`Unknown stage ${id}`);

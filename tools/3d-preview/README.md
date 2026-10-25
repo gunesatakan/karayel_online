@@ -13,6 +13,14 @@ Canlı oyuna bağlanmayan yerel 3D önizleme. AttackLord'un altı ana kulesi, **
 - `validation/warrior-N-tier-T.json` her çıktının hash, üçgen ve namlu bilgilerini kaydeder. 18 yeni geometri testi dönme/geri tepme boyunca hücre sınırını ve efekt çıkışını doğrular. Harita ve önceki testlerle birlikte **37 test** geçer.
 - Ham GLB ve Blender ara dosyaları deponun kardeşindeki `asset-work/evolution/` içinde kalır. Canlı istemci, sunucu ve oyun kuralları değiştirilmez.
 
+## ZentaX — organik teknoloji
+
+- Üstteki **Operatör** menüsünden ZentaX seçilir. Beş kule (Hiza Emri, Gösteri Kulesi, Taht Mührü, Kin Kulesi, Saray Arşivi) ve kare kenarına yerleşen **Abartı** rayı, AttackLord'la aynı 1–4 / 5–9 / 10 evrelerine sahiptir: **Tohum**, **Büyüme**, **Tam evrim**. Oyunda emekli olan zeynep-4/5 yoktur.
+- Ortak dil kullanıcının referansıdır (`art-direction/zentax/zentax-organic-reference.webp`): fildişi kemik kemerler, yanardöner kitin ve parlak çekirdekler. Referanstaki kuleler birbirine çok benzediği için her kulenin kendi silueti ve imza rengi vardır: Hiza Emri tek mızrak / magenta, Gösteri kristal taç / pembe, Taht Mührü üç pençe ve küre / zümrüt + fuşya, Kin boru ağız / kızıl, Saray Arşivi 2 × 2 kubbe / kehribar, Abartı ray / mor.
+- Tasarımlar Tripo Studio'da GPT Image 2.5 ile üretildi (ücretsiz kota): önce oyun ikonu + referansla 10. evre, sonra 35° açılı 3D'ye hazır yeniden çizim, sonra onaylı 10. evreden 5–9 ve 1–4. Seçilen görseller `art-direction/zentax/zeynep-N-tier-T.png`, istem şablonları `zentax-prompts.json`, kaynaklar `zentax-sources.json`.
+- 18 H3.1 model üretimi **990 mevcut kredi** kullandı. Kaynaklar tarayıcı indirmesi yerine Tripo'nun model dosyasından alınıp (`meshopt` çözülerek) işlendi. Tripo bazı modelleri giriş görselinin 35° kamerasına göre eğik kurmuştu; düz taban yüzeyi bulunarak dik konuma getirildi.
+- Malzeme kemik/kitin içindir: metallic 0,18, roughness 0,42. Enerji yüzeyleri dokunun kendi renginde ışır. Saray Arşivi 2 × 2 hücreye, Abartı TOWER_CELL'in üst kenarında 2 hücre uzunluğunda ince şeride sığar.
+
 Tepeden bir görsel yükseklik ve yan yüz bilgisi içermez. Bu modellerde yan yüzler tasarım yorumudur; otomatik ve birebir 2D→3D rekonstrüksiyon iddiası yoktur.
 
 ## Önceki Takipçi kalite denemeleri

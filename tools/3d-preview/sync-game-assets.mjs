@@ -2,12 +2,14 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOWER_ASSETS, STAGE_ASSETS } from "./src/asset-catalog.js";
+import { TOWER_ASSETS, ZENTAX_ASSETS, STAGE_ASSETS } from "./src/asset-catalog.js";
 
 const check = process.argv.includes("--check");
-const assets = [...TOWER_ASSETS.map((a) => a.art), ...STAGE_ASSETS.map((a) => a.texture)];
+const assets = [...TOWER_ASSETS.map((a) => a.art), ...ZENTAX_ASSETS.map((a) => a.art), ...STAGE_ASSETS.map((a) => a.texture)];
+// Abartı has no game sprite (GameScene draws its rail); its thumbnail comes from the approved design.
+const localSources = { "game-assets/towers/zentax-abarti-concept.png": "tools/3d-preview/art-direction/zentax/abarti-thumbnail.png" };
 const records = assets.map((path) => {
-  const source = `apps/web/public/images/${path.replace("game-assets/", "")}`;
+  const source = localSources[path] ?? `apps/web/public/images/${path.replace("game-assets/", "")}`;
   const data = readFileSync(new URL(`../../${source}`, import.meta.url));
   const destination = new URL(`public/${path}`, import.meta.url);
   if (check) {

@@ -31,6 +31,26 @@ export function cellCenter(col, row) {
 }
 export const TOWER_POSITION = cellCenter(TOWER_CELL.col, TOWER_CELL.row);
 
+// Edge structures (Abartı) lie on the top edge of TOWER_CELL, spanning it and the
+// next cell to the right, as GameScene's horizontal edge segments do.
+export function edgePlacement(length = 2) {
+  return {
+    span: 1,
+    edge: true,
+    length,
+    scale: TOWER_SCALE,
+    position: worldToScene(
+      MAP.origin.x + (TOWER_CELL.col + length / 2) * MAP.cellSize,
+      MAP.origin.y + TOWER_CELL.row * MAP.cellSize,
+    ),
+    cells: [],
+  };
+}
+
+export function placementFor(asset) {
+  return asset.edgeCells ? edgePlacement(asset.edgeCells) : towerPlacement(asset.footprintSpan);
+}
+
 // TOWER_CELL is the top-left occupied cell. Even spans centre on a grid corner,
 // matching GameScene's 2x2 placement rule instead of straddling nine cells.
 export function towerPlacement(span = 1) {

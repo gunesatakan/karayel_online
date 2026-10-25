@@ -7,14 +7,15 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { buildEnemy } from "./models.js";
 import { createTowerLibrary } from "./tower-library.js";
-import { TOWER_ASSETS, STAGE_ASSETS } from "./asset-catalog.js";
+import { TOWER_ASSETS, STAGE_ASSETS, OPERATORS } from "./asset-catalog.js";
+import { tiersFor } from "./evolution-catalog.js";
 import { buildArena } from "./arena.js";
 import {
   MAP,
   MAP_WIDTH,
   MAP_DEPTH,
   TOWER_BASE_Y,
-  towerPlacement,
+  placementFor,
   ENEMY_SCALE,
   ENEMY_HIT_Y,
 } from "./layout.js";
@@ -106,7 +107,7 @@ async function start() {
   floor.receiveShadow = true;
   scene.add(floor);
   const towers = createTowerLibrary((model) => {
-    const { position } = towerPlacement(model.asset.footprintSpan);
+    const { position } = placementFor(model.asset);
     model.root.position.set(position.x, TOWER_BASE_Y, position.z);
     scene.add(model.root);
   });
@@ -115,7 +116,7 @@ async function start() {
     towers.get(TOWER_ASSETS[0].id, 'evolution', 3),
   ]);
   let tower = initialTower;
-  let placement = towerPlacement(tower.asset.footprintSpan);
+  let placement = placementFor(tower.asset);
   tower.root.visible = true;
   const enemy = buildEnemy();
   scene.add(enemy.root);
@@ -322,7 +323,7 @@ async function start() {
       center.y + Math.cos(polar) * radius,
       center.z + Math.cos(azimuth) * Math.sin(polar) * radius,
     );
-    camera.zoom = p.focus ? p.zoom / placement.span : p.zoom;
+    camera.zoom = p.focus ? p.zoom / (placement.edge ? placement.length : placement.span) : p.zoom;
     camera.updateProjectionMatrix();
     controls.target.copy(center);
     controls.update();
@@ -378,16 +379,18 @@ async function start() {
     towers.trim();
     const asset = tower.asset;
     if (asset.variant === 'draft') $("model-style").value = 'draft';
-    $("tier-controls").hidden = $("model-style").value !== 'evolution';
+    const zentax = asset.operator === 'zentax';
+    $("quality-controls").hidden = zentax;
+    $("tier-controls").hidden = !zentax && $("model-style").value !== 'evolution';
     for (const option of $("model-style").options) option.disabled = !asset.qualityModel && ['pastel','stylized','quality'].includes(option.value);
-    $("asset-version").textContent = asset.stage ? 'YARI MAT METAL' : ({ pastel: "PASTEL", stylized: "STİLİZE", quality: "GERÇEKÇİ" })[asset.variant] ?? "İLK TASLAK";
+    $("asset-version").textContent = zentax ? 'ORGANİK TEKNOLOJİ' : asset.stage ? 'YARI MAT METAL' : ({ pastel: "PASTEL", stylized: "STİLİZE", quality: "GERÇEKÇİ" })[asset.variant] ?? "İLK TASLAK";
     $("asset-levels").textContent = `SEVİYE ${asset.stage?.levels ?? '1–4'}${asset.stage ? ' / '+asset.stage.label : ''}`;
-    placement = towerPlacement(asset.footprintSpan);
+    placement = placementFor(asset);
     arena.setFootprint(placement);
     range.position.set(placement.position.x, 0.07, placement.position.z);
     aura.position.set(placement.position.x, 0.04, placement.position.z);
-    $("tower-footprint").textContent = `${placement.span} × ${placement.span} HÜCRE`;
-    $("footprint-description").textContent = `${placement.span} × ${placement.span} hücre · ${placement.cells.length} kare`;
+    $("tower-footprint").textContent = placement.edge ? `KENAR · ${placement.length} HÜCRE` : `${placement.span} × ${placement.span} HÜCRE`;
+    $("footprint-description").textContent = placement.edge ? `Kare kenarı · ${placement.length} hücre uzunluğunda ray` : `${placement.span} × ${placement.span} hücre · ${placement.cells.length} kare`;
     if (cameraPresets[cameraMode].focus) preset(cameraMode);
     $("tower-name").textContent = asset.name;
     $("tower-label-name").textContent = asset.name.toLocaleUpperCase("tr-TR");
@@ -403,19 +406,44 @@ async function start() {
     resetSimulation();
     loading.classList.add('hidden');
   }
-  for (const asset of TOWER_ASSETS) {
-    const button = document.createElement("button");
-    button.dataset.tower = asset.id;
-    button.setAttribute("aria-label", asset.name);
-    const thumbnail = document.createElement("img");
-    thumbnail.src = asset.art;
-    thumbnail.alt = "";
-    const name = document.createElement("span");
-    name.textContent = asset.name.replace(" Kulesi", "");
-    button.append(thumbnail, name);
-    button.addEventListener("click", () => selectTower(asset.id));
-    $("tower-picker").append(button);
+  function showOperator(id) {
+    const operator = OPERATORS.find((o) => o.id === id);
+    $("operator-eyebrow").textContent = operator.eyebrow;
+    $("operator-title").textContent = operator.title;
+    $("operator-note").textContent = operator.note;
+    $("tower-picker").replaceChildren(...operator.towers.map((asset) => {
+      const button = document.createElement("button");
+      button.dataset.tower = asset.id;
+      button.setAttribute("aria-label", asset.name);
+      const thumbnail = document.createElement("img");
+      thumbnail.src = asset.art;
+      thumbnail.alt = "";
+      const name = document.createElement("span");
+      name.textContent = asset.name.replace(" Kulesi", "");
+      button.append(thumbnail, name);
+      button.addEventListener("click", () => selectTower(asset.id));
+      return button;
+    }));
+    const tier = $("visual-tier").value;
+    $("visual-tier").replaceChildren(...tiersFor(id).map((t) => {
+      const option = document.createElement("option");
+      option.value = String(t.id);
+      option.textContent = `Seviye ${t.levels} · ${t.label}`;
+      return option;
+    }));
+    $("visual-tier").value = tier;
   }
+  for (const operator of OPERATORS) {
+    const option = document.createElement("option");
+    option.value = operator.id;
+    option.textContent = operator.name;
+    $("operator-select").append(option);
+  }
+  showOperator(OPERATORS[0].id);
+  $("operator-select").addEventListener("change", (event) => {
+    showOperator(event.target.value);
+    selectTower(OPERATORS.find((o) => o.id === event.target.value).towers[0].id);
+  });
   for (const asset of STAGE_ASSETS) {
     const option = document.createElement("option");
     option.value = String(asset.id);
@@ -649,8 +677,8 @@ async function start() {
         projectile: ["Kinetik mermi", "Çift namlu, geri tepme ve temas kıvılcımları."],
         beam: ["Odak ışını", "Enerji başlığından çıkan sürekli ışın."],
         impact: ["Doğrudan temas", "Hedef üzerinde vuruş parlaması."],
-        idle: ["Destek kulesi", "Sunucu kendisi ateş etmez. Bağlantı davranışı sonraki aşamada."],
-        aura: ["Kontrol alanı", "İzolasyon alanının görsel örneği; hasar vuruşu yok."],
+        idle: ["Destek yapısı", "Kendisi ateş etmez; komşu kulelerle ya da geçen atışlarla çalışır. Bağlantı davranışı sonraki aşamada."],
+        aura: ["Kontrol alanı", "Alan etkisinin görsel örneği; hasar vuruşu yok."],
       };
       [$("weapon-name").textContent, $("weapon-description").textContent] = descriptions[weapon];
       lastUi = time;

@@ -38,6 +38,42 @@
       "bytes": 32696
     },
     {
+      "source": "apps/web/public/images/towers/tower-zeynep-1.webp",
+      "destination": "game-assets/towers/tower-zeynep-1.webp",
+      "sha256": "223f3c6a99f53a6cd79b30d37275ec4a113b89d06988e14be5b680d2eafc9ca6",
+      "bytes": 5684
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-zeynep-2.webp",
+      "destination": "game-assets/towers/tower-zeynep-2.webp",
+      "sha256": "e19a69cc88026f56dd76647ff776103d9ce14ee5a3080b81c00e4ecfc6469d7a",
+      "bytes": 6594
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-zeynep-3.webp",
+      "destination": "game-assets/towers/tower-zeynep-3.webp",
+      "sha256": "604848e5b67a41eb6abbd9c361b52d2deee02251ef3381908bd9cc349491aaee",
+      "bytes": 5192
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-zeynep-6.webp",
+      "destination": "game-assets/towers/tower-zeynep-6.webp",
+      "sha256": "286c07e0215466031d236670b79ae6534f1c66c0fd0105dfcd0c8986827260b4",
+      "bytes": 5512
+    },
+    {
+      "source": "apps/web/public/images/towers/tower-zeynep-7.webp",
+      "destination": "game-assets/towers/tower-zeynep-7.webp",
+      "sha256": "77da0a6bf2b1375761ed10493a0cc4eee210bd0cb07ef23fbf69e13a8eb9ccc4",
+      "bytes": 6608
+    },
+    {
+      "source": "tools/3d-preview/art-direction/zentax/abarti-thumbnail.png",
+      "destination": "game-assets/towers/zentax-abarti-concept.png",
+      "sha256": "ca8db3467e7a4cba315f93839da2b5c61ba9347137ae3fc285681b143243c781",
+      "bytes": 117595
+    },
+    {
       "source": "apps/web/public/images/terrain/stage-1.jpg",
       "destination": "game-assets/terrain/stage-1.jpg",
       "sha256": "ea9826b98769ed653a9fe37e2f391c72c8c9c623610c87820add0704206f477e",

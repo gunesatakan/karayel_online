@@ -1,0 +1,182 @@
+[
+  {
+    "key": "zeynep-1-tier-1",
+    "towerId": "zeynep-1",
+    "tier": 1,
+    "reference": "art-direction/zentax/zeynep-1-tier-1.png",
+    "sourceId": "4a46f06e-6142-460c-a07c-c7be094ff30f",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-1-t1-bfb6c445-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-1-tier-2",
+    "towerId": "zeynep-1",
+    "tier": 2,
+    "reference": "art-direction/zentax/zeynep-1-tier-2.png",
+    "sourceId": "4bc4c463-b070-4176-80a3-3d9fb45ff62c",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-1-t2-2d54eda4-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-1-tier-3",
+    "towerId": "zeynep-1",
+    "tier": 3,
+    "reference": "art-direction/zentax/zeynep-1-tier-3.png",
+    "sourceId": "781a5220-8aac-40f9-a623-9f83fe9a72c2",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-1-t3r-2d6d3183-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-2-tier-1",
+    "towerId": "zeynep-2",
+    "tier": 1,
+    "reference": "art-direction/zentax/zeynep-2-tier-1.png",
+    "sourceId": "4c6de98c-7a9d-41f6-8869-0e456701c6c4",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-2-t1-3a2a6ca5-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-2-tier-2",
+    "towerId": "zeynep-2",
+    "tier": 2,
+    "reference": "art-direction/zentax/zeynep-2-tier-2.png",
+    "sourceId": "b9cf8f72-c61d-4764-be50-8991aedee6e3",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-2-t2-078a3728-1",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-2-tier-3",
+    "towerId": "zeynep-2",
+    "tier": 3,
+    "reference": "art-direction/zentax/zeynep-2-tier-3.png",
+    "sourceId": "7f6d6eff-f5b8-445f-ae06-2c2b5dafe478",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-2-t3r-3835a8fa-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-3-tier-1",
+    "towerId": "zeynep-3",
+    "tier": 1,
+    "reference": "art-direction/zentax/zeynep-3-tier-1.png",
+    "sourceId": "f5319965-2d12-45fe-adf5-a6ac10b9e750",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-3-t1-1b780b9d-1",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-3-tier-2",
+    "towerId": "zeynep-3",
+    "tier": 2,
+    "reference": "art-direction/zentax/zeynep-3-tier-2.png",
+    "sourceId": "9e1f022a-89cd-4323-9b70-987f233309d8",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-3-t2-36672b4d-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-3-tier-3",
+    "towerId": "zeynep-3",
+    "tier": 3,
+    "reference": "art-direction/zentax/zeynep-3-tier-3.png",
+    "sourceId": "a091679b-f09e-4fb6-9641-02bde51c93d7",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-3-t3r-87c97b17-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-6-tier-1",
+    "towerId": "zeynep-6",
+    "tier": 1,
+    "reference": "art-direction/zentax/zeynep-6-tier-1.png",
+    "sourceId": "f937b809-bc31-4612-95d1-39ef627757de",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-6-t1-b59511ab-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-6-tier-2",
+    "towerId": "zeynep-6",
+    "tier": 2,
+    "reference": "art-direction/zentax/zeynep-6-tier-2.png",
+    "sourceId": "5d63c4b5-b3c8-43a5-a546-8bc675326529",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-6-t2-d58207d8-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-6-tier-3",
+    "towerId": "zeynep-6",
+    "tier": 3,
+    "reference": "art-direction/zentax/zeynep-6-tier-3.png",
+    "sourceId": "c853ba8b-c59f-45cc-bc01-3687553ca157",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-6-t3r-1c5297ae-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-7-tier-1",
+    "towerId": "zeynep-7",
+    "tier": 1,
+    "reference": "art-direction/zentax/zeynep-7-tier-1.png",
+    "sourceId": "2bd4849e-6c44-4e39-b607-bdcb7b298731",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-7-t1-3d1d6e05-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-7-tier-2",
+    "towerId": "zeynep-7",
+    "tier": 2,
+    "reference": "art-direction/zentax/zeynep-7-tier-2.png",
+    "sourceId": "f6ebb8c1-e760-4d64-a937-baaa28c8c3f5",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-7-t2-b62203b8-1",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-7-tier-3",
+    "towerId": "zeynep-7",
+    "tier": 3,
+    "reference": "art-direction/zentax/zeynep-7-tier-3.png",
+    "sourceId": "66c8280a-0b9b-4745-be1a-ca91dc2fd9cd",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-7-t3r-b0aac2dc-1",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-8-tier-1",
+    "towerId": "zeynep-8",
+    "tier": 1,
+    "reference": "art-direction/zentax/zeynep-8-tier-1.png",
+    "sourceId": "3477fde4-db85-497c-a3f4-56bc441a092b",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-8-t1-a8103e23-1",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-8-tier-2",
+    "towerId": "zeynep-8",
+    "tier": 2,
+    "reference": "art-direction/zentax/zeynep-8-tier-2.png",
+    "sourceId": "8240e7b3-63bf-4707-b3db-3159fc2daa06",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-8-t2-8f25c8c3-0",
+    "status": "processed"
+  },
+  {
+    "key": "zeynep-8-tier-3",
+    "towerId": "zeynep-8",
+    "tier": 3,
+    "reference": "art-direction/zentax/zeynep-8-tier-3.png",
+    "sourceId": "702dba5f-040b-4338-80ef-4aede00773a8",
+    "credits": 55,
+    "conceptImage": "Tripo GPT Image 2.5 / zentax-8-t3r-4043401b-1",
+    "status": "processed"
+  }
+]

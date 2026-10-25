@@ -1,0 +1,43 @@
+{
+  "generator": "Tripo Studio / GPT Image 2.5 / 1:1 (Abartı 16:9) / 1K",
+  "styleReference": "art-direction/zentax/zentax-organic-reference.webp",
+  "pipeline": [
+    "Level 10 concept: style reference + the tower's game icon (Abartı has none) -> prompt \"level10\".",
+    "Level 10 3D-ready re-render of the chosen concept on a light-grey background, 35-degree view -> prompt \"rerender\".",
+    "Levels 5-9 and 1-4 from the approved level 10 re-render -> prompt \"grow\"."
+  ],
+  "family": "Family language (shared by every ZentaX tower): ivory / bone-white sculpted carapace arches and spines, iridescent chitin scale panels, bioluminescent glass cores, a segmented circular organic base plate. But THIS tower must be instantly distinguishable from the other ZentaX towers at a glance, by its unique silhouette and its own signature energy colour and chitin tint described below — do NOT reuse the generic green-core look of the reference unless stated.",
+  "towers": {
+    "zeynep-1": {
+      "name": "Hiza Emri",
+      "signature": "ONE long straight bone lance barrel of segmented vertebra rings with a needle tip; hot magenta-pink energy; deep plum-purple chitin."
+    },
+    "zeynep-2": {
+      "name": "Gösteri Kulesi",
+      "signature": "Radial crown of tall translucent crystal petals around a vertical almond eye crystal; rose-pink and white light; pearly rose chitin; no barrel."
+    },
+    "zeynep-3": {
+      "name": "Taht Mührü",
+      "signature": "Three tall curved bone claws holding a faceted emerald sphere, tendrils to three fuchsia link sockets at the rim; purple-blue chitin; no barrel."
+    },
+    "zeynep-6": {
+      "name": "Kin Kulesi",
+      "signature": "One wide flared horn maw on a low curved neck with tusks on its rim; blood-crimson glow; charcoal-black chitin with dark red sheen."
+    },
+    "zeynep-7": {
+      "name": "Saray Arşivi",
+      "signature": "Broad 2x2 hive-cathedral dome of concentric bone ribs over a honeycomb of amber cells, crown of spires; amber-gold glow; bronze-amber chitin."
+    },
+    "zeynep-8": {
+      "name": "Abartı",
+      "signature": "Long low two-cell edge rail: bone vertebral ridge on small feet, translucent violet membrane between rib struts, violet lens nodes; violet glow."
+    }
+  },
+  "tiers": {
+    "1": "LEVEL 1–4 — SEED / JUVENILE STAGE: same identity, core silhouette, base, camera and colours, but an early, compact, mostly closed organism: smooth thick bone plates, a few short blunt spines, mostly matte dark chitin, one or two small dim cores.",
+    "2": "LEVEL 5–9 — GROWING STAGE: same identity, silhouette, base, camera and colours as the approved level 10 design, but younger: about two thirds of the spines and arches, shorter thicker spines, fewer ornaments, chitin partly closed with iridescence on some panels, thinner veins, moderate glow.",
+    "3": "LEVEL 10 — FULLY EVOLVED: as elaborate and ornate as the reference: many layered bone arches and spines, rich iridescent scale panels, several strong glowing cores and energy veins."
+  },
+  "rerender": "Re-render exactly the approved design as ONE complete 3D object: reconstruct the real depth of the flat concept (base side walls, height of every arch, spine and core), elevated 35-degree three-quarter perspective, plain neutral light-grey studio background, nothing cropped, nothing outside the base footprint.",
+  "style": "Premium stylized-realistic organic hard-surface 3D game asset; semi-matte bone and chitin with controlled edge reflections, crisp sculpted bevels, rich midtones, strong contact shadows, clear material separation, energy as controlled accents without bloom haze; no text or props; clearly separated solid parts for image-to-3D."
+}
