@@ -82,7 +82,8 @@ export function attachCameraGestures(host: HTMLElement, surface: HTMLElement, ta
       const dy = event.clientY - mouse.y;
       if (mouse.pan) target.pan(mouse.x, mouse.y, event.clientX, event.clientY);
       else {
-        target.rotate(dx * MOUSE_ROTATE_PER_PX, event.clientX, event.clientY);
+        // Harita imleci izliyor: saga surukleme haritayi saga cevirir.
+        target.rotate(-dx * MOUSE_ROTATE_PER_PX, event.clientX, event.clientY);
         target.tilt(dy * MOUSE_TILT_PER_PX);
       }
       mouse.x = event.clientX;
