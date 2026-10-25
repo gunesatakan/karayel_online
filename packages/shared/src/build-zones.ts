@@ -372,3 +372,66 @@ export function groupBuildZoneBlobs(zones: BuildZoneMap): number[][] {
   }
   return blobs;
 }
+
+/**
+ * Yasak bolge lekelerinin arazisi: lekeler (kucuk indeksten) sirayla tepe ve
+ * cukur; ilk lekenin turu en kucuk karesinin ciftliginden (haritadan haritaya
+ * degisiyor). 3D gorunum bunu ciziyor, 2D isaretliyor; sunucuda tepe kara
+ * dusmanina giden atis hattini kesiyor (`isLineBlockedByHill`).
+ */
+export function getBuildZoneReliefs(zones: BuildZoneMap) {
+  const blobs = groupBuildZoneBlobs(zones);
+  const firstIsHill = (blobs[0]?.[0] ?? 0) % 2 === 0;
+  return blobs.map((cells, order) => ({ cells, hill: (order % 2 === 0) === firstIsHill }));
+}
+
+/** Tepe kareleri: kare -> lekenin sirasi (cukur ve bolge disi yok). */
+export function createBuildZoneHillLookup(zones: BuildZoneMap | undefined, cols: number, rows: number) {
+  const blobOf = new Map<number, number>();
+  if (zones && zones.cols === cols && zones.rows === rows) {
+    getBuildZoneReliefs(zones).forEach((relief, order) => {
+      if (relief.hill) for (const index of relief.cells) blobOf.set(index, order);
+    });
+  }
+  return {
+    size: blobOf.size,
+    /** Karenin tepe lekesi; tepe degilse -1. */
+    blobAt(col: number, row: number) {
+      if (col < 0 || col >= cols || row < 0 || row >= rows) return -1;
+      return blobOf.get(row * cols + col) ?? -1;
+    }
+  };
+}
+
+export type BuildZoneHillLookup = ReturnType<typeof createBuildZoneHillLookup>;
+
+/** Atis hattinin ornek araligi (hucre). */
+export const HILL_LINE_SAMPLE_CELLS = 0.25;
+
+/**
+ * Duz hat (x1, y1) -> (x2, y2) bir tepenin ustunden geciyor mu. Hat ceyrek
+ * hucre araliklarla orneklenir (kenara hafifce surten hat cogu zaman takilmiyor); uclarin ceyrek hucresi sayilmaz. Hedefin
+ * durdugu tepe lekesi engel degil (tepedeki dusman gorunuyor). Cukur engel
+ * degil: ustunden atis geciyor.
+ */
+export function isLineBlockedByHill(
+  hills: BuildZoneHillLookup,
+  grid: { originX: number; originY: number; cellSize: number },
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+) {
+  if (hills.size === 0) return false;
+  const { originX, originY, cellSize } = grid;
+  const cellOf = (x: number, y: number) => hills.blobAt(Math.floor((x - originX) / cellSize), Math.floor((y - originY) / cellSize));
+  const targetBlob = cellOf(x2, y2);
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  const step = cellSize * HILL_LINE_SAMPLE_CELLS;
+  for (let along = step; along < length - step; along += step) {
+    const t = along / length;
+    const blob = cellOf(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    if (blob >= 0 && blob !== targetBlob) return true;
+  }
+  return false;
+}

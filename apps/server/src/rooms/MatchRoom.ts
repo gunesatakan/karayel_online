@@ -6,7 +6,7 @@ import { ARMOR_FEAR_ROLL_INTERVAL_MS, getArmorFearDurationMs, getHealthRangeAdd,
 import { AMBUSH_RANGE_HOLD_MS, AMBUSH_RANGE_IDLE_MS, FOCUS_RANGE_GRACE_MS, KILL_RANGE_LONG_MAX_KILLS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { createResourceLayoutRandom, getMapResourceNodes, type MapResourceNodeDefinition, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
-import { BUILD_ZONE_TERRAIN_SPEED_MULTIPLIER, createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
+import { BUILD_ZONE_TERRAIN_SPEED_MULTIPLIER, createBuildZoneHillLookup, createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, isLineBlockedByHill, type BuildZoneHillLookup, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
 import { clipCounterSurgeLane, getWavePatternDelayMs, getWavePatternEntryColumns, getWavePatternSlotType, planWavePattern, type WavePatternPlan } from "@karayel/shared";
 // Ogretici asamasi (Eğitim): yavas, seyrek dusman; olmeyen nexus; adim olcumu.
@@ -3147,6 +3147,7 @@ export class MatchRoom extends Room<MatchState> {
    */
   private buildZones?: BuildZoneLayout;
   private buildZoneLookupCache?: { zones: BuildZoneLayout | undefined; cols: number; rows: number; lookup: BuildZoneLookup };
+  private buildZoneHillCache?: { zones: BuildZoneLayout | undefined; cols: number; rows: number; hills: BuildZoneHillLookup; grid: { originX: number; originY: number; cellSize: number } };
   /** Istemcinin haritasinin acikca verdigi dugum konumlari (kendi izgara olcusuyle). */
   private requestedResourceNodes?: { cols: number; rows: number; nodes: MapResourceNode[] };
   /** Arena kurulmadan onceki sabit yerlesimin onbellegi (harita olcusune gore). */
@@ -6555,14 +6556,32 @@ export class MatchRoom extends Room<MatchState> {
     this.resourceLayout = { cols: map.cols, rows: map.rows, cells: result.cells, source: result.source, spacing: result.spacing };
   }
 
-  /**
-   * Dugumlerin kareleri: mac basinda dagitilan yerlesim; arena kurulmadiysa
-   * (ya da harita olcusu degistiyse) eski sabit yerlesim.
-   */
   /** Kara birliginin bu karede hiz carpani: yasak bolge (tepe/cukur) yavas. */
   private getTerrainSpeedMultiplier(movementKind: string, col: number, row: number) {
     if (movementKind === "air") return 1;
     return this.getBuildZoneLookup().has(col, row) ? BUILD_ZONE_TERRAIN_SPEED_MULTIPLIER : 1;
+  }
+
+  /** Tepe kareleri ve izgaranin dunya olcusu; bolgeler ya da harita degisince yeniden. */
+  private getBuildZoneHills() {
+    const { cols, rows } = this.activeMap;
+    const cached = this.buildZoneHillCache;
+    if (cached && cached.zones === this.buildZones && cached.cols === cols && cached.rows === rows) return cached;
+    const origin = getMapOrigin(this.activeMap);
+    const next = { zones: this.buildZones, cols, rows, hills: createBuildZoneHillLookup(this.buildZones, cols, rows), grid: { originX: origin.x, originY: origin.y, cellSize: getMapGridSize(this.activeMap) } };
+    this.buildZoneHillCache = next;
+    return next;
+  }
+
+  /**
+   * Kule ile kara dusmani arasinda tepe var mi (atis hatti tepeyi asiyor).
+   * Cukur engel degil; ucan dusman tepenin ustunden goruluyor; tepenin
+   * ustundeki dusman gorunuyor.
+   */
+  private isEnemyBehindHill(tower: TowerModel, enemy: EnemyModel) {
+    if (enemy.movementKind === "air") return false;
+    const { hills, grid } = this.getBuildZoneHills();
+    return hills.size > 0 && isLineBlockedByHill(hills, grid, tower.x, tower.y, enemy.x, enemy.y);
   }
 
   private resourceNodeCellCache?: { cells: Record<string, ResourceLayoutCell>; cols: number; indexes: Set<number> };
@@ -6594,6 +6613,10 @@ export class MatchRoom extends Room<MatchState> {
     return this.getResourceNodeCellIndexes().has(row * this.activeMap.cols + col);
   }
 
+  /**
+   * Dugumlerin kareleri: mac basinda dagitilan yerlesim; arena kurulmadiysa
+   * (ya da harita olcusu degistiyse) eski sabit yerlesim.
+   */
   private getResourceNodeCells(): Record<string, ResourceLayoutCell> {
     const { cols, rows } = this.activeMap;
     const layout = this.resourceLayout;
@@ -11357,9 +11380,12 @@ export class MatchRoom extends Room<MatchState> {
     return this.activeAegis !== undefined || this.activeMekaShieldCount > 0;
   }
 
-  /** Kule bu dusmani siperin ya da bir meka kalkaninin ardinda mi goruyor (atis hatti engeli kesiyor). */
+  /**
+   * Kule bu dusmani siperin, bir meka kalkaninin ya da bir tepenin ardinda mi
+   * goruyor (atis hatti engeli kesiyor): hedef secimi ve kilidi buna bakiyor.
+   */
   private isEnemyBehindAegis(tower: TowerModel, enemy: EnemyModel) {
-    return this.lineBlockersActive && this.isLineBlockedByAegis(tower.x, tower.y, enemy.x, enemy.y);
+    return (this.lineBlockersActive && this.isLineBlockedByAegis(tower.x, tower.y, enemy.x, enemy.y)) || this.isEnemyBehindHill(tower, enemy);
   }
 
   /**
