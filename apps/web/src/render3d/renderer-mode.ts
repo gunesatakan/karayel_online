@@ -11,6 +11,12 @@ export type TowerView = "2d" | "top" | "angled";
 
 const STORAGE_KEY = "karayel_towers_3d";
 export const TOWERS_3D_CHANGED_EVENT = "karayel:towers-3d";
+/**
+ * Egik gorunumde Phaser tuvalinin dunya birimi basina en cok cihaz pikseli
+ * (2D'de telefonda 2'ye kadar). Tuval 3D'ye doku olarak kopyalaniyor; 1,25'te
+ * telefonda kopya ~2,5 kat kucuk. Bedeli yaklasinca biraz yumusak bir zemin.
+ */
+export const ANGLED_MAX_RENDER_SCALE = 1.25;
 /** Oyun ici menu: egik kamerayi acilis haline (45 derece, kuzey yukarida, harita sigiyor) dondur. */
 export const TOWERS_3D_CAMERA_RESET_EVENT = "karayel:towers-3d-camera-reset";
 

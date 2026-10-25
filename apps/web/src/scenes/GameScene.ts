@@ -875,6 +875,14 @@ const ANGLED_AIR_DEPTH_BANDS: readonly (readonly [number, number])[] = [[10, 11.
 /** Ucan dusmanin panosu yerdekinden bu kadar hucre yukarida. */
 const ANGLED_AIR_ENEMY_LIFT_CELLS = 0.45;
 
+/** Cizilecek bir sey tasiyor mu: gorunur ve saydam degil; Graphics'te bos olmayan komut listesi. */
+function hasVisibleContent(object: Phaser.GameObjects.GameObject) {
+  const view = object as unknown as { visible?: boolean; alpha?: number; commandBuffer?: unknown[] };
+  if (!object.active && object.type !== "Graphics") return false;
+  if (view.visible === false || view.alpha === 0) return false;
+  return object.type === "Graphics" ? (view.commandBuffer?.length ?? 0) > 0 : true;
+}
+
 function isAngledAirDepth(depth: number) {
   for (const [from, to] of ANGLED_AIR_DEPTH_BANDS) if (depth >= from && depth < to) return true;
   return false;
@@ -3648,7 +3656,7 @@ export class GameScene extends Phaser.Scene {
       // Egik 3D gorunumde kamera donebiliyor: kule parmagin ekranda ustune
       // kaldiriliyor (2D'deki pay kadar), dunyanin kuzeyine degil. O ekran
       // noktasi egimden cozuluyor (render3d).
-      const lift = this.dragPreviewOffsetY * (rect.height / Math.max(1, this.scale.gameSize.height));
+      const lift = (this.dragPreviewOffsetY / this.getArenaFitFactor()) * this.cameras.main.zoom * (rect.height / Math.max(1, this.scale.gameSize.height));
       const lifted = this.untiltClient(rawClientX, rawClientY - lift);
       const flatX = ((lifted.x - rect.left) / rect.width) * this.cameras.main.width;
       const flatY = ((lifted.y - rect.top) / rect.height) * this.cameras.main.height;
@@ -10717,12 +10725,19 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private restorePointerTransform?: () => void;
   /** Egik gorunumun efekt kamerasi: zemin alindiktan sonra mermi ve isinlari ayni tuvale yeniden ciziyor. */
   private airCamera3d?: Phaser.Cameras.Scene2D.Camera;
+  /** Bu karede efekt kamerasinin cizecegi gorunur bir nesne var mi (`prepareAngledFrame`). */
+  private angledAirContent = false;
   /** Egik gorunumun iki parmak / fare jestleri (render3d/camera-gestures). */
   private detachCameraGestures?: () => void;
 
   private setupTowerLayer3d() {
+    let lastView = getActiveTowerView();
     const apply = () => {
       const view = getActiveTowerView();
+      // Egik gorunume girip cikarken Phaser tuvalinin cozunurlugu degisiyor
+      // (rendering.getRenderScaleNow): olcek main.ts'in boyut dinleyicisiyle tazeleniyor.
+      if ((view === "angled") !== (lastView === "angled")) window.dispatchEvent(new Event("resize"));
+      lastView = view;
       if (view === "2d") {
         this.disableTowerLayer3d();
         return;
@@ -10863,9 +10878,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const mainBit = main.id;
     const airBit = air.id;
     const both = mainBit | airBit;
+    // Efekt kamerasinin bu karede cizecegi bir sey var mi: yoksa ikinci kopya hic yapilmiyor.
+    let airContent = false;
     for (const child of this.children.list) {
       const depth = (child as unknown as { depth?: number }).depth ?? 0;
-      child.cameraFilter = (child.cameraFilter & ~both) | (isAngledAirDepth(depth) ? mainBit : airBit);
+      const isAir = isAngledAirDepth(depth);
+      child.cameraFilter = (child.cameraFilter & ~both) | (isAir ? mainBit : airBit);
+      if (isAir && !airContent) airContent = hasVisibleContent(child);
     }
     const cellSize = this.getMapCellSize();
     layer.setAirBodySize(getEnemySpriteDisplaySize({ race: "meka", type: "grunt" }, cellSize));
@@ -10902,6 +10921,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         shadowAlpha: mover.air ? 0.22 : 0.38
       });
     }
+    for (const mover of this.enemies.values()) {
+      if (airContent) break;
+      for (const overhead of [mover.marker, mover.curseMarker, mover.doubtMarker, mover.armorBreakIcon, mover.crown]) {
+        if (overhead && hasVisibleContent(overhead)) airContent = true;
+      }
+    }
+    this.angledAirContent = airContent;
     layer.syncEnemies(enemies);
   }
 
@@ -10911,7 +10937,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    */
   private captureAngledBoard() {
     const layer = this.towerLayer3d;
-    if (!layer || !this.airCamera3d || layer.getView() !== "angled") return;
+    if (!layer || !this.airCamera3d || layer.getView() !== "angled" || !this.angledAirContent) return;
     const renderer = this.game.renderer;
     if (!(renderer instanceof Phaser.Renderer.WebGL.WebGLRenderer)) return;
     renderer.flush();

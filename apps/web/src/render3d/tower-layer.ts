@@ -236,6 +236,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  // Golge haritasi yalnizca kuleler degisince (yer, kademe, taret donusu) ve en
+  // cok uc karede bir yeniden ciziliyor: her karede kulelerin ikinci bir cizimi demekti.
+  renderer.shadowMap.autoUpdate = false;
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -252,7 +255,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   const sunLength = Math.hypot(-6, 14, 8);
   const sunDirection = { x: -6 / sunLength, y: 14 / sunLength, z: 8 / sunLength };
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.6;
   sun.shadow.camera.near = 1;
@@ -352,6 +355,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   }
 
   function sync(towers: readonly Tower3dInput[]) {
+    markShadows(towers);
     const active = new Set<string>();
     visible.clear();
     for (const tower of towers) {
@@ -373,6 +377,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         instance = { key, root, yaw: root.getObjectByName("turret-yaw") };
         instances.set(tower.id, instance);
         scene.add(root);
+        shadowDirty = true;
       }
       instance.root.position.set(tower.x, 0, tower.y);
       instance.root.scale.setScalar(tower.scale);
@@ -387,6 +392,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       if (!active.has(id)) {
         scene.remove(instance.root);
         instances.delete(id);
+        shadowDirty = true;
       }
     }
     return visible;
@@ -516,6 +522,28 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   let width = 0;
   let height = 0;
+  const coarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  let shadowDirty = true;
+  let shadowSignature = "";
+  let frame = 0;
+
+  /** Kulelerin golgeye giren hali degistiyse golge haritasi bir sonraki uygun karede. */
+  function markShadows(towers: readonly Tower3dInput[]) {
+    let signature = "";
+    for (const tower of towers) signature += `${tower.id}:${tower.tier}:${tower.x}:${tower.y}:${Math.round((tower.facing ?? 0) * 50)};`;
+    if (signature !== shadowSignature) {
+      shadowSignature = signature;
+      shadowDirty = true;
+    }
+  }
+
+  function updateShadows() {
+    frame += 1;
+    if (shadowDirty && frame % 3 === 0) {
+      renderer.shadowMap.needsUpdate = true;
+      shadowDirty = false;
+    }
+  }
 
   function resize(rect: DOMRect) {
     const hostRect = options.host.getBoundingClientRect();
@@ -526,7 +554,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     if (nextWidth !== width || nextHeight !== height) {
       width = nextWidth;
       height = nextHeight;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      // On izleme gibi en cok 1,5; telefonda 1,25 (tam ekran MSAA ve golgeli malzemeler pahali).
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarsePointer ? 1.25 : 1.5));
       renderer.setSize(width, height, true);
     }
   }
@@ -606,6 +635,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   function placeSun(world: WorldView) {
     const center = mapCenter(world);
     const radius = Math.hypot(world.width, world.height) / 2 + 80;
+    if (sun.target.position.x !== center.x || sun.target.position.z !== center.z) shadowDirty = true;
     sun.target.position.set(center.x, 0, center.z);
     sun.position.set(center.x + sunDirection.x * 1500, sunDirection.y * 1500, center.z + sunDirection.z * 1500);
     const shadowCamera = sun.shadow.camera;
@@ -642,6 +672,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       camera.position.set(ortho.centerX, 2000, ortho.centerZ);
       camera.lookAt(ortho.centerX, 0, ortho.centerZ);
       camera.updateProjectionMatrix();
+      updateShadows();
       renderer.render(scene, camera);
       return;
     }
@@ -684,6 +715,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     camera.position.set(current.target.x - forward.x * 3000, -forward.y * 3000, current.target.z - forward.z * 3000);
     camera.lookAt(current.target.x, 0, current.target.z);
     camera.updateProjectionMatrix();
+    updateShadows();
     renderer.render(scene, camera);
   }
 
