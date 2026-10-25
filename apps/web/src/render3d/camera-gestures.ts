@@ -2,7 +2,8 @@
  * Egik 3D gorunumun kamera jestleri (on izlemedeki yorunge kamerasi gibi).
  *
  * Tek parmak oyunun: kule secme, surukleme, beceri jestleri oldugu gibi.
- * Iki parmak kameranin: kistirma yakinlastirir, burma haritayi dondurur,
+ * Iki parmak kameranin: kistirma yakinlastirir, burma haritayi merkezi
+ * cevresinde dondurur (burma suresince yalnizca donus),
  * iki parmagi birlikte asagi-yukari kaydirmak egimi degistirir, birlikte
  * kaydirmak haritayi kaydirir. Farede tekerlek yakinlastirir, orta tusla
  * surukleme dondurur (yatay) ve eger (dikey), Shift + orta tus kaydirir.
@@ -40,7 +41,7 @@ export function attachCameraGestures(host: HTMLElement, surface: HTMLElement, ta
   const swallowed = new Set<number>();
   let pair: [number, number] | undefined;
   let start: { points: [Point, Point] } | undefined;
-  let mode: "tilt" | "transform" | undefined;
+  let mode: "tilt" | "rotate" | "transform" | undefined;
   let mouse: { id: number; x: number; y: number; pan: boolean } | undefined;
 
   const onSurface = (event: Event) => event.target === surface || (event.target instanceof Node && surface.contains(event.target));
@@ -106,15 +107,18 @@ export function attachCameraGestures(host: HTMLElement, surface: HTMLElement, ta
       const total = twoFingerDelta(start.points, after);
       const travel = Math.hypot(after[0].x - start.points[0].x, after[0].y - start.points[0].y) + Math.hypot(after[1].x - start.points[1].x, after[1].y - start.points[1].y);
       if (travel < CLASSIFY_AFTER_PX) return;
-      mode = classifyTwoFingerGesture(total.moveX, total.moveY, total.scale, total.rotation, total.parallelVertical);
+      mode = classifyTwoFingerGesture(total.moveX, total.moveY, total.scale, total.rotation, total.parallelVertical, total.span);
     }
     const step = twoFingerDelta(before, after);
     if (mode === "tilt") {
       target.tilt(step.moveY * TILT_DEGREES_PER_PX);
       return;
     }
+    if (mode === "rotate") {
+      target.rotate(step.rotation, step.mid.x, step.mid.y);
+      return;
+    }
     target.zoom(step.scale, step.mid.x, step.mid.y);
-    target.rotate(step.rotation, step.mid.x, step.mid.y);
     target.pan(step.previousMid.x, step.previousMid.y, step.mid.x, step.mid.y);
   };
 

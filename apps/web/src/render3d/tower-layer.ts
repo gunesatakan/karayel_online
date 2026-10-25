@@ -36,6 +36,7 @@ import {
   clampOrbit,
   orbitBasis,
   orthoFromWorldView,
+  recenterWhileRotating,
   rotateTargetAround,
   standeeCenterHeight,
   MINE_CELL_SCALE,
@@ -1246,7 +1247,11 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     const current = orbitView();
     orbit.yaw += radians;
     // Siniri yok: kirpilsa merkez kayardi (kaydirma ve yakinlasma hedefi yine haritada tutuyor).
-    if (current && lastWorld) orbit.target = rotateTargetAround(current.target, mapCenter(lastWorld), radians);
+    // Donerken hedef haritanin merkezine de cekiliyor: harita ortaya geliyor, kenarda savrulmuyor.
+    if (current && lastWorld) {
+      const center = mapCenter(lastWorld);
+      orbit.target = recenterWhileRotating(rotateTargetAround(current.target, center, radians), center, radians);
+    }
   }
 
   function tiltCamera(degrees: number) {

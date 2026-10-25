@@ -223,6 +223,8 @@ export function twoFingerDelta(previous: readonly [{ x: number; y: number }, { x
   return {
     scale: span(current) / Math.max(1, span(previous)),
     rotation,
+    /** Parmaklarin simdiki araligi (piksel). */
+    span: span(current),
     mid: currentMid,
     previousMid,
     moveX: currentMid.x - previousMid.x,
@@ -233,14 +235,32 @@ export function twoFingerDelta(previous: readonly [{ x: number; y: number }, { x
 }
 
 /**
- * Jestin kipi, parmaklar yeterince kaydiginda bir kez seciliyor: ikisi ayni
- * yone cogunlukla dikey kaydiysa ve aralik ile aci az degistiyse egim; yoksa
- * yakinlasma + donus + kaydirma.
+ * Jestin kipi, parmaklar yeterince kaydiginda bir kez seciliyor ve jest
+ * boyunca degismiyor: ikisi ayni yone cogunlukla dikey kaydiysa ve aralik ile
+ * aci az degistiyse egim; parmaklarin donus yayi aralik degisiminden ve
+ * birlikte kaymadan buyukse yalnizca donus (burmada orta nokta ve aralik hep
+ * biraz oynuyor: kaydirma ve yakinlasma sayilsaydi harita merkezden kayardi);
+ * yoksa yakinlasma + kaydirma.
  */
-export function classifyTwoFingerGesture(totalMoveX: number, totalMoveY: number, totalScale: number, totalRotation: number, parallelVertical: boolean) {
+export function classifyTwoFingerGesture(totalMoveX: number, totalMoveY: number, totalScale: number, totalRotation: number, parallelVertical: boolean, span = 100): "tilt" | "rotate" | "transform" {
   const vertical = Math.abs(totalMoveY) > Math.abs(totalMoveX) * 1.6;
   const steady = Math.abs(Math.log(totalScale)) < 0.08 && Math.abs(totalRotation) < 0.12;
-  return parallelVertical && vertical && steady ? "tilt" : "transform";
+  if (parallelVertical && vertical && steady) return "tilt";
+  const arc = (Math.abs(totalRotation) * span) / 2;
+  const pinch = (Math.abs(totalScale - 1) * span) / 2;
+  const drag = Math.hypot(totalMoveX, totalMoveY);
+  return arc > 6 && arc >= pinch && arc >= drag * 0.8 ? "rotate" : "transform";
+}
+
+/**
+ * Donerken harita ortaya geri geliyor: hedef donusun buyuklugu kadar haritanin
+ * merkezine cekiliyor (tek adimda ceyrek tur donuste tamamen; azar azar
+ * donuste 45 derecede ~%63, 90 derecede ~%86). Yakinlasip kenara
+ * kaydirilmis kamera birkac donusten sonra da haritayi kaybetmiyor.
+ */
+export function recenterWhileRotating(target: { x: number; z: number }, center: { x: number; z: number }, radians: number) {
+  const pull = Math.min(1, (Math.abs(radians) / Math.PI) * 4);
+  return { x: target.x + (center.x - target.x) * pull, z: target.z + (center.z - target.z) * pull };
 }
 
 /**

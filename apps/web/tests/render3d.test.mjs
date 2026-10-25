@@ -10,6 +10,7 @@ import {
   angledFrustum,
   classifyTwoFingerGesture,
   clampOrbit,
+  recenterWhileRotating,
   rotateTargetAround,
   twoFingerDelta,
   angledGroundToScreen,
@@ -123,7 +124,23 @@ test("egim sinirlari ve iki parmak jesti: kistirma, burma, birlikte dikey kaydir
   assert.equal(classifyTwoFingerGesture(up.moveX, up.moveY, up.scale, up.rotation, up.parallelVertical), "tilt");
   const drag = twoFingerDelta([{ x: 100, y: 300 }, { x: 200, y: 300 }], [{ x: 150, y: 290 }, { x: 250, y: 290 }]);
   assert.equal(classifyTwoFingerGesture(drag.moveX, drag.moveY, drag.scale, drag.rotation, drag.parallelVertical), "transform");
-  assert.equal(classifyTwoFingerGesture(pinch.moveX, pinch.moveY, pinch.scale, pinch.rotation, pinch.parallelVertical), "transform");
+  assert.equal(classifyTwoFingerGesture(pinch.moveX, pinch.moveY, pinch.scale, pinch.rotation, pinch.parallelVertical, pinch.span), "transform");
+  // Burma: orta nokta ve aralik biraz oynasa da yalnizca donus.
+  const sloppy = twoFingerDelta([{ x: 100, y: 300 }, { x: 300, y: 300 }], [{ x: 112, y: 262 }, { x: 296, y: 344 }]);
+  assert.equal(classifyTwoFingerGesture(sloppy.moveX, sloppy.moveY, sloppy.scale, sloppy.rotation, sloppy.parallelVertical, sloppy.span), "rotate");
+  assert.equal(classifyTwoFingerGesture(drag.moveX, drag.moveY, drag.scale, drag.rotation, drag.parallelVertical, drag.span), "transform");
+});
+
+test("donerken harita ortaya geri geliyor: ceyrek turda tamamen, kucuk donuste azar azar", () => {
+  const center = { x: 204, z: 392 };
+  const corner = { x: 40, z: 120 };
+  assert.deepEqual(recenterWhileRotating(corner, center, Math.PI / 2), center);
+  const small = recenterWhileRotating(corner, center, 0.05);
+  const before = Math.hypot(corner.x - center.x, corner.z - center.z);
+  const after = Math.hypot(small.x - center.x, small.z - center.z);
+  assert.ok(after < before && after > before * 0.85, `${before} -> ${after}`);
+  // Merkezdeki kamera yerinde.
+  assert.deepEqual(recenterWhileRotating(center, center, 1), center);
 });
 
 test("ayakta duran panonun alt kenari ekranda ayagina degiyor", () => {
