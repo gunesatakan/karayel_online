@@ -473,8 +473,8 @@ import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../teleme
 import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 import { getActiveTowerView, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
-import { EDGE_MODEL_IDS, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
-import type { Tower3dInput, TowerLayer } from "../render3d/tower-layer";
+import { ANGLED_ELEVATION_DEGREES, EDGE_MODEL_IDS, edgeModelTransform, hasTowerModel, northShiftForRise, standeeCenterHeight, towerModelScale } from "../render3d/tower-math";
+import type { Enemy3dInput, Tower3dInput, TowerLayer } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getWaveMusicLevel, getWaveMusicTrackForState, WAVE_MUSIC_TRACKS, WaveMusicPlayer } from "../wave-music";
@@ -863,6 +863,22 @@ const ENEMY_ACCENT_FALLBACK = 0xd6d3d1;
 const ENEMY_HIT_FLASH_COLOR = 0xffffff;
 /** Kozmetik itmenin geri oturma suresi (kendi agir vurusun; yalnizca govdenin cizimi). */
 const ENEMY_KNOCK_MS = 90;
+/**
+ * Egik 3D gorunumde efekt kamerasinin cizdigi derinlikler (yari acik): isin,
+ * ip ve iz (10-10.9), mermi (11, 11.2), kirinti (11.7), namlu ve carpma
+ * (12.45, 12.5), nisangah ve efsanevi vuruslar (13.2-13.3), hasar sayilari
+ * (30-30.2). Bunlar zeminden kalkik ayri duzlemde; geri kalan her sey zeminde.
+ */
+const ANGLED_AIR_DEPTH_BANDS: readonly (readonly [number, number])[] = [[10, 11.8], [12.45, 12.55], [13.2, 13.31], [30, 30.5]];
+/** Ucan dusmanin panosu yerdekinden bu kadar hucre yukarida. */
+const ANGLED_AIR_ENEMY_LIFT_CELLS = 0.45;
+const ANGLED_COS = Math.cos((ANGLED_ELEVATION_DEGREES * Math.PI) / 180);
+const ANGLED_SIN = Math.sin((ANGLED_ELEVATION_DEGREES * Math.PI) / 180);
+
+function isAngledAirDepth(depth: number) {
+  for (const [from, to] of ANGLED_AIR_DEPTH_BANDS) if (depth >= from && depth < to) return true;
+  return false;
+}
 /** Buz kabugu: soluk celik-mavisi (eski pastel camgobegi rozetin yerine), donmuyor. */
 const FROST_CRUST_FILL = 0x8aa1b4;
 const FROST_CRUST_EDGE = 0xc3d0dc;
@@ -10688,6 +10704,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private towerLayer3dLoading = false;
   private towers3dShown: ReadonlySet<string> = new Set();
   private restorePointerTransform?: () => void;
+  /** Egik gorunumun efekt kamerasi: zemin alindiktan sonra mermi ve isinlari ayni tuvale yeniden ciziyor. */
+  private airCamera3d?: Phaser.Cameras.Scene2D.Camera;
 
   private setupTowerLayer3d() {
     const apply = () => {
@@ -10701,9 +10719,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     };
     window.addEventListener(TOWERS_3D_CHANGED_EVENT, apply);
     this.game.events.on(Phaser.Core.Events.POST_RENDER, this.renderTowerLayer3d, this);
+    this.game.events.on(Phaser.Core.Events.PRE_RENDER, this.prepareAngledFrame, this);
+    const mainCamera = this.cameras.main;
+    mainCamera.on(Phaser.Cameras.Scene2D.Events.POST_RENDER, this.captureAngledBoard, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener(TOWERS_3D_CHANGED_EVENT, apply);
       this.game.events.off(Phaser.Core.Events.POST_RENDER, this.renderTowerLayer3d, this);
+      this.game.events.off(Phaser.Core.Events.PRE_RENDER, this.prepareAngledFrame, this);
+      mainCamera.off(Phaser.Cameras.Scene2D.Events.POST_RENDER, this.captureAngledBoard, this);
       this.disableTowerLayer3d();
     });
     apply();
@@ -10748,6 +10771,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private applyTowerLayerView(view: "top" | "angled") {
     this.towerLayer3d?.setView(view);
     this.game.canvas.style.opacity = view === "angled" ? "0" : "";
+    if (view === "angled" && this.towerLayer3d && !this.airCamera3d) {
+      // Ana kameradan sonra cizen ikinci kamera; girdi almiyor (isabet testi ana kamerada).
+      this.airCamera3d = this.cameras.add(0, 0, this.cameras.main.width, this.cameras.main.height, false, "air3d");
+      this.airCamera3d.inputEnabled = false;
+    } else if (view !== "angled" && this.airCamera3d) {
+      this.resetAngledFrame();
+    }
     if (view === "angled" && !this.restorePointerTransform) {
       const input = this.game.input as unknown as { transformPointer: (pointer: Phaser.Input.Pointer, pageX: number, pageY: number, wasMove: boolean) => void };
       const original = input.transformPointer;
@@ -10780,6 +10810,106 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       x: rect.left + (camera.x + ((world.x - view.x) / view.width) * camera.width) * scaleX,
       y: rect.top + (camera.y + ((world.y - view.y) / view.height) * camera.height) * scaleY
     };
+  }
+
+  /**
+   * Egik gorunumde Phaser karesinden once: nesneler iki kameraya ayriliyor
+   * (zemin ana kamerada, efektler efekt kamerasinda), dusman sprite'lari
+   * ikisinde de gizli ve son halleri 3D katmana ayakta duran pano olarak
+   * gidiyor. Can cubugu ve isaretler efekt duzleminde, panonun basinin ustunde.
+   * Nesnelerin konumu ve durumu degismiyor; yalnizca hangi kameranin cizdigi.
+   */
+  private prepareAngledFrame() {
+    const layer = this.towerLayer3d;
+    const air = this.airCamera3d;
+    if (!layer || !air || layer.getView() !== "angled") return;
+    const main = this.cameras.main;
+    air.setViewport(main.x, main.y, main.width, main.height);
+    air.setZoom(main.zoom);
+    air.setOrigin(main.originX, main.originY);
+    air.setRoundPixels(main.roundPixels);
+    air.setScroll(main.scrollX, main.scrollY);
+    const mainBit = main.id;
+    const airBit = air.id;
+    const both = mainBit | airBit;
+    for (const child of this.children.list) {
+      const depth = (child as unknown as { depth?: number }).depth ?? 0;
+      child.cameraFilter = (child.cameraFilter & ~both) | (isAngledAirDepth(depth) ? mainBit : airBit);
+    }
+    const cellSize = this.getMapCellSize();
+    const airHeight = standeeCenterHeight(getEnemySpriteDisplaySize({ race: "meka", type: "grunt" }, cellSize));
+    layer.setAirHeight(airHeight);
+    const enemies: Enemy3dInput[] = [];
+    for (const [id, mover] of this.enemies) {
+      const sprite = mover.sprite;
+      sprite.cameraFilter |= both;
+      for (const overhead of [mover.healthBar, mover.marker, mover.curseMarker, mover.doubtMarker, mover.armorBreakIcon, mover.crown]) {
+        if (overhead) overhead.cameraFilter = (overhead.cameraFilter & ~both) | mainBit;
+      }
+      if (!sprite.active || !sprite.visible || sprite.alpha <= 0) continue;
+      const frame = sprite.frame;
+      // Ezilme alani koruyor: ayak yuksekligi ezilmeyle sallanmasin.
+      const size = Math.sqrt(Math.abs(sprite.displayWidth * sprite.displayHeight));
+      const extra = mover.air ? cellSize * ANGLED_AIR_ENEMY_LIFT_CELLS : 0;
+      const lift = standeeCenterHeight(size) + extra;
+      enemies.push({
+        id,
+        textureKey: sprite.texture.key,
+        image: frame.source.image as HTMLImageElement | HTMLCanvasElement,
+        frame: { x: frame.cutX, y: frame.cutY, width: frame.cutWidth, height: frame.cutHeight, sourceWidth: frame.source.width, sourceHeight: frame.source.height },
+        x: sprite.x,
+        y: sprite.y,
+        width: Math.abs(sprite.displayWidth),
+        height: Math.abs(sprite.displayHeight),
+        rotation: sprite.rotation,
+        alpha: sprite.alpha,
+        tint: sprite.tintTopLeft,
+        fill: sprite.tintFill,
+        lift,
+        shadowRadius: size * (mover.air ? 0.26 : 0.34),
+        shadowAlpha: mover.air ? 0.22 : 0.38
+      });
+      if (mover.healthBar) {
+        // Cubuk 2D'de govdenin altinda (`drawEnemyHealthBar`); burada panonun
+        // tepesinin 4 birim ustune: efekt duzleminin kalkisi ve cubugun guneye
+        // payi hesaba katilarak kuzeye kaydiriliyor.
+        const top = lift * ANGLED_COS + size / 2;
+        const below = (mover.displaySize ?? size) * 0.5 + 5;
+        mover.healthBar.y = -northShiftForRise(top + 4 - airHeight * ANGLED_COS + below * ANGLED_SIN);
+      }
+    }
+    layer.syncEnemies(enemies);
+  }
+
+  /**
+   * Ana kamera zemini cizdi: tuval tahtanin dokusuna aliniyor ve efekt kamerasi
+   * bos tuvale cizsin diye temizleniyor (tuval egik gorunumde zaten gorunmez).
+   */
+  private captureAngledBoard() {
+    const layer = this.towerLayer3d;
+    if (!layer || !this.airCamera3d || layer.getView() !== "angled") return;
+    const renderer = this.game.renderer;
+    if (!(renderer instanceof Phaser.Renderer.WebGL.WebGLRenderer)) return;
+    renderer.flush();
+    layer.captureBoard();
+    const gl = renderer.gl;
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
+  /** Egik gorunumden cikis: efekt kamerasi kalkiyor, kamera ayrimi ve cubuk kaymasi sifirlaniyor. */
+  private resetAngledFrame() {
+    const both = this.cameras.main.id | (this.airCamera3d?.id ?? 0);
+    for (const child of this.children.list) child.cameraFilter &= ~both;
+    for (const mover of this.enemies.values()) {
+      mover.sprite.cameraFilter &= ~both;
+      if (mover.healthBar) mover.healthBar.y = 0;
+    }
+    if (this.airCamera3d) {
+      this.cameras.remove(this.airCamera3d, true);
+      this.airCamera3d = undefined;
+    }
+    this.towerLayer3d?.syncEnemies([]);
   }
 
   /** Model yuklendiginde ya da katman acildiginda: snapshot beklemeden kuleler 3D'ye gecsin. */

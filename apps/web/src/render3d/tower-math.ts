@@ -99,6 +99,23 @@ export function angledGroundToScreen(x: number, z: number, height: number, cente
   return { x: (x - center.x) / frustum.halfWidth, y: up / frustum.halfHeight };
 }
 
+/**
+ * Ayakta duran panonun (dusman) merkez yuksekligi: kameraya donuk pano ekranda
+ * tam boyunda; merkezi `boy / 2` ekran yukari ciksin ki alt kenari ayagina
+ * (zemindeki noktasina) degsin. Yukseklik ekranda `cos` kadar kisaliyor.
+ */
+export function standeeCenterHeight(size: number, elevationDegrees = ANGLED_ELEVATION_DEGREES) {
+  return size / 2 / Math.cos((elevationDegrees * Math.PI) / 180);
+}
+
+/**
+ * Egik tahtada zemindeki bir noktayi ekranda `rise` kadar yukari gosteren
+ * kuzey kaymasi (dunya birimi): kuzeye `d` kayan nokta ekranda `d * sin` yukarida.
+ */
+export function northShiftForRise(rise: number, elevationDegrees = ANGLED_ELEVATION_DEGREES) {
+  return rise / Math.sin((elevationDegrees * Math.PI) / 180);
+}
+
 /** Phaser kamerasinin dunya gorunumu -> ortografik kamera merkezi ve kesiti. */
 export function orthoFromWorldView(view: { x: number; y: number; width: number; height: number }) {
   return {

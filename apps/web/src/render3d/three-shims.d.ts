@@ -18,7 +18,16 @@ declare module "three" {
   export const CanvasTexture: any; export type CanvasTexture = any;
   export const PlaneGeometry: any;
   export const MeshBasicMaterial: any;
+  export const ShaderMaterial: any; export type ShaderMaterial = any;
+  export const CircleGeometry: any;
+  export const Color: any;
+  export const Vector2: any;
+  export const Vector4: any;
   export const LinearFilter: number;
+  export const CustomBlending: number;
+  export const AddEquation: number;
+  export const OneFactor: number;
+  export const OneMinusSrcColorFactor: number;
   export const ACESFilmicToneMapping: number;
   export const SRGBColorSpace: string;
 }

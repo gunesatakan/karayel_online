@@ -12,7 +12,9 @@ import {
   MODEL_BODY_DIAMETER_CELLS,
   TOWER_MODEL_IDS,
   edgeModelTransform,
+  northShiftForRise,
   orthoFromWorldView,
+  standeeCenterHeight,
   towerModelPath,
   towerModelScale,
   yawFromFacing
@@ -67,6 +69,18 @@ test("egik gorunum: ekran -> zemin -> ekran ayni noktaya donuyor, tahtanin tamam
   // Kuzey (kucuk z) ekranda yukarida; yukselen nokta ekranda yukari kayiyor.
   assert.ok(angledGroundToScreen(204, 100, 0, center, frustum).y > angledGroundToScreen(204, 600, 0, center, frustum).y);
   assert.ok(angledGroundToScreen(204, 392, 30, center, frustum).y > 0);
+});
+
+test("ayakta duran panonun alt kenari ekranda ayagina degiyor; kuzey kaymasi ayni yukselisi veriyor", () => {
+  const center = { x: 204, z: 392 };
+  const frustum = angledFrustum({ width: 408, height: 674 }, 766 / 1266, 52, 70);
+  const toScreen = (z, height) => angledGroundToScreen(204, z, height, center, frustum).y * frustum.halfHeight;
+  for (const size of [12, 23, 40]) {
+    // Kameraya donuk pano ekranda tam boyunda: merkez yarim boy yukarida.
+    assert.ok(Math.abs(toScreen(300, standeeCenterHeight(size)) - toScreen(300, 0) - size / 2) < 1e-9, `${size}`);
+    // Zeminde kuzeye kayan nokta ayni yukseklige cikiyor.
+    assert.ok(Math.abs(toScreen(300 - northShiftForRise(size), 0) - toScreen(300, 0) - size) < 1e-9, `${size}`);
+  }
 });
 
 test("dar ekranda kesit derinlige gore buyuyor", () => {
