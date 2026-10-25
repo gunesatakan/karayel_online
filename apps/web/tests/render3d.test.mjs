@@ -14,7 +14,9 @@ import {
   angledGroundToScreen,
   angledScreenToGround,
   EDGE_MODEL_IDS,
+  MINE_KINDS,
   MODEL_BODY_DIAMETER_CELLS,
+  mineModelPath,
   TOWER_MODEL_IDS,
   edgeModelTransform,
   orthoFromWorldView,
@@ -161,6 +163,25 @@ test("modeli olan her kulenin uc kademesi de var; rig dugumleri ve kademe bilgis
     if (EDGE_MODEL_IDS.has(id)) assert.equal(root.extras.edgeCells, 2);
     assert.ok(json.images.every((image) => image.mimeType === "image/jpeg"), `${path}: oyun kopyasi JPEG dokulu`);
     assert.ok(bytes.length < 600 * 1024, `${path}: ${bytes.length} bayt`);
+  }
+});
+
+test("her madenin modeli var: tek kok dugum, tabani 1 birim, JPEG dokulu ve hafif", () => {
+  for (const kind of MINE_KINDS) {
+    const path = mineModelPath(kind);
+    assert.ok(path.startsWith(TOWER_MODELS_DIR), path);
+    const url = new URL(path, publicDir);
+    assert.ok(existsSync(url), `${path} eksik`);
+    const bytes = readFileSync(url);
+    const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString("utf8"));
+    const root = json.nodes.find((node) => node.name === `mine-${kind}`);
+    assert.ok(root, `${path}: kok dugum`);
+    assert.equal(root.extras.kind, kind);
+    const accessor = json.accessors[json.meshes[0].primitives[0].attributes.POSITION];
+    const width = Math.max(accessor.max[0] - accessor.min[0], accessor.max[2] - accessor.min[2]);
+    assert.ok(Math.abs(width - 1) < 0.02 && Math.abs(accessor.min[1]) < 0.02, `${path}: genislik ${width}, taban ${accessor.min[1]}`);
+    assert.ok(json.images.every((image) => image.mimeType === "image/jpeg"), `${path}: JPEG`);
+    assert.ok(bytes.length < 800 * 1024, `${path}: ${bytes.length} bayt`);
   }
 });
 

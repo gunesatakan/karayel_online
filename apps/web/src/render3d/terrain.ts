@@ -96,9 +96,11 @@ export function createZoneHeight(input: TerrainInput) {
   const { cols, rows, cellSize, originX, originY } = input;
   // Kare -> lekenin isareti ve boyu (0: bolge degil).
   const amplitude = new Float32Array(cols * rows);
-  zoneBlobs(cols, rows, input.zoneCells).forEach((blob, order) => {
-    // Karisik: siradaki leke tepe, sonraki cukur; ilk lekenin turu karelerinden.
-    const hill = (order + blob[0]) % 2 === 0;
+  const blobs = zoneBlobs(cols, rows, input.zoneCells);
+  // Karisik: lekeler sirayla tepe ve cukur; haritanin ilk lekesinin turu onun karesinden (haritadan haritaya degisiyor).
+  const firstIsHill = (blobs[0]?.[0] ?? 0) % 2 === 0;
+  blobs.forEach((blob, order) => {
+    const hill = (order % 2 === 0) === firstIsHill;
     const size = hill ? ZONE_HILL_CELLS : -ZONE_PIT_CELLS;
     for (const index of blob) amplitude[index] = size * cellSize;
   });

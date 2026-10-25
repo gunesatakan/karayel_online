@@ -1,0 +1,14 @@
+{
+  "generator": "Tripo Studio / GPT Image 2.5 / 1:1 / 2 images, input: the game icon (apps/web/public/images/resources/resource-<kind>.png)",
+  "intro": "Use case: turn a flat, top-down painted game icon into a 3D-ready render of the very same object. Input image: the painted top-down icon of a RESOURCE MINE node from a dark sci-fi tower-defense game. It defines the object's identity, materials, colours and layout; keep all of them.",
+  "kinds": {
+    "energy": "Create the ENERGY CRYSTAL DEPOSIT: a cluster of large faceted translucent cyan-blue crystals - one tall central crystal and several smaller ones angled outward - growing out of a mound of dark grey-black angular rocks; the crystals glow softly from within with icy cyan light.",
+    "gunpowder": "Create the GUNPOWDER MINE: a shallow round crater rimmed with dark brown-grey rocks and patches of bright sulfur-yellow mineral crust, filled with a heap of matte black powder grains and lumps, with two small wooden mining crates with dark iron bands resting on the rim.",
+    "iron": "Create the IRON ORE DEPOSIT: a compact pile of chunky angular iron ore boulders with rusty red-brown oxidised faces and bright silvery metallic fractured faces, a few small ore pebbles around the base.",
+    "mystic": "Create the MYSTIC RIFT: a ring of dark cracked basalt slabs surrounding a sunken circular basin with a glowing violet-purple spiral vortex, with sharp purple crystal shards jutting up from the ring. Render the vortex as a solid glossy spiral-carved crystal basin surface, not as smoke or floating energy.",
+    "plasma": "Create the PLASMA CRYSTAL DEPOSIT: a cluster of jagged glowing orange-red crystals - one tall central crystal and several smaller ones - rising from a mound of black volcanic rocks with glowing lava-orange cracks between them."
+  },
+  "footprint": "Footprint and proportions: the whole object sits on a roughly circular low rocky base that fits one square map tile; it is a low mound, overall height about half of its width, not a tower. Nothing extends outside the base footprint.",
+  "style": "Premium stylized-realistic 3D game asset matching dark gritty sci-fi strategy art; semi-matte rock, crisp sculpted bevels, strong contact shadows, clear material separation; glowing parts as controlled accents; one isolated object on a plain light-grey background, centered at 85%, elevated 35-degree three-quarter view; no text or particles; image-to-3D input with clearly separated solid parts.",
+  "pipeline": "Option 0 of each concept -> Tripo H3.1 image-to-3D -> decoded (meshopt/quantization removed) -> build-mine-lods.py (levelled, centred, 1 unit wide, ~8k triangles, 512 px JPEG)."
+}

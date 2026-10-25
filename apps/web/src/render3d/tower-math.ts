@@ -33,6 +33,15 @@ export function towerModelPath(definitionId: string, tier: TowerTier) {
   return `models3d/${definitionId}-tier-${tier}.glb`;
 }
 
+/** 3D modeli olan madenler (Tripo; tools/3d-preview/build-mine-lods.py). Model tabani 1 birim genis. */
+export const MINE_KINDS: ReadonlySet<string> = new Set(["energy", "gunpowder", "iron", "mystic", "plasma"]);
+/** Madenin tabani hucrenin bu kadari: 2D ikonun (0,71 hucre) biraz ustu, komsu karelere tasmiyor. */
+export const MINE_CELL_SCALE = 0.86;
+
+export function mineModelPath(kind: string) {
+  return `models3d/mine-${kind}.glb`;
+}
+
 /**
  * Oyunun yonu (`atan2(dy, dx)`, 0 saga) -> modelin Y ekseni etrafindaki donusu.
  * Donus a, +Z'yi (sin a, 0, cos a)'ya goturuyor; istenen yon (cos f, 0, sin f).

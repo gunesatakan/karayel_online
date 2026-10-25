@@ -1,0 +1,52 @@
+[
+  {
+    "kind": "energy",
+    "model": "apps/web/public/models3d/mine-energy.glb",
+    "reference": "art-direction/mines/energy.png",
+    "gameIcon": "apps/web/public/images/resources/resource-energy.png",
+    "conceptImage": "Tripo GPT Image 2.5 / b54f1f7f-612c-44e8-bf0a-3aa988e561e1#0",
+    "sourceId": "7fb32f85-bbfb-467b-82c3-91151a0cec98",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "kind": "gunpowder",
+    "model": "apps/web/public/models3d/mine-gunpowder.glb",
+    "reference": "art-direction/mines/gunpowder.png",
+    "gameIcon": "apps/web/public/images/resources/resource-gunpowder.png",
+    "conceptImage": "Tripo GPT Image 2.5 / b408118e-dcdb-41c5-917a-1a34aee92bd2#0",
+    "sourceId": "60192601-297a-440a-94a7-303990d2410f",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "kind": "iron",
+    "model": "apps/web/public/models3d/mine-iron.glb",
+    "reference": "art-direction/mines/iron.png",
+    "gameIcon": "apps/web/public/images/resources/resource-iron.png",
+    "conceptImage": "Tripo GPT Image 2.5 / dd73a824-e9ca-4734-b35a-c6412f46225c#0",
+    "sourceId": "89ce6ead-a80c-4e35-bf43-9cd5815a08b9",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "kind": "mystic",
+    "model": "apps/web/public/models3d/mine-mystic.glb",
+    "reference": "art-direction/mines/mystic.png",
+    "gameIcon": "apps/web/public/images/resources/resource-mystic.png",
+    "conceptImage": "Tripo GPT Image 2.5 / b8101f54-8a9d-486b-91f5-fcaf6139d56e#0",
+    "sourceId": "e54b65ed-a0cf-4171-ae21-acee5bc9a41e",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "kind": "plasma",
+    "model": "apps/web/public/models3d/mine-plasma.glb",
+    "reference": "art-direction/mines/plasma.png",
+    "gameIcon": "apps/web/public/images/resources/resource-plasma.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 94cdf2f0-e37c-4846-a669-4b96d73f7d46#0",
+    "sourceId": "06180ca4-e450-407c-8fc7-babffb1b0f4e",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  }
+]

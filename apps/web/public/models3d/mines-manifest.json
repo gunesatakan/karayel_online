@@ -1,0 +1,52 @@
+{
+  "note": "Game copies of the Tripo mine models (tools/3d-preview/build-mine-lods.py). Not included in the itch.io package.",
+  "targetTriangles": 8000,
+  "textureSize": 512,
+  "models": [
+    {
+      "key": "mine-energy",
+      "bytes": 601188,
+      "triangles": 8000,
+      "height": 0.8247,
+      "leveledDegrees": 0.03,
+      "sha256": "249af00039d2a02f6806029e553d36d6491328ac58d47ab94dd428968570457e",
+      "source": "Tripo H3.1 / art-direction/mines/energy.png"
+    },
+    {
+      "key": "mine-gunpowder",
+      "bytes": 468200,
+      "triangles": 8000,
+      "height": 0.3036,
+      "leveledDegrees": 0.0,
+      "sha256": "f5b35d9aa2dd617673afd3e15e849b262b544683a430ff10e16fb5864d1b2a97",
+      "source": "Tripo H3.1 / art-direction/mines/gunpowder.png"
+    },
+    {
+      "key": "mine-iron",
+      "bytes": 500560,
+      "triangles": 7999,
+      "height": 0.511,
+      "leveledDegrees": 0.03,
+      "sha256": "2abacb24b04ff17e7d273e358199c37ce6981f92b14ae88f55264863bd7f024e",
+      "source": "Tripo H3.1 / art-direction/mines/iron.png"
+    },
+    {
+      "key": "mine-mystic",
+      "bytes": 567860,
+      "triangles": 7999,
+      "height": 0.3779,
+      "leveledDegrees": 8.43,
+      "sha256": "2ba200f16d35bfb53f48d617774b90758e66134f8083566ecb6f426a6896760a",
+      "source": "Tripo H3.1 / art-direction/mines/mystic.png"
+    },
+    {
+      "key": "mine-plasma",
+      "bytes": 550144,
+      "triangles": 8000,
+      "height": 0.7513,
+      "leveledDegrees": 0.16,
+      "sha256": "748e3a1f7d1e66914998e6ff85f9d8e16d59249c0cd53b1acfee20827a6ca22f",
+      "source": "Tripo H3.1 / art-direction/mines/plasma.png"
+    }
+  ]
+}

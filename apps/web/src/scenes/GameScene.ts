@@ -473,8 +473,8 @@ import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../teleme
 import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
-import { EDGE_MODEL_IDS, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
-import type { Enemy3dInput, EnemyBar, Tower3dInput, TowerLayer } from "../render3d/tower-layer";
+import { EDGE_MODEL_IDS, MINE_KINDS, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
+import type { Enemy3dInput, EnemyBar, Mine3dInput, Tower3dInput, TowerLayer } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getWaveMusicLevel, getWaveMusicTrackForState, WAVE_MUSIC_TRACKS, WaveMusicPlayer } from "../wave-music";
@@ -10950,6 +10950,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
     this.angledAirContent = airContent;
     layer.syncEnemies(enemies);
+    // Madenler: modeli olan ikon 3D'de, ikonu iki kamerada da gizli; kalan miktar yazisi zeminde.
+    const mines: Mine3dInput[] = [];
+    for (const [id, sprite] of this.resourceSprites) {
+      const kind = sprite.texture.key.replace(/^resource-/, "");
+      if (!sprite.active || !MINE_KINDS.has(kind)) continue;
+      mines.push({ id, kind, x: sprite.x, y: sprite.y, cellSize, depleted: sprite.alpha < 0.5 });
+    }
+    const minesShown = layer.syncMines(mines);
+    for (const [id, sprite] of this.resourceSprites) if (minesShown.has(id)) sprite.cameraFilter |= both;
   }
 
   /**

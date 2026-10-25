@@ -37,6 +37,8 @@ import {
   orbitBasis,
   orthoFromWorldView,
   standeeCenterHeight,
+  MINE_CELL_SCALE,
+  mineModelPath,
   towerModelPath,
   yawFromFacing,
   type OrbitView,
@@ -100,6 +102,9 @@ export type EnemyBar = {
 };
 
 export type OrbitState = { yaw: number; elevation: number; zoom: number };
+
+/** Madenin yeri ve durumu (Phaser'daki ikonun son hali). */
+export type Mine3dInput = { id: string; kind: string; x: number; y: number; cellSize: number; depleted: boolean };
 
 export type WorldView = { x: number; y: number; width: number; height: number };
 
@@ -212,6 +217,8 @@ export type TowerLayer = {
    * yanlarinda kayalik yamac. `groundImage` haritanin zemin resmi (yamaclarin dokusu).
    */
   setTerrain(terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement }) | undefined): void;
+  /** Egik gorunumde 3D cizilen madenler. Donen kume: modeli yuklenmis olanlar (2D ikonlari gizlenebilir). */
+  syncMines(mines: readonly Mine3dInput[]): ReadonlySet<string>;
   setView(view: LayerView): void;
   getView(): LayerView;
   /**
@@ -510,6 +517,77 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       // Yuklenemeyen model: o kule 2D kalir, oyun etkilenmez.
       console.warn("3D tower model could not load", key, error);
     });
+  }
+
+  // Madenler: model bir kez yukleniyor, her maden bir kopya; tukenmis madenin malzemesi karartilmis kopya.
+  const mines = new Map<string, { kind: string; root: THREE.Object3D; depleted: boolean }>();
+  const minesShown = new Set<string>();
+  const dimmed = new Map<unknown, unknown>();
+
+  function setMineDepleted(root: THREE.Object3D, depleted: boolean) {
+    root.traverse((node: THREE.Object3D) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const original = mesh.userData.originalMaterial ?? mesh.material;
+      mesh.userData.originalMaterial = original;
+      if (!depleted) {
+        mesh.material = original;
+        return;
+      }
+      let dark = dimmed.get(original);
+      if (!dark) {
+        dark = original.clone();
+        (dark as THREE.Mesh["material"]).color?.multiplyScalar(0.32);
+        if ((dark as THREE.Mesh["material"]).emissive) (dark as THREE.Mesh["material"]).emissiveIntensity = 0;
+        dimmed.set(original, dark);
+      }
+      mesh.material = dark;
+    });
+  }
+
+  function syncMines(list: readonly Mine3dInput[]) {
+    const active = new Set<string>();
+    minesShown.clear();
+    for (const mine of list) {
+      const key = mineModelPath(mine.kind);
+      const source = loaded.get(key);
+      if (!source) {
+        request(key);
+        continue;
+      }
+      active.add(mine.id);
+      let instance = mines.get(mine.id);
+      if (instance && instance.kind !== mine.kind) {
+        scene.remove(instance.root);
+        instance = undefined;
+      }
+      if (!instance) {
+        const root = source.clone(true);
+        // Her maden kendi acisinda: ayni turden madenler kopya gibi durmasin.
+        let hash = 0;
+        for (const char of mine.id) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+        root.rotation.y = ((hash >>> 0) % 360) * (Math.PI / 180);
+        instance = { kind: mine.kind, root, depleted: false };
+        mines.set(mine.id, instance);
+        scene.add(root);
+        shadowDirty = true;
+      }
+      instance.root.position.set(mine.x, zoneHeight(mine.x, mine.y), mine.y);
+      instance.root.scale.setScalar(mine.cellSize * MINE_CELL_SCALE);
+      if (instance.depleted !== mine.depleted) {
+        setMineDepleted(instance.root, mine.depleted);
+        instance.depleted = mine.depleted;
+      }
+      minesShown.add(mine.id);
+    }
+    for (const [id, instance] of mines) {
+      if (!active.has(id)) {
+        scene.remove(instance.root);
+        mines.delete(id);
+        shadowDirty = true;
+      }
+    }
+    return minesShown;
   }
 
   function sync(towers: readonly Tower3dInput[]) {
@@ -898,6 +976,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     disposed = true;
     for (const instance of instances.values()) scene.remove(instance.root);
     instances.clear();
+    for (const instance of mines.values()) scene.remove(instance.root);
+    mines.clear();
+    dimmed.forEach((material) => (material as { dispose(): void }).dispose());
     for (const [id, standee] of standees) removeStandee(id, standee);
     standeeGeometry.dispose();
     shadowGeometry.dispose();
@@ -924,12 +1005,15 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   return {
     sync, syncEnemies, captureBoard, render, clientToWorld, worldToClient, dispose,
-    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain,
+    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
     setAirBodySize: (size) => { airBodySize = size; },
     setView: (next) => {
       view = next;
-      if (view === "top") syncEnemies([]);
+      if (view === "top") {
+        syncEnemies([]);
+        syncMines([]);
+      }
     },
     getView: () => view
   };
