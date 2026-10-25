@@ -1,9 +1,9 @@
 /**
  * Egik 3D gorunumun arazisi (yalnizca gorunus).
  *
- * - Kurulum yasak bolgeler (oyun kurali: kule kurulamiyor, dusman, isci ve
- *   mermi normal geciyor) lekeler halinde kayalik tepe ya da derin cukur.
- *   Leke sirasiyla donusumlu, haritadan haritaya degisiyor. Yukseklik yalnizca
+ * - Kurulum yasak bolgeler lekeler halinde kayalik tepe ya da derin cukur
+ *   (`getBuildZoneReliefs`, sunucuyla ayni: tepe kara atis hattini kesiyor,
+ *   bolgeden kara birlikleri 0,66 hizla geciyor). Yukseklik yalnizca
  *   bolge karelerinin icinde; bolgenin kenarinda sifir, komsu kareler (kule
  *   kurulan yerler) dumduz kaliyor.
  * - Arenanin sag ve sol disinda kayalik yamaclar. Ust ve alt acik: dusmanlar
@@ -11,6 +11,8 @@
  *
  * Saf hesap: three.js yok, node testleri dogrudan okuyor.
  */
+
+import { getBuildZoneReliefs } from "@karayel/shared";
 
 export type TerrainInput = {
   cols: number;
@@ -30,37 +32,6 @@ export const ZONE_RAMP_CELLS = 0.8;
 /** Kenar yamaci: egim (yukselis / uzaklik) ve en yuksek nokta (hucre). Egim 0,45 ~ 24 derece: 25 derecenin ustundeki kamera arenanin kenarini yamacin arkasinda kaybetmiyor. */
 export const EDGE_SLOPE = 0.45;
 export const EDGE_MAX_CELLS = 3.2;
-
-/** Dik komsulukla bagli lekeler (sunucunun kurali lekeleri birbirine degdirmiyor). */
-export function zoneBlobs(cols: number, rows: number, cells: readonly number[]) {
-  const inZone = new Set(cells);
-  const seen = new Set<number>();
-  const blobs: number[][] = [];
-  for (const start of [...cells].sort((a, b) => a - b)) {
-    if (seen.has(start)) continue;
-    const blob: number[] = [];
-    const queue = [start];
-    seen.add(start);
-    while (queue.length > 0) {
-      const index = queue.pop()!;
-      blob.push(index);
-      const col = index % cols;
-      const row = (index - col) / cols;
-      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const nc = col + dc;
-        const nr = row + dr;
-        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
-        const next = nr * cols + nc;
-        if (inZone.has(next) && !seen.has(next)) {
-          seen.add(next);
-          queue.push(next);
-        }
-      }
-    }
-    blobs.push(blob.sort((a, b) => a - b));
-  }
-  return blobs;
-}
 
 /** Tekrarlanabilir deger gurultusu (0..1), iki oktav. */
 export function terrainNoise(x: number, z: number) {
@@ -96,14 +67,11 @@ export function createZoneHeight(input: TerrainInput) {
   const { cols, rows, cellSize, originX, originY } = input;
   // Kare -> lekenin isareti ve boyu (0: bolge degil).
   const amplitude = new Float32Array(cols * rows);
-  const blobs = zoneBlobs(cols, rows, input.zoneCells);
-  // Karisik: lekeler sirayla tepe ve cukur; haritanin ilk lekesinin turu onun karesinden (haritadan haritaya degisiyor).
-  const firstIsHill = (blobs[0]?.[0] ?? 0) % 2 === 0;
-  blobs.forEach((blob, order) => {
-    const hill = (order % 2 === 0) === firstIsHill;
-    const size = hill ? ZONE_HILL_CELLS : -ZONE_PIT_CELLS;
-    for (const index of blob) amplitude[index] = size * cellSize;
-  });
+  // Lekeler sirayla tepe ve cukur; tur sunucunun kuraliyla ayni kaynaktan.
+  for (const relief of getBuildZoneReliefs({ cols, rows, cells: input.zoneCells })) {
+    const size = relief.hill ? ZONE_HILL_CELLS : -ZONE_PIT_CELLS;
+    for (const index of relief.cells) amplitude[index] = size * cellSize;
+  }
   const ramp = ZONE_RAMP_CELLS * cellSize;
   const reach = Math.ceil(ZONE_RAMP_CELLS) + 1;
   const isZone = (col: number, row: number) => col >= 0 && row >= 0 && col < cols && row < rows && amplitude[row * cols + col] !== 0;

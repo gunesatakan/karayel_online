@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import { createBuildZoneLookup, groupBuildZoneBlobs, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneMap } from "@karayel/shared";
+import { createBuildZoneLookup, getBuildZoneReliefs, groupBuildZoneBlobs, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneMap } from "@karayel/shared";
 
 /**
  * Kurulum yasak bolgelerin zemin cizimi.
@@ -221,5 +221,136 @@ export function drawBuildZones(graphics: Phaser.GameObjects.Graphics, zones: Bui
   graphics.lineStyle(Math.max(1, size * 0.045), style.outline, style.outlineAlpha);
   for (const contour of getBuildZoneContours(zones)) {
     graphics.strokePoints(contour.map((corner) => ({ x: metrics.originX + corner.col * size, y: metrics.originY + corner.row * size })), true, true);
+  }
+}
+
+/**
+ * Tepe ve cukur isaretleri (2D; egik 3D gorunum araziyi kendisi ciziyor).
+ * Tepe kara atis hattini kesiyor, cukur kesmiyor: oyuncu hangisinin hangisi
+ * oldugunu okuyabilmeli. Tepe: acik tas tonu, kabartma (ust-sol kenar
+ * aydinlik, alt-sag golgeli) ve her karede karli bir zirve (harita isareti
+ * gibi). Cukur: ters kabartma, daha koyu zemin ve ortada karanlik bir agiz.
+ */
+export const BUILD_ZONE_RELIEF_STYLE = {
+  light: 0xe2cfb0,
+  lightAlpha: 0.6,
+  hillFill: 0x8a7660,
+  hillFillAlpha: 0.2,
+  shade: 0x000000,
+  shadeAlpha: 0.55,
+  /** Kabartma cizgisinin kenardan iceri payi, kare boyunun kesri. */
+  bevelInset: 0.07,
+  rock: 0x5b4f43,
+  rockAlpha: 0.95,
+  rockShade: 0x2a241f,
+  snow: 0xf1e6d2,
+  snowAlpha: 0.85,
+  pitFill: 0x000000,
+  pitFillAlpha: 0.45,
+  mouth: 0x000000,
+  mouthAlpha: 0.7,
+  rim: 0xa37a52,
+  rimAlpha: 0.55
+} as const;
+
+export type BuildZoneReliefMark = {
+  hill: boolean;
+  /** Kabartma: aydinlik ve golgeli kenar parcalari (dunya), iceri kaydirilmis. */
+  lit: ZoneSegment[];
+  shaded: ZoneSegment[];
+  /** Isaretin merkezi: lekenin agirlik merkezine en yakin karesinin ortasi. */
+  center: { x: number; y: number };
+  cells: number[];
+};
+
+/** Her lekenin tepe/cukur isareti (saf hesap). */
+export function getBuildZoneReliefMarks(zones: BuildZoneMap, metrics: BuildZoneDrawMetrics): BuildZoneReliefMark[] {
+  const size = metrics.cellSize;
+  const inset = size * BUILD_ZONE_RELIEF_STYLE.bevelInset;
+  return getBuildZoneReliefs(zones).map(({ cells, hill }) => {
+    const set = new Set(cells);
+    const has = (col: number, row: number) => col >= 0 && col < zones.cols && row >= 0 && row < zones.rows && set.has(row * zones.cols + col);
+    const top: ZoneSegment[] = [];
+    const bottom: ZoneSegment[] = [];
+    let sumX = 0;
+    let sumY = 0;
+    for (const index of cells) {
+      const col = index % zones.cols;
+      const row = (index - col) / zones.cols;
+      const x0 = metrics.originX + col * size;
+      const y0 = metrics.originY + row * size;
+      sumX += col + 0.5;
+      sumY += row + 0.5;
+      if (!has(col, row - 1)) top.push({ x1: x0, y1: y0 + inset, x2: x0 + size, y2: y0 + inset });
+      if (!has(col - 1, row)) top.push({ x1: x0 + inset, y1: y0, x2: x0 + inset, y2: y0 + size });
+      if (!has(col, row + 1)) bottom.push({ x1: x0, y1: y0 + size - inset, x2: x0 + size, y2: y0 + size - inset });
+      if (!has(col + 1, row)) bottom.push({ x1: x0 + size - inset, y1: y0, x2: x0 + size - inset, y2: y0 + size });
+    }
+    const meanCol = sumX / cells.length;
+    const meanRow = sumY / cells.length;
+    let best = cells[0];
+    let bestDistance = Infinity;
+    for (const index of cells) {
+      const col = index % zones.cols;
+      const row = (index - col) / zones.cols;
+      const distance = (col + 0.5 - meanCol) ** 2 + (row + 0.5 - meanRow) ** 2;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    }
+    const bestCol = best % zones.cols;
+    const bestRow = (best - bestCol) / zones.cols;
+    const center = { x: metrics.originX + (bestCol + 0.5) * size, y: metrics.originY + (bestRow + 0.5) * size };
+    // Isik ust-soldan: tepede ust-sol kenar aydinlik, cukurda tersi.
+    return { hill, lit: hill ? top : bottom, shaded: hill ? bottom : top, center, cells };
+  });
+}
+
+/** Tepe ve cukur isaretlerini cizer (bolgelerin ustune, ayri grafik: 3D'de gizleniyor). */
+export function drawBuildZoneReliefs(graphics: Phaser.GameObjects.Graphics, zones: BuildZoneMap | undefined, metrics: BuildZoneDrawMetrics) {
+  if (!zones || zones.cells.length === 0) return;
+  const size = metrics.cellSize;
+  const style = BUILD_ZONE_RELIEF_STYLE;
+  const width = Math.max(1, size * 0.06);
+  for (const mark of getBuildZoneReliefMarks(zones, metrics)) {
+    graphics.fillStyle(mark.hill ? style.hillFill : style.pitFill, mark.hill ? style.hillFillAlpha : style.pitFillAlpha);
+    for (const index of mark.cells) {
+      const col = index % zones.cols;
+      const row = (index - col) / zones.cols;
+      graphics.fillRect(metrics.originX + col * size, metrics.originY + row * size, size, size);
+    }
+    graphics.lineStyle(width, style.shade, style.shadeAlpha);
+    for (const segment of mark.shaded) graphics.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+    graphics.lineStyle(width, style.light, style.lightAlpha);
+    for (const segment of mark.lit) graphics.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+    if (mark.hill) {
+      // Her karede bir zirve: aydinlik sol yamac, golgeli sag yamac, karli tepe.
+      const s = size * 0.62;
+      for (const index of mark.cells) {
+        const col = index % zones.cols;
+        const row = (index - col) / zones.cols;
+        const x = metrics.originX + (col + 0.5 + (hash01(index, 8) - 0.5) * 0.16) * size;
+        const y = metrics.originY + (row + 0.55) * size;
+        const peak = { x: x + (hash01(index, 9) - 0.5) * 0.12 * s, y: y - 0.5 * s };
+        graphics.fillStyle(style.rock, style.rockAlpha);
+        graphics.fillTriangle(x - 0.5 * s, y + 0.3 * s, peak.x, peak.y, peak.x, y + 0.3 * s);
+        graphics.fillStyle(style.rockShade, style.rockAlpha);
+        graphics.fillTriangle(peak.x, peak.y, x + 0.5 * s, y + 0.3 * s, peak.x, y + 0.3 * s);
+        graphics.fillStyle(style.snow, style.snowAlpha);
+        const capLeft = { x: peak.x + (x - 0.5 * s - peak.x) * 0.32, y: peak.y + (y + 0.3 * s - peak.y) * 0.32 };
+        const capRight = { x: peak.x + (x + 0.5 * s - peak.x) * 0.32, y: capLeft.y };
+        graphics.fillTriangle(peak.x, peak.y, capLeft.x, capLeft.y, capRight.x, capRight.y);
+        graphics.lineStyle(width * 0.8, style.light, style.lightAlpha);
+        graphics.lineBetween(x - 0.5 * s, y + 0.3 * s, peak.x, peak.y);
+      }
+    } else {
+      const { x, y } = mark.center;
+      const s = size * 0.8;
+      graphics.fillStyle(style.mouth, style.mouthAlpha);
+      graphics.fillEllipse(x, y, s * 0.95, s * 0.6);
+      graphics.lineStyle(width, style.rim, style.rimAlpha);
+      graphics.strokeEllipse(x, y, s * 0.95, s * 0.6);
+    }
   }
 }

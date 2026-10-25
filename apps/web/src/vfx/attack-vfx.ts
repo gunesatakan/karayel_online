@@ -82,7 +82,7 @@ export const BURST_RING_MS = 150;
 export const BEAM_HIT_MS = 180;
 export const BEAM_SCORCH_MS = 600;
 
-type AttackEventKind = "muzzle" | "anticipation" | "impact" | "beamHit";
+export type AttackEventKind = "muzzle" | "anticipation" | "impact" | "beamHit";
 
 type AttackEvent = {
   kind: AttackEventKind;
@@ -135,8 +135,20 @@ export type AttackEventInput = {
   beamHeat?: number;
 };
 
+/**
+ * Egik 3D gorunum (render3d/shot-fx): etkinken namlu, sarj, carpma, isin
+ * temasi ve mermiler oraya gidiyor, burada cizilmiyor. Vurusun hissi
+ * (sarsinti, itme, duraklama, olumun bicimi) yine burada uygulaniyor.
+ */
+export type AttackVfxMirror = {
+  active(): boolean;
+  event(kind: AttackEventKind, input: AttackEventInput): void;
+  projectiles(projectiles: readonly ProjectileSnapshot[]): void;
+};
+
 export type AttackVfxOptions = {
   lod: VfxLod;
+  mirror?: AttackVfxMirror;
   /** Hareket azaltma: donme, sacilma ve titreme yok; sekil yerinde soner. */
   reducedMotion?: () => boolean;
   /**
@@ -295,6 +307,15 @@ export class AttackVfx {
     const scale = sceneScale * PROJECTILE_VISUAL_SCALE;
     this.body.clear();
     this.glow.clear();
+    const mirror = this.options.mirror;
+    if (mirror?.active()) {
+      // 3D ciziyor: izler de birikmesin (2D'ye donuste eski noktadan cekilmesin).
+      this.options.stamps?.beginFrame();
+      this.options.stamps?.endFrame();
+      this.trails.endFrame();
+      mirror.projectiles(projectiles);
+      return;
+    }
     const stamps = this.options.stamps;
     stamps?.beginFrame();
     const lod = this.options.lod;
@@ -488,7 +509,16 @@ export class AttackVfx {
    * Kademe 2+'nin namlu sarji (`emitAnticipation`) sahte bir gecikme degil:
    * sunucunun atis mesaji oynatmadan ~500 ms once geliyor.
    */
+  /** 3D aynasi etkinse olay oraya; donen `true` burada cizilmeyecek demek. */
+  private mirrored(kind: AttackEventKind, input: AttackEventInput) {
+    const mirror = this.options.mirror;
+    if (!mirror?.active()) return false;
+    mirror.event(kind, input);
+    return true;
+  }
+
   emitMuzzle(input: AttackEventInput) {
+    if (this.mirrored("muzzle", input)) return;
     const event = this.push("muzzle", input);
     if (!event) return;
     const recipe = event.recipe;
@@ -512,11 +542,17 @@ export class AttackVfx {
     const profile = getVfxProfile(input.definitionId, input.fallbackColor);
     const recipe = getVfxTier(profile, input.tier);
     if (recipe.muzzle.anticipationMs <= 0) return;
+    if (this.mirrored("anticipation", input)) return;
     this.push("anticipation", input, recipe.muzzle.anticipationMs);
   }
 
   /** Carpma: sert parlama, madde (kinetik / enerji), mekanik ve kademenin gucu. */
   emitImpact(input: AttackEventInput) {
+    if (this.mirrored("impact", input)) {
+      const profile = getVfxProfile(input.definitionId, input.fallbackColor);
+      this.applyFeel(input, profile, getVfxTier(profile, input.tier).tier, input.own ?? true, this.still);
+      return;
+    }
     const event = this.push("impact", input);
     if (!event) return;
     const recipe = event.recipe;
@@ -615,6 +651,11 @@ export class AttackVfx {
    * `feelScale` hissin carpani (surekli lazer nabzinda 0: yalnizca kayit).
    */
   emitBeamContact(input: AttackEventInput, feelScale = 1) {
+    if (this.mirrored("beamHit", input)) {
+      const profile = getVfxProfile(input.definitionId, input.fallbackColor);
+      this.applyFeel(input, profile, getVfxTier(profile, input.tier).tier, input.own ?? true, this.still, feelScale);
+      return;
+    }
     const event = this.push("beamHit", input, BEAM_HIT_MS);
     if (!event) return;
     const still = this.still;

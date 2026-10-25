@@ -466,7 +466,7 @@ import { SkillGestureView } from "../vfx/skill-gesture";
 import { MatchEndStage } from "../vfx/match-end-stage";
 import { MATCH_END_HUSK_TINT, MATCH_END_POWERED_DOWN_TINT } from "../vfx/match-end-vfx";
 import { MATCH_END_TIMING, getAtlasLineSeconds, shouldPlayMatchEndSequence, type MatchEndStructure } from "../match-end-sequence";
-import { drawBuildZones, getBuildZoneRenderKey, isPlacementBlockedByBuildZone } from "../vfx/build-zones";
+import { drawBuildZoneReliefs, drawBuildZones, getBuildZoneRenderKey, isPlacementBlockedByBuildZone } from "../vfx/build-zones";
 import type { BuildZoneMap } from "@karayel/shared";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../telemetry";
@@ -1357,6 +1357,8 @@ export class GameScene extends Phaser.Scene {
   private readonly hasarliIsciler = new Set<string>();
   private workerBanGraphics?: Phaser.GameObjects.Graphics;
   private mapGraphics?: Phaser.GameObjects.Graphics;
+  /** Tepe ve cukur isaretleri (vfx/build-zones); egik 3D gorunumde gizli. */
+  private buildZoneReliefGraphics?: Phaser.GameObjects.Graphics;
   private terrainImage?: Phaser.GameObjects.Image;
   private towerGroundGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
@@ -2108,6 +2110,12 @@ export class GameScene extends Phaser.Scene {
     this.glowStamps = new GlowStampPool(this, 10.86);
     this.attackVfx = new AttackVfx(this.projectileTrailGraphics, projectileGlow, attackEvents, this.flashPool, {
       lod: this.vfxLod,
+      // Egik 3D gorunumde vuruslari 3D katman ciziyor (render3d/shot-fx); his burada kaliyor.
+      mirror: {
+        active: () => this.towerLayer3d?.shotsActive() ?? false,
+        event: (kind, input) => this.towerLayer3d?.shots.event(kind, input),
+        projectiles: (projectiles) => this.towerLayer3d?.shots.projectiles(projectiles)
+      },
       stamps: this.glowStamps,
       reducedMotion: () => this.feedback?.reducedMotion ?? false,
       // Kendi agir vurusun (Sunucu, Obsesyon, Kin; silahin hissi): yonetmenin
@@ -2458,6 +2466,12 @@ export class GameScene extends Phaser.Scene {
 
     // Kurulum yasak bolgeler: zeminin ustunde, oyun ogelerinin altinda.
     drawBuildZones(graphics, this.getActiveBuildZones(), { originX: origin.x, originY: origin.y, cellSize });
+    // Tepe ve cukur isaretleri ayri grafikte: egik 3D gorunum araziyi kendisi ciziyor, orada gizli.
+    const reliefs = this.buildZoneReliefGraphics ?? this.add.graphics().setDepth(1.05);
+    this.buildZoneReliefGraphics = reliefs;
+    reliefs.clear();
+    drawBuildZoneReliefs(reliefs, this.getActiveBuildZones(), { originX: origin.x, originY: origin.y, cellSize });
+    this.syncBuildZoneReliefVisibility();
 
     // Arenanin siniri: izgara gidince oyun alaninin nerede bittigi baska hicbir
     // seyden okunmuyor. Uzay artik arenanin disinda da surdugu icin sinir
@@ -2474,6 +2488,11 @@ export class GameScene extends Phaser.Scene {
     graphics.lineStyle(2, 0xf9a8d4, 0.75);
     graphics.lineBetween(origin.x, origin.y + arenaHeight, origin.x + arenaWidth, origin.y + arenaHeight);
     this.syncTerrain3d();
+  }
+
+  /** Tepe/cukur isaretleri 2D'de ve tepeden 3D'de; egik gorunumde arazi kendisi tepe. */
+  private syncBuildZoneReliefVisibility() {
+    this.buildZoneReliefGraphics?.setVisible(this.towerLayer3d?.getView() !== "angled");
   }
 
   /** Egik 3D gorunumun arazisi: izgara, yasak bolgeler ve zemin resmi (render3d/terrain). */
@@ -7746,7 +7765,15 @@ export class GameScene extends Phaser.Scene {
     options.sceneNow = this.time.now;
     options.scale = this.getTowerEffectScale();
     options.reducedMotion = this.feedback?.reducedMotion ?? false;
-    this.beamRenderer?.render(beams, options);
+    const layer = this.towerLayer3d;
+    if (layer?.shotsActive()) {
+      // Egik 3D gorunum: isinlar 3D (namludan govdeye); 2D cizimi bos.
+      this.beamGraphics?.clear();
+      this.beamGlowGraphics?.clear();
+      layer.shots.beams(beams);
+    } else {
+      this.beamRenderer?.render(beams, options);
+    }
     // Isinin vurus sesi cizimle ayni karede: tek atis isini dogusunda,
     // surekli isin (lazer) nabizla, alan isini icinde dusman varken tikle.
     this.beamHitTracker.update(beams, now, enemies);
@@ -10843,6 +10870,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private applyTowerLayerView(view: "top" | "angled") {
     this.towerLayer3d?.setView(view);
     this.game.canvas.style.opacity = view === "angled" ? "0" : "";
+    this.syncBuildZoneReliefVisibility();
     if (view === "angled" && this.towerLayer3d && !this.airCamera3d) {
       // Ana kameradan sonra cizen ikinci kamera; girdi almiyor (isabet testi ana kamerada).
       this.airCamera3d = this.cameras.add(0, 0, this.cameras.main.width, this.cameras.main.height, false, "air3d");

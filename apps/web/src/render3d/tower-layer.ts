@@ -50,6 +50,7 @@ import {
   type OrbitView,
   type TowerTier
 } from "./tower-math";
+import { createShotFx, type ShotFx } from "./shot-fx";
 import { createZoneHeight, edgeSlopeHeight, terrainShade, type TerrainInput } from "./terrain";
 
 export type Tower3dInput = {
@@ -152,7 +153,15 @@ export type PhaserViewport = { x: number; y: number; width: number; height: numb
 
 export type LayerView = "top" | "angled";
 
-type Instance = { key: string; root: THREE.Object3D; yaw: THREE.Object3D | undefined };
+type Instance = {
+  key: string;
+  root: THREE.Object3D;
+  yaw: THREE.Object3D | undefined;
+  /** Namlu ucu (3D vuruslarin cikis noktasi). */
+  muzzle: THREE.Object3D | undefined;
+  /** Geri tepen namlular: dinlenme yeri, son atis ve gucu. */
+  recoil: { node: THREE.Object3D; baseZ: number; at: number; strength: number } | undefined;
+};
 type Standee = { mesh: THREE.Mesh; material: THREE.ShaderMaterial; shadow: THREE.Mesh; bar: THREE.Mesh; barMaterial: THREE.ShaderMaterial; textureKey: string };
 
 // Kameraya donuk pano: merkez modelin konumunda, koseler goruntu duzleminde.
@@ -261,6 +270,12 @@ export type TowerLayer = {
    * yanlarinda kayalik yamac. `groundImage` haritanin zemin resmi (yamaclarin dokusu).
    */
   setTerrain(terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement; stage?: number }) | undefined): void;
+  /**
+   * Egik gorunumun 3D vuruslari (render3d/shot-fx): 2D efekt sistemi olaylari ve
+   * mermileri buraya aynaliyor. Tepeden gorunumde kapali (`shotsActive`).
+   */
+  shots: Pick<ShotFx, "event" | "projectiles" | "beams" | "stats">;
+  shotsActive(): boolean;
   /** Egik gorunumde 3D operator bedenleri. Donen kume: modeli yuklenmis olanlar. */
   syncOperators(operators: readonly Operator3dInput[]): ReadonlySet<string>;
   /** Egik gorunumde 3D isciler. Donen kume: modeli yuklenmis olanlar (sprite'lari gizlenebilir). */
@@ -634,6 +649,49 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   let view: LayerView = options.view;
   let airBodySize = 0;
   const orbit: OrbitState & { target?: { x: number; z: number } } = { yaw: 0, elevation: ANGLED_ELEVATION_DEGREES, zoom: 1 };
+
+  // 3D vuruslar: mermi namludan cikiyor, ayakta duran govdeye iniyor; namlu geri tepiyor.
+  const muzzleWorld = new THREE.Vector3();
+  function nearestInstance(x: number, z: number) {
+    const reach = (terrain?.cellSize ?? 34) * 1.6;
+    let best = reach * reach;
+    let found: Instance | undefined;
+    for (const instance of instances.values()) {
+      const gap = (instance.root.position.x - x) ** 2 + (instance.root.position.z - z) ** 2;
+      if (gap < best) {
+        best = gap;
+        found = instance;
+      }
+    }
+    return found;
+  }
+  const shots = createShotFx(scene, {
+    cellSize: () => terrain?.cellSize ?? 34,
+    groundHeight: (x, z) => zoneHeight(x, z),
+    bodyHeight: () => standeeCenterHeight(airBodySize || (terrain?.cellSize ?? 34) * 0.6, orbit.elevation),
+    muzzle: (x, z) => {
+      const instance = nearestInstance(x, z);
+      if (!instance?.muzzle) return undefined;
+      return instance.muzzle.getWorldPosition(muzzleWorld).clone();
+    },
+    kick: (x, z, strength) => {
+      const recoil = nearestInstance(x, z)?.recoil;
+      if (!recoil) return;
+      recoil.at = performance.now();
+      recoil.strength = Math.min(1, strength);
+    }
+  });
+
+  /** Namlularin geri tepmesi: atista geriye, ~60 ms'de yerine yay gibi. */
+  function updateRecoils(now: number) {
+    for (const instance of instances.values()) {
+      const recoil = instance.recoil;
+      if (!recoil) continue;
+      const age = now - recoil.at;
+      const offset = age >= 0 && age < 420 ? recoil.strength * 0.09 * Math.exp(-age / 60) : 0;
+      recoil.node.position.z = recoil.baseZ - offset;
+    }
+  }
   // Son karenin tuval dikdortgeni ve Phaser'in dunya gorunumu (tahtanin kapsadigi alan).
   let lastRect: DOMRect | undefined;
   let lastWorld: WorldView | undefined;
@@ -946,7 +1004,11 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       if (!instance) {
         // Kopya geometri ve malzemeyi paylasiyor: ayni kuleden kac tane olursa olsun tek GPU kaynagi.
         const root = source.clone(true);
-        instance = { key, root, yaw: root.getObjectByName("turret-yaw") };
+        const barrels = root.getObjectByName("barrels-recoil");
+        instance = {
+          key, root, yaw: root.getObjectByName("turret-yaw"), muzzle: root.getObjectByName("muzzle-socket"),
+          recoil: barrels ? { node: barrels, baseZ: barrels.position.z, at: -Infinity, strength: 0 } : undefined
+        };
         instances.set(tower.id, instance);
         scene.add(root);
         shadowDirty = true;
@@ -1242,6 +1304,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       shadowCatcher.visible = true;
       air.visible = false;
       boardCaptured = false;
+      shots.setVisible(false);
       renderer.setClearColor(0x000000, 0);
       const scaleX = canvasRect.width / Math.max(1, viewport.gameWidth);
       const scaleY = canvasRect.height / Math.max(1, viewport.gameHeight);
@@ -1302,6 +1365,10 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     camera.lookAt(current.target.x, 0, current.target.z);
     camera.updateProjectionMatrix();
     updateShadows();
+    const now = performance.now();
+    updateRecoils(now);
+    shots.setVisible(true);
+    shots.update(now);
     renderer.render(scene, camera);
   }
 
@@ -1320,6 +1387,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   function dispose() {
     disposed = true;
+    shots.dispose();
     for (const instance of instances.values()) scene.remove(instance.root);
     instances.clear();
     for (const id of [...workers.keys()]) removeWorker(id);
@@ -1363,6 +1431,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     sync, syncEnemies, captureBoard, render, clientToWorld, worldToClient, dispose,
     rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines, syncWorkers, syncOperators, hasGround: groundReady,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
+    shots,
+    shotsActive: () => !disposed && view === "angled",
     setAirBodySize: (size) => { airBodySize = size; },
     setView: (next) => {
       view = next;

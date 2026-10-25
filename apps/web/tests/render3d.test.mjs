@@ -32,7 +32,9 @@ import {
   towerModelScale,
   yawFromFacing
 } from "../src/render3d/tower-math.ts";
-import { EDGE_SLOPE, createZoneHeight, edgeSlopeHeight, zoneBlobs } from "../src/render3d/terrain.ts";
+import { EDGE_SLOPE, createZoneHeight, edgeSlopeHeight } from "../src/render3d/terrain.ts";
+import { getBuildZoneReliefs } from "@karayel/shared";
+import { SHOT_TOWER_IDS, getShotRecipe, shotTowerId } from "../src/render3d/shot-recipes.ts";
 import { findForbidden, readDeployPaths } from "../../../tools/check-client-only.mjs";
 import { TOWER_MODELS_DIR } from "../../../tools/build-itch.mjs";
 
@@ -143,7 +145,7 @@ test("dar ekranda kesit derinlige gore buyuyor", () => {
 
 test("arazi: yasak bolge lekeleri donusumlu tepe ve cukur, bolge disi ve kenari dumduz", () => {
   const input = { cols: 12, rows: 18, cellSize: 34, originX: 0, originY: 55, zoneCells: [3 * 12 + 2, 3 * 12 + 3, 4 * 12 + 3, 10 * 12 + 8, 10 * 12 + 9, 11 * 12 + 9] };
-  assert.deepEqual(zoneBlobs(12, 18, input.zoneCells), [[38, 39, 51], [128, 129, 141]]);
+  assert.deepEqual(getBuildZoneReliefs({ cols: 12, rows: 18, cells: input.zoneCells }).map((relief) => relief.cells), [[38, 39, 51], [128, 129, 141]]);
   const height = createZoneHeight(input);
   const center = (col, row) => [input.originX + (col + 0.5) * 34, input.originY + (row + 0.5) * 34];
   const first = height(...center(3, 3));
@@ -255,6 +257,28 @@ test("operator bedenleri: iki karakterin modeli var, kollari donus 0'da kuzeye b
   const yaw = Math.PI + OPERATOR_MODEL_YAW_OFFSET;
   const forward = [-Math.cos(yaw), Math.sin(yaw)]; // (x cos + z sin, -x sin + z cos), x = -1
   assert.ok(Math.abs(forward[0]) < 1e-9 && Math.abs(forward[1] + 1) < 1e-9, `${forward}`);
+});
+
+test("3D vuruslar: modeli olan her saldiri kulesinin kendi tarifi var; kademe yeni katman ekliyor", () => {
+  // Saray (zeynep-7) ates etmiyor.
+  for (const id of TOWER_MODEL_IDS) if (id !== "zeynep-7") assert.ok(SHOT_TOWER_IDS.includes(id), `${id} icin 3D vurus tarifi yok`);
+  // Isinla vuranlar disindaki AttackLord kuleleri birbirinden farkli carpiyor.
+  const styles = ["warrior-1", "warrior-2", "warrior-3", "warrior-4", "warrior-6"].map((id) => getShotRecipe(id, 1).impact);
+  assert.equal(new Set(styles).size, styles.length, styles.join(","));
+  for (const id of SHOT_TOWER_IDS) {
+    const [one, two, three] = [1, 2, 3].map((tier) => getShotRecipe(id, tier));
+    assert.ok(one.hit.sparks < two.hit.sparks && two.hit.sparks < three.hit.sparks, `${id}: kivilcim`);
+    assert.ok(one.hit.flash < two.hit.flash && two.hit.flash < three.hit.flash, `${id}: parlama`);
+    assert.ok(one.hit.rings < three.hit.rings && one.trail.lifeMs < three.trail.lifeMs, `${id}: halka ve iz`);
+    assert.equal(one.hit.embers, 0);
+    assert.ok(two.hit.embers > 0 && two.muzzle.ring && !one.muzzle.ring, `${id}: kademe 2 katmani`);
+    assert.ok(three.hit.pillar && !two.hit.pillar, `${id}: kademe 3 katmani`);
+  }
+  assert.equal(shotTowerId("zeynep-3-kin-wave"), "zeynep-3");
+  assert.equal(shotTowerId("zeynep-3-copy"), "zeynep-3");
+  // Bilinmeyen kule yedek kurede, verilen tonda.
+  assert.equal(getShotRecipe("archer-1", 1, 0x123456).color, 0x123456);
+  assert.equal(getShotRecipe("warrior-5", 3).beam, "laser");
 });
 
 test("koruma: sunucu yayinini tetikleyen yollar yakalaniyor, istemci yollari serbest", () => {

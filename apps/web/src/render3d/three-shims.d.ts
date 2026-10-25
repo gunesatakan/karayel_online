@@ -44,6 +44,23 @@ declare module "three" {
   export const OneMinusSrcColorFactor: number;
   export const ACESFilmicToneMapping: number;
   export const SRGBColorSpace: string;
+  // 3D vuruslar (shot-fx).
+  export const Vector3: any; export type Vector3 = any;
+  export const Quaternion: any; export type Quaternion = any;
+  export const InstancedBufferGeometry: any; export type InstancedBufferGeometry = any;
+  export const InstancedBufferAttribute: any; export type InstancedBufferAttribute = any;
+  export const CylinderGeometry: any;
+  export const ConeGeometry: any;
+  export const SphereGeometry: any;
+  export const IcosahedronGeometry: any;
+  export type Material = any;
+  export type MeshBasicMaterial = any;
+  export type MeshStandardMaterial = any;
+  export type Blending = number;
+  export const AdditiveBlending: number;
+  export const NormalBlending: number;
+  export const DynamicDrawUsage: number;
+  export const DoubleSide: number;
 }
 
 declare module "three/addons/loaders/GLTFLoader.js" {
