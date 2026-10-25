@@ -2,7 +2,7 @@
 
   blender --background --python build-structure-lods.py -- <set> <decoded-source-dir> [<check-dir>]
 
-  <set>: mines | buildings | wall
+  <set>: mines | buildings | wall | workers
 
 Sources are the Tripo H3.1 models generated from the GPT Image 2.5 concepts
 (art-direction/mines/, art-direction/buildings/), decoded to plain GLB
@@ -29,7 +29,7 @@ from mathutils import Matrix, Vector
 
 args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 if len(args) < 2:
-    raise SystemExit('usage: blender -b -P build-structure-lods.py -- <mines|buildings|wall> <decoded-source-dir> [<check-dir>]')
+    raise SystemExit('usage: blender -b -P build-structure-lods.py -- <mines|buildings|wall|workers> <decoded-source-dir> [<check-dir>]')
 model_set, source_dir = args[0], Path(args[1])
 check_dir = Path(args[2]) if len(args) > 2 else None
 base = Path(__file__).resolve().parent
@@ -44,8 +44,9 @@ SETS = {
     'buildings': {f'{kind}-t{tier}': (f'building-{kind}-tier-{tier}', {'kind': kind, 'tier': tier})
                   for kind in ['energy', 'ammunition', 'warehouse', 'repair'] for tier in (1, 2)},
     'wall': {'wall': ('wall-1', {'kind': 'wall', 'edgeCells': 1})},
+    'workers': {'worker': ('worker-drone', {'kind': 'worker'})},
 }
-ART = {'mines': 'mines', 'buildings': 'buildings', 'wall': 'buildings'}
+ART = {'mines': 'mines', 'buildings': 'buildings', 'wall': 'buildings', 'workers': 'workers'}
 
 
 def vertex_array(body):
@@ -129,7 +130,8 @@ for source_key, (name, extras) in SETS[model_set].items():
     for obj in list(bpy.context.scene.objects):
         if obj is not body:
             bpy.data.objects.remove(obj, do_unlink=True)
-    tilt = level_base(body)
+    # Suzulen dronun tabani yok: duzeltme yalnizca yere oturan yapilarda.
+    tilt = level_base(body) if model_set != 'workers' else 0
     turned = align_long_axis(body) if model_set == 'wall' else 0
     # Blender Z yukari; glTF disa aktarim Y yukariya ceviriyor. Kutu koselerden:
     # `bound_box` duzeltmeden sonra hemen tazelenmiyor.

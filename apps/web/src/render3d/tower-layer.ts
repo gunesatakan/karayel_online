@@ -38,6 +38,8 @@ import {
   orthoFromWorldView,
   standeeCenterHeight,
   MINE_CELL_SCALE,
+  WORKER_MODEL_PATH,
+  WORKER_MODEL_YAW_OFFSET,
   mineModelPath,
   towerModelPath,
   yawFromFacing,
@@ -106,6 +108,21 @@ export type EnemyBar = {
 };
 
 export type OrbitState = { yaw: number; elevation: number; zoom: number };
+
+/** Iscinin yeri ve durumu (Phaser'daki sprite'in son hali). */
+export type Worker3dInput = {
+  id: string;
+  x: number;
+  y: number;
+  /** Phaser donusu (hareket yonu, ekranda saat yonu); arti biceminde (Tamirci) donmuyor. */
+  rotation: number;
+  /** Govdenin genisligi (dunya birimi). */
+  size: number;
+  /** Rol rengi (worker-look) ve rolun ek parcasi. */
+  color: number;
+  role: "gatherer" | "carrier" | "repairer" | "drone";
+  carrying: boolean;
+};
 
 /** Madenin yeri ve durumu (Phaser'daki ikonun son hali). */
 export type Mine3dInput = { id: string; kind: string; x: number; y: number; cellSize: number; depleted: boolean; /** Kalan miktar yazisi (2D'deki etiket). */ label: string };
@@ -226,6 +243,8 @@ export type TowerLayer = {
    * yanlarinda kayalik yamac. `groundImage` haritanin zemin resmi (yamaclarin dokusu).
    */
   setTerrain(terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement; stage?: number }) | undefined): void;
+  /** Egik gorunumde 3D isciler. Donen kume: modeli yuklenmis olanlar (sprite'lari gizlenebilir). */
+  syncWorkers(workers: readonly Worker3dInput[]): ReadonlySet<string>;
   /**
    * Bolumun yuksek cozunurluklu 3D zemini (models3d/terrain/stage-N.jpg) yuklendi mi.
    * Yuklendiyse zemin 3D'de cizili; Phaser karesi ustune yalnizca isik olarak
@@ -672,6 +691,98 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       }
       mesh.material = dark;
     });
+  }
+
+  // Isciler: ortak dron modeli + rol parcalari (halka, yuk, arti). Parca geometrileri paylasiliyor.
+  const workers = new Map<string, { root: THREE.Object3D; ring: THREE.Mesh; cargo: THREE.Object3D; plus: THREE.Object3D; shadow: THREE.Mesh; materials: THREE.Mesh["material"][]; color: number; phase: number }>();
+  const workersShown = new Set<string>();
+  const ringGeometry = new THREE.TorusGeometry(0.46, 0.035, 8, 40);
+  const crateGeometry = new THREE.BoxGeometry(0.24, 0.2, 0.24);
+  const crystalGeometry = new THREE.OctahedronGeometry(0.16);
+  const plusArm = new THREE.BoxGeometry(0.34, 0.08, 0.1);
+
+  function glow(color: number) {
+    return new THREE.MeshBasicMaterial({ color, toneMapped: false });
+  }
+
+  function createWorker(source: THREE.Object3D, input: Worker3dInput) {
+    const root = new THREE.Group();
+    const body = source.clone(true);
+    root.add(body);
+    const ringMaterial = glow(input.color);
+    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.04;
+    root.add(ring);
+    const cargoMaterial = glow(input.color);
+    const cargo = new THREE.Mesh(input.role === "gatherer" ? crystalGeometry : crateGeometry, cargoMaterial);
+    cargo.position.y = -0.22;
+    root.add(cargo);
+    const plusMaterial = glow(input.color);
+    const plus = new THREE.Group();
+    const armA = new THREE.Mesh(plusArm, plusMaterial);
+    const armB = new THREE.Mesh(plusArm, plusMaterial);
+    armB.rotation.y = Math.PI / 2;
+    plus.add(armA);
+    plus.add(armB);
+    const height = (body.getObjectByName("worker-drone")?.userData?.height as number | undefined) ?? 0.5;
+    plus.position.y = height + 0.08;
+    root.add(plus);
+    const shadow = new THREE.Mesh(shadowGeometry, new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false, toneMapped: false, color: 0x000000, opacity: 0.32 }));
+    shadow.rotation.x = -Math.PI / 2;
+    scene.add(shadow);
+    let hash = 0;
+    for (const char of input.id) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+    return { root, ring, cargo, plus, shadow, materials: [ringMaterial, cargoMaterial, plusMaterial], color: input.color, phase: ((hash >>> 0) % 628) / 100 };
+  }
+
+  function removeWorker(id: string) {
+    const worker = workers.get(id);
+    if (!worker) return;
+    scene.remove(worker.root);
+    scene.remove(worker.shadow);
+    worker.materials.forEach((material) => material.dispose());
+    worker.shadow.material.dispose();
+    workers.delete(id);
+  }
+
+  function syncWorkers(list: readonly Worker3dInput[]) {
+    workersShown.clear();
+    const source = loaded.get(WORKER_MODEL_PATH);
+    if (!source) {
+      if (list.length > 0) request(WORKER_MODEL_PATH);
+      for (const id of [...workers.keys()]) removeWorker(id);
+      return workersShown;
+    }
+    const now = performance.now() / 1000;
+    const active = new Set<string>();
+    for (const input of list) {
+      active.add(input.id);
+      let worker = workers.get(input.id);
+      if (worker && worker.color !== input.color) {
+        removeWorker(input.id);
+        worker = undefined;
+      }
+      if (!worker) {
+        worker = createWorker(source, input);
+        workers.set(input.id, worker);
+        scene.add(worker.root);
+      }
+      const ground = zoneHeight(input.x, input.y);
+      // Suzuluyor: hucrenin yarisi kadar yukarida, hafifce inip kalkiyor.
+      const hover = input.size * 1.1 + Math.sin(now * 3 + worker.phase) * input.size * 0.08;
+      worker.root.position.set(input.x, ground + hover, input.y);
+      worker.root.scale.setScalar(input.size);
+      if (input.role !== "repairer") worker.root.rotation.y = Math.PI / 2 - input.rotation + WORKER_MODEL_YAW_OFFSET;
+      worker.cargo.visible = input.carrying && (input.role === "gatherer" || input.role === "carrier");
+      worker.cargo.rotation.y = now * 2;
+      worker.plus.visible = input.role === "repairer";
+      worker.shadow.position.set(input.x, ground + 0.25, input.y);
+      worker.shadow.scale.setScalar(input.size * 0.45);
+      workersShown.add(input.id);
+    }
+    for (const id of [...workers.keys()]) if (!active.has(id)) removeWorker(id);
+    return workersShown;
   }
 
   function syncMines(list: readonly Mine3dInput[]) {
@@ -1128,6 +1239,11 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     disposed = true;
     for (const instance of instances.values()) scene.remove(instance.root);
     instances.clear();
+    for (const id of [...workers.keys()]) removeWorker(id);
+    ringGeometry.dispose();
+    crateGeometry.dispose();
+    crystalGeometry.dispose();
+    plusArm.dispose();
     for (const instance of mines.values()) {
       scene.remove(instance.root);
       instance.label?.texture.dispose();
@@ -1161,7 +1277,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   return {
     sync, syncEnemies, captureBoard, render, clientToWorld, worldToClient, dispose,
-    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines, hasGround: groundReady,
+    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines, syncWorkers, hasGround: groundReady,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
     setAirBodySize: (size) => { airBodySize = size; },
     setView: (next) => {
@@ -1169,6 +1285,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       if (view === "top") {
         syncEnemies([]);
         syncMines([]);
+        syncWorkers([]);
       }
     },
     getView: () => view

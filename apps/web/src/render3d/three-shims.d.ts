@@ -20,6 +20,10 @@ declare module "three" {
   export const MeshBasicMaterial: any;
   export const ShaderMaterial: any; export type ShaderMaterial = any;
   export const CircleGeometry: any;
+  export const TorusGeometry: any;
+  export const BoxGeometry: any;
+  export const OctahedronGeometry: any;
+  export const Group: any;
   export const ShadowMaterial: any;
   export const MeshStandardMaterial: any;
   export const Sprite: any;

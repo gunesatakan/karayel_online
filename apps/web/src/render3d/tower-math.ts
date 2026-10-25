@@ -63,6 +63,14 @@ export const MINE_KINDS: ReadonlySet<string> = new Set(["energy", "gunpowder", "
 /** Madenin tabani hucrenin bu kadari: 2D ikonun (0,71 hucre) biraz ustu, komsu karelere tasmiyor. */
 export const MINE_CELL_SCALE = 0.86;
 
+/**
+ * Isci dronu (Tripo; build-structure-lods.py -- workers): tek model, rol farki
+ * oyunda eklenen parcalarla (rol renginde suzulme halkasi, yuk, Tamircinin artisi).
+ */
+export const WORKER_MODEL_PATH = "models3d/worker-drone.glb";
+/** Modelin burnu (goz): Tripo modeli gozu +X yonunde kurdu; +Z burunlu modellerin donusune ceyrek tur. */
+export const WORKER_MODEL_YAW_OFFSET = -Math.PI / 2;
+
 export function mineModelPath(kind: string) {
   return `models3d/mine-${kind}.glb`;
 }

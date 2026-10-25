@@ -1,0 +1,12 @@
+[
+  {
+    "key": "worker",
+    "model": "apps/web/public/models3d/worker-drone.glb",
+    "reference": "art-direction/workers/worker.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 4e13f5cb-b153-4b5f-adc5-9081d8d7bfa0#0",
+    "sourceId": "cc7300de-0dfa-4c42-8b21-de708c957105",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55,
+    "roles": "one shared model; roles are told apart in game by a glowing hover ring in the role colour (worker-look), carried cargo (purple crystal / amber crate) and the repairer's green plus beacon"
+  }
+]

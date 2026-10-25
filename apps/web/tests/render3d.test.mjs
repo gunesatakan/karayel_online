@@ -17,6 +17,7 @@ import {
   BUILDING_MODEL_KINDS,
   MINE_KINDS,
   WALL_MODEL_PATH,
+  WORKER_MODEL_PATH,
   buildingModelPath,
   MODEL_BODY_DIAMETER_CELLS,
   mineModelPath,
@@ -207,6 +208,9 @@ test("ikmal binalarinin iki kademesi ve duvar modeli var; arazi dokulari 2048 px
     }
   }
   assert.equal(buildingModelPath("zeynep-1", 1), undefined);
+  const worker = read(WORKER_MODEL_PATH);
+  assert.ok(worker.json.nodes.some((node) => node.name === "worker-drone" && node.extras?.kind === "worker"), "isci dronu kok dugumu");
+  assert.ok(worker.bytes.length < 800 * 1024);
   const wall = read(WALL_MODEL_PATH);
   const accessor = wall.json.accessors[wall.json.meshes[0].primitives[0].attributes.POSITION];
   // Boy X'te tam 1 (bir hucre kenari), kalinlik ondan az.

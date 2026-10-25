@@ -474,7 +474,7 @@ import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
 import { EDGE_MODEL_IDS, MINE_KINDS, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
-import type { Enemy3dInput, EnemyBar, Mine3dInput, Tower3dInput, TowerLayer } from "../render3d/tower-layer";
+import type { Enemy3dInput, EnemyBar, Mine3dInput, Tower3dInput, TowerLayer, Worker3dInput } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getWaveMusicLevel, getWaveMusicTrackForState, WAVE_MUSIC_TRACKS, WaveMusicPlayer } from "../wave-music";
@@ -1341,6 +1341,8 @@ export class GameScene extends Phaser.Scene {
   /** Temas noktasina varan merminin varis ani (gomulme egrisi buradan). */
   private readonly projectileSinkStarts = new Map<string, number>();
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  /** Son karedeki isciler (egik 3D gorunum onlari dron modeliyle ciziyor). */
+  private droneSnapshots3d: readonly DroneSnapshot[] = [];
   /**
    * Gelismis iscilerin govdesi.
    *
@@ -10960,6 +10962,26 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (!sprite.active || !MINE_KINDS.has(kind)) continue;
       mines.push({ id, kind, x: sprite.x, y: sprite.y, cellSize, depleted: sprite.alpha < 0.5, label: this.resourceAmountLabels.get(id)?.text ?? "" });
     }
+    // Isciler: dron modeli, rol renginde halka; yuk tasirken altinda yuku, Tamircinin ustunde arti.
+    const workers: Worker3dInput[] = [];
+    for (const drone of this.droneSnapshots3d) {
+      const sprite = this.drones.get(drone.id);
+      if (!sprite?.active) continue;
+      const lookRole = getWorkerLookRole(drone.mode);
+      const look = lookRole ? WORKER_LOOKS[lookRole] : undefined;
+      workers.push({
+        id: drone.id,
+        x: sprite.x,
+        y: sprite.y,
+        rotation: sprite.rotation,
+        size: Math.max(cellSize * 0.34, Math.abs(sprite.displayWidth) * 1.15) * (drone.advanced ? 1.15 : 1),
+        color: look?.color ?? (drone.mode === "attack" ? 0xef4444 : 0x22d3ee),
+        role: lookRole ?? "drone",
+        carrying: (drone.cargo ?? 0) > 0
+      });
+    }
+    const workersShown = layer.syncWorkers(workers);
+    for (const [id, sprite] of this.drones) if (workersShown.has(id)) sprite.cameraFilter |= both;
     const minesShown = layer.syncMines(mines);
     for (const [id, sprite] of this.resourceSprites) {
       if (!minesShown.has(id)) continue;
@@ -11910,6 +11932,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private renderDrones(drones: DroneSnapshot[]) {
+    this.droneSnapshots3d = drones;
     const activeIds = new Set(drones.map((drone) => drone.id));
 
     for (const [id, sprite] of this.drones) {

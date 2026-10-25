@@ -1,0 +1,17 @@
+{
+  "note": "Game copies of the Tripo workers models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
+  "targetTriangles": 8000,
+  "textureSize": 512,
+  "models": [
+    {
+      "key": "worker-drone",
+      "bytes": 538636,
+      "triangles": 8000,
+      "height": 0.5296,
+      "leveledDegrees": 0,
+      "turnedDegrees": 0,
+      "sha256": "1f9ac48707af1d6ac26564d840e8c1827cddd7bd3a0bd13759a548030bc968d8",
+      "source": "Tripo H3.1 / art-direction/workers/worker.png"
+    }
+  ]
+}
