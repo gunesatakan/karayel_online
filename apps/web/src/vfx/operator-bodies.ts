@@ -132,6 +132,8 @@ type BodyView = {
   workStartedAt: number;
   wasWorking: boolean;
   seed: number;
+  /** Nefessiz resim genisligi (3D beden bundan olculuyor, buyuyup kuculmuyor). */
+  width: number;
 };
 
 export type OperatorBodyViewDeps = {
@@ -171,7 +173,7 @@ export class OperatorBodyView {
 
   /** Cizilen bedenler (egik 3D gorunum onlari 3D modelle ciziyor, resimlerini gizliyor). */
   bodies() {
-    return [...this.views.entries()].map(([id, view]) => ({ id, characterId: view.characterId, image: view.image, x: view.x, y: view.y, rotation: view.rotation, down: view.down }));
+    return [...this.views.entries()].map(([id, view]) => ({ id, characterId: view.characterId, image: view.image, x: view.x, y: view.y, rotation: view.rotation, down: view.down, width: view.width }));
   }
 
   /** Son cizilen yer (yenilgi sahnesi bedenin patlamasini oraya koyuyor). */
@@ -234,7 +236,8 @@ export class OperatorBodyView {
       down: false,
       workStartedAt: 0,
       wasWorking: false,
-      seed: [...body.id].reduce((sum, char) => sum + char.charCodeAt(0), 0)
+      seed: [...body.id].reduce((sum, char) => sum + char.charCodeAt(0), 0),
+      width: 0
     };
     this.views.set(body.id, view);
     return view;
@@ -258,6 +261,7 @@ export class OperatorBodyView {
         this.deps.onDown?.(body);
       }
       // Dusmus beden: sonmus kabuk, hareketsiz.
+      view.width = size / OPERATOR_BODY_TEXTURE_CONTENT;
       view.image.setPosition(body.x, body.y).setRotation(view.rotation).setDisplaySize(size / OPERATOR_BODY_TEXTURE_CONTENT, size / OPERATOR_BODY_TEXTURE_CONTENT)
         .setTint(0x3a3633).setAlpha(0.85);
       return;
@@ -277,7 +281,8 @@ export class OperatorBodyView {
     // Bosta suzulme: hafif ve yavas; hareket azaltmada yok.
     const bob = still || body.s !== "i" ? 0 : Math.sin(now / 520 + view.seed) * 0.7 * scale;
     const breathe = still ? 1 : 1 + Math.sin(now / 760 + view.seed) * 0.012;
-    const display = (size / OPERATOR_BODY_TEXTURE_CONTENT) * breathe;
+    view.width = size / OPERATOR_BODY_TEXTURE_CONTENT;
+    const display = view.width * breathe;
     view.image.setPosition(body.x, body.y + bob).setRotation(view.rotation).setDisplaySize(display, display).setAlpha(1);
 
     // Golge: ucan govde yere degmiyor.

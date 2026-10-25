@@ -1343,6 +1343,8 @@ export class GameScene extends Phaser.Scene {
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   /** Son karedeki isciler (egik 3D gorunum onlari dron modeliyle ciziyor). */
   private droneSnapshots3d: readonly DroneSnapshot[] = [];
+  /** Iscinin nabizsiz govde genisligi: 3D dron 2D'deki buyuyup kuculmeyi almiyor. */
+  private readonly droneBodyWidths3d = new Map<string, number>();
   /**
    * Gelismis iscilerin govdesi.
    *
@@ -10974,7 +10976,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         x: sprite.x,
         y: sprite.y,
         rotation: sprite.rotation,
-        size: Math.max(cellSize * 0.34, Math.abs(sprite.displayWidth) * 1.15) * (drone.advanced ? 1.15 : 1) * WORKER_SIZE_SCALE,
+        size: Math.max(cellSize * 0.34, (this.droneBodyWidths3d.get(drone.id) ?? Math.abs(sprite.displayWidth)) * 1.15) * (drone.advanced ? 1.15 : 1) * WORKER_SIZE_SCALE,
         color: look?.color ?? (drone.mode === "attack" ? 0xef4444 : 0x22d3ee),
         role: lookRole ?? "drone",
         carrying: (drone.cargo ?? 0) > 0
@@ -10987,7 +10989,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     for (const body of this.operatorBodyView?.bodies() ?? []) {
       if (!body.image.active) continue;
       operatorImages.set(body.id, body.image);
-      operatorInputs.push({ id: body.id, characterId: body.characterId, x: body.x, y: body.y, rotation: body.rotation, size: Math.abs(body.image.displayWidth), down: body.down });
+      operatorInputs.push({ id: body.id, characterId: body.characterId, x: body.x, y: body.y, rotation: body.rotation, size: body.width || Math.abs(body.image.displayWidth), down: body.down });
     }
     for (const id of layer.syncOperators(operatorInputs)) {
       const image = operatorImages.get(id);
@@ -11957,6 +11959,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         }
         sprite.destroy();
         this.drones.delete(id);
+        this.droneBodyWidths3d.delete(id);
       }
     }
     for (const id of this.hasarliIsciler) {
@@ -12001,6 +12004,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Ulti dronlari (saldiri, onarim) gorunuste 2/3 (visual-scale).
       const workerScale = isLogisticsWorker ? 0.69 * 0.75 * WORKER_VISUAL_SCALE : (drone.mode === "attack" ? ATAKAN_ATTACK_DRONE_BODY.spriteScale : 1.38) * ATAKAN_ULTIMATE_DRONE_VISUAL_SCALE;
       sprite.setScale(workerScale * mapEntityScale * pulse);
+      this.droneBodyWidths3d.set(drone.id, sprite.width * workerScale * mapEntityScale);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
       // Doku zaten rolun renginde: tint carpimi yok (eskiden uc rolu ayni maviye
       // dusuruyordu). Gelismis govde ayni rengi Graphics ile ciziyor.
