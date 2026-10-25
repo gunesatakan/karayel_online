@@ -42,6 +42,7 @@ import {
   type OrbitView,
   type TowerTier
 } from "./tower-math";
+import { createZoneHeight, edgeSlopeHeight, terrainShade, type TerrainInput } from "./terrain";
 
 export type Tower3dInput = {
   id: string;
@@ -206,6 +207,11 @@ export type TowerLayer = {
    * an tahtanin dokusuna aliniyor. Ardindan cizilen (efekt kamerasi) ayri duzleme.
    */
   captureBoard(): void;
+  /**
+   * Arazi (render3d/terrain): yasak bolgeler tepe ya da cukur, arenanin
+   * yanlarinda kayalik yamac. `groundImage` haritanin zemin resmi (yamaclarin dokusu).
+   */
+  setTerrain(terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement }) | undefined): void;
   setView(view: LayerView): void;
   getView(): LayerView;
   /**
@@ -271,19 +277,171 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   boardTexture.colorSpace = THREE.SRGBColorSpace;
   boardTexture.minFilter = THREE.LinearFilter;
   boardTexture.generateMipmaps = false;
-  const board = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: boardTexture, toneMapped: false }));
-  board.rotation.x = -Math.PI / 2;
+  // Tahtanin agi dunya koordinatlarinda (arazinin yuksekligi ve isik golgesi koselerde, `ensureTerrain`).
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: boardTexture, toneMapped: false, vertexColors: true }));
   // Kule tabanlari (y = 0) ile yarismasin.
   board.position.y = -0.4;
   board.renderOrder = -1;
   scene.add(board);
 
   // Kule golgelerini tahtaya dusuren seffaf duzlem (golge disinda hicbir sey cizmiyor).
-  const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.38 }));
-  shadowCatcher.rotation.x = -Math.PI / 2;
-  shadowCatcher.position.y = 0.05;
+  const shadowCatcher = new THREE.Mesh(board.geometry, new THREE.ShadowMaterial({ opacity: 0.38, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  shadowCatcher.position.y = -0.4;
   shadowCatcher.receiveShadow = true;
   scene.add(shadowCatcher);
+
+  // Arenanin yanlarindaki kayalik yamaclar ve her seyin altindaki zemin (yalnizca egik gorunumde).
+  const slopeMaterial = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 1, metalness: 0 });
+  const slopes = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), slopeMaterial);
+  slopes.castShadow = slopes.receiveShadow = true;
+  slopes.visible = false;
+  scene.add(slopes);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000), new THREE.MeshStandardMaterial({ color: 0x10181a, roughness: 1, metalness: 0 }));
+  floor.rotation.x = -Math.PI / 2;
+  // Cukurlarin dibinin de altinda.
+  floor.position.y = -80;
+  floor.receiveShadow = true;
+  floor.visible = false;
+  scene.add(floor);
+  // Yasak bolgelerin kayalik yuzeyi: tahtanin bolge karelerindeki parcasi, isikli ve golgeli.
+  const zoneMaterial = new THREE.MeshStandardMaterial({ color: 0x9c948a, roughness: 1, metalness: 0, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const zoneSurface = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), zoneMaterial);
+  zoneSurface.castShadow = zoneSurface.receiveShadow = true;
+  zoneSurface.position.y = -0.4;
+  zoneSurface.visible = false;
+  scene.add(zoneSurface);
+  let terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement }) | undefined;
+  let zoneHeight: (x: number, z: number) => number = () => 0;
+  let terrainKey = "";
+  let groundTexture: THREE.Texture | undefined;
+  const sunVector = (() => {
+    const length = Math.hypot(-6, 14, 8);
+    return { x: -6 / length, y: 14 / length, z: 8 / length };
+  })();
+
+  /**
+   * Dunya koordinatlarinda yatay ag: `height` koselerin yuksekligi, `uv` doku
+   * koordinati, `shade` (verilirse) kose rengi olarak isik golgesi.
+   */
+  function buildGrid(x0: number, z0: number, width: number, depth: number, step: number, height: (x: number, z: number) => number, uv: (x: number, z: number) => [number, number], shade: boolean, keep?: (x: number, z: number) => boolean) {
+    const columns = Math.max(1, Math.ceil(width / step));
+    const rowsCount = Math.max(1, Math.ceil(depth / step));
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const colors: number[] = [];
+    for (let r = 0; r <= rowsCount; r += 1) {
+      for (let c = 0; c <= columns; c += 1) {
+        const x = x0 + (width * c) / columns;
+        const z = z0 + (depth * r) / rowsCount;
+        positions.push(x, height(x, z), z);
+        uvs.push(...uv(x, z));
+        if (shade) {
+          const value = terrainShade(height, x, z, step, sunVector);
+          colors.push(value, value, value);
+        }
+      }
+    }
+    const indices: number[] = [];
+    for (let r = 0; r < rowsCount; r += 1) {
+      for (let c = 0; c < columns; c += 1) {
+        const a = r * (columns + 1) + c;
+        const b = a + 1;
+        const d = a + columns + 1;
+        const e = d + 1;
+        if (keep && !keep(x0 + (width * (c + 0.5)) / columns, z0 + (depth * (r + 0.5)) / rowsCount)) continue;
+        indices.push(a, d, b, b, d, e);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    if (shade) geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  /** Tahta, golge duzlemi ve yamaclar: dunya gorunumu ya da arazi degisince yeniden. */
+  function ensureTerrain(world: WorldView) {
+    const key = `${world.x},${world.y},${world.width},${world.height}|${terrain ? `${terrain.cols}x${terrain.rows}:${terrain.cellSize}:${terrain.originX},${terrain.originY}:${terrain.zoneCells.join(",")}` : "-"}`;
+    if (key === terrainKey) return;
+    terrainKey = key;
+    const cell = terrain?.cellSize ?? 34;
+    const boardGeometry = buildGrid(world.x, world.y, world.width, world.height, cell / 4, zoneHeight,
+      (x, z) => [(x - world.x) / world.width, 1 - (z - world.y) / world.height], true);
+    board.geometry.dispose();
+    board.geometry = boardGeometry;
+    shadowCatcher.geometry = boardGeometry;
+    zoneSurface.geometry.dispose();
+    if (terrain && terrain.zoneCells.length > 0) {
+      const zones = new Set(terrain.zoneCells);
+      const t = terrain;
+      const inZone = (x: number, z: number) => {
+        const col = Math.floor((x - t.originX) / t.cellSize);
+        const row = Math.floor((z - t.originY) / t.cellSize);
+        return col >= 0 && row >= 0 && col < t.cols && row < t.rows && zones.has(row * t.cols + col);
+      };
+      const tile = t.cols * t.cellSize;
+      // Dunya olcekli kaya dokusu; kose rengi yalnizca cukurun derinlik karartmasi (isik malzemeden).
+      zoneSurface.geometry = buildGrid(world.x, world.y, world.width, world.height, cell / 4, zoneHeight,
+        (x, z) => [x / (tile * 0.5), -z / (tile * 0.75)], true, inZone);
+    } else {
+      zoneSurface.geometry = new THREE.PlaneGeometry(1, 1);
+    }
+    slopes.geometry.dispose();
+    if (terrain) {
+      const arena = { left: terrain.originX, right: terrain.originX + terrain.cols * cell };
+      const reach = cell * 9;
+      const top = world.y - cell * 14;
+      const depth = world.height + cell * 28;
+      const tile = arena.right - arena.left;
+      const uv = (x: number, z: number): [number, number] => [x / tile, -z / (tile * 1.5)];
+      const height = (x: number, z: number) => edgeSlopeHeight(x, z, arena, cell);
+      const left = buildGrid(arena.left - reach, top, reach, depth, cell / 2.5, height, uv, false);
+      const right = buildGrid(arena.right, top, reach, depth, cell / 2.5, height, uv, false);
+      slopes.geometry = mergeGrids(left, right);
+      left.dispose();
+      right.dispose();
+    } else {
+      slopes.geometry = new THREE.PlaneGeometry(1, 1);
+    }
+  }
+
+  function mergeGrids(a: THREE.BufferGeometry, b: THREE.BufferGeometry) {
+    const merged = new THREE.BufferGeometry();
+    for (const name of ["position", "uv", "normal"]) {
+      const first = a.getAttribute(name);
+      const second = b.getAttribute(name);
+      const array = new Float32Array(first.array.length + second.array.length);
+      array.set(first.array, 0);
+      array.set(second.array, first.array.length);
+      merged.setAttribute(name, new THREE.Float32BufferAttribute(array, first.itemSize));
+    }
+    const offset = a.getAttribute("position").count;
+    const indices = [...a.getIndex().array, ...[...b.getIndex().array].map((index: number) => index + offset)];
+    merged.setIndex(indices);
+    return merged;
+  }
+
+  function setTerrain(next: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement }) | undefined) {
+    terrain = next;
+    zoneHeight = next ? createZoneHeight(next) : () => 0;
+    terrainKey = "";
+    const image = next?.groundImage;
+    if (image && groundTexture?.image !== image) {
+      groundTexture?.dispose();
+    shadowCatcher.material.dispose();
+      groundTexture = new THREE.Texture(image);
+      groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
+      groundTexture.colorSpace = THREE.SRGBColorSpace;
+      groundTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      groundTexture.needsUpdate = true;
+      slopeMaterial.map = groundTexture;
+      slopeMaterial.needsUpdate = true;
+      zoneMaterial.map = groundTexture;
+      zoneMaterial.needsUpdate = true;
+    }
+  }
 
   // Efekt duzlemi: ayni tuvalin ikinci kopyasi, zemin alindiktan sonra cizilen
   // mermi, isin ve vuruslar. Her seyin ustunde (2D'deki gibi kulelerin de);
@@ -488,7 +646,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       uniforms.uAlpha.value = enemy.alpha;
       uniforms.uFill.value = enemy.fill ? 1 : 0;
       const lift = standeeCenterHeight(enemy.size, orbit.elevation) + enemy.extraLift;
-      standee.mesh.position.set(enemy.x, lift, enemy.y);
+      // Tepeye tirmaniyor, cukura iniyor (arazi yalnizca gorunus).
+      const ground = zoneHeight(enemy.x, enemy.y);
+      standee.mesh.position.set(enemy.x, ground + lift, enemy.y);
       const bar = enemy.bar;
       standee.bar.visible = Boolean(bar);
       if (bar) {
@@ -505,7 +665,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         barUniforms.uChampion.value = bar.champion ? 1 : 0;
         standee.bar.position.copy(standee.mesh.position);
       }
-      standee.shadow.position.set(enemy.x, 0.2, enemy.y);
+      standee.shadow.position.set(enemy.x, ground + 0.2, enemy.y);
       standee.shadow.scale.setScalar(enemy.shadowRadius);
       standee.shadow.material.opacity = enemy.shadowAlpha;
     }
@@ -634,7 +794,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   /** Gunes ve golge kesiti haritanin tamamini kapsasin. */
   function placeSun(world: WorldView) {
     const center = mapCenter(world);
-    const radius = Math.hypot(world.width, world.height) / 2 + 80;
+    // Yamaclar da golge kesitinde.
+    const radius = Math.hypot(world.width + 18 * (terrain?.cellSize ?? 34), world.height) / 2 + 80;
     if (sun.target.position.x !== center.x || sun.target.position.z !== center.z) shadowDirty = true;
     sun.target.position.set(center.x, 0, center.z);
     sun.position.set(center.x + sunDirection.x * 1500, sunDirection.y * 1500, center.z + sunDirection.z * 1500);
@@ -646,9 +807,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       shadowCamera.bottom = -radius;
       shadowCamera.updateProjectionMatrix();
     }
-    shadowCatcher.position.x = center.x;
-    shadowCatcher.position.z = center.z;
-    shadowCatcher.scale.set(world.width, world.height, 1);
+    ensureTerrain(world);
   }
 
   function render(canvasRect: DOMRect, viewport: PhaserViewport, worldView: WorldView) {
@@ -657,6 +816,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     if (view === "top") {
       lastRect = undefined;
       board.visible = false;
+      slopes.visible = false;
+      floor.visible = false;
+      zoneSurface.visible = false;
       air.visible = false;
       boardCaptured = false;
       renderer.setClearColor(0x000000, 0);
@@ -683,9 +845,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     lastRect = canvasRect;
     lastWorld = { x: worldView.x, y: worldView.y, width: worldView.width, height: worldView.height };
     board.visible = true;
-    board.position.x = worldView.x + worldView.width / 2;
-    board.position.z = worldView.y + worldView.height / 2;
-    board.scale.set(worldView.width, worldView.height, 1);
+    slopes.visible = Boolean(terrain);
+    floor.visible = true;
+    zoneSurface.visible = Boolean(terrain && terrain.zoneCells.length > 0);
     // Doku: Phaser tuvalinin yalnizca ana kameranin dikdortgeni (flipY: v=1 tuvalin ustu).
     boardTexture.repeat.set(viewport.width / viewport.gameWidth, viewport.height / viewport.gameHeight);
     boardTexture.offset.set(viewport.x / viewport.gameWidth, 1 - (viewport.y + viewport.height) / viewport.gameHeight);
@@ -693,8 +855,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     // Zemin `captureBoard`da alindiysa tuvalde artik yalnizca efektler var.
     if (boardCaptured) {
       air.visible = true;
-      air.position.set(board.position.x, standeeCenterHeight(airBodySize, orbit.elevation), board.position.z);
-      air.scale.copy(board.scale);
+      air.position.set(worldView.x + worldView.width / 2, standeeCenterHeight(airBodySize, orbit.elevation), worldView.y + worldView.height / 2);
+      air.scale.set(worldView.width, worldView.height, 1);
       airTexture.repeat.copy(boardTexture.repeat);
       airTexture.offset.copy(boardTexture.offset);
       airTexture.needsUpdate = true;
@@ -741,7 +903,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     shadowGeometry.dispose();
     const textures = new Set<THREE.Texture>([boardTexture, airTexture, shadowTexture, ...[...standeeTextures.values()].map((entry) => entry.texture)]);
     standeeTextures.clear();
-    for (const object of [...loaded.values(), board, air, shadowCatcher]) {
+    groundTexture?.dispose();
+    for (const object of [...loaded.values(), board, air, slopes, floor, zoneSurface]) {
       object.traverse((node: THREE.Object3D) => {
         const mesh = node as THREE.Mesh;
         if (!mesh.isMesh) return;
@@ -761,7 +924,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   return {
     sync, syncEnemies, captureBoard, render, clientToWorld, worldToClient, dispose,
-    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera,
+    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
     setAirBodySize: (size) => { airBodySize = size; },
     setView: (next) => {

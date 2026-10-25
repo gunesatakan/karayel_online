@@ -21,6 +21,10 @@ declare module "three" {
   export const ShaderMaterial: any; export type ShaderMaterial = any;
   export const CircleGeometry: any;
   export const ShadowMaterial: any;
+  export const MeshStandardMaterial: any;
+  export const BufferGeometry: any; export type BufferGeometry = any;
+  export const Float32BufferAttribute: any;
+  export const RepeatWrapping: number;
   export const PCFShadowMap: number;
   export const Color: any;
   export const Vector2: any;

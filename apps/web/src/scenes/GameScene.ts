@@ -2469,6 +2469,26 @@ export class GameScene extends Phaser.Scene {
     graphics.lineBetween(origin.x, origin.y, origin.x + arenaWidth, origin.y);
     graphics.lineStyle(2, 0xf9a8d4, 0.75);
     graphics.lineBetween(origin.x, origin.y + arenaHeight, origin.x + arenaWidth, origin.y + arenaHeight);
+    this.syncTerrain3d();
+  }
+
+  /** Egik 3D gorunumun arazisi: izgara, yasak bolgeler ve zemin resmi (render3d/terrain). */
+  private syncTerrain3d() {
+    const layer = this.towerLayer3d;
+    if (!layer) return;
+    const map = this.selectedMapData;
+    const origin = getMapOrigin(map);
+    const texture = `terrain-stage-${getStage(this.roomStage ?? this.selectedStage).id}`;
+    const groundImage = this.textures.exists(texture) ? this.textures.get(texture).getSourceImage() as HTMLImageElement : undefined;
+    layer.setTerrain({
+      cols: map.cols,
+      rows: map.rows,
+      cellSize: this.getMapCellSize(),
+      originX: origin.x,
+      originY: origin.y,
+      zoneCells: this.getActiveBuildZones()?.cells ?? [],
+      groundImage
+    });
   }
 
   /** Haritanin cizim anahtari: kareler ve yasak bolgeler; ayniysa yeniden cizilmiyor. */
@@ -10776,6 +10796,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (view === "2d" || !this.sys.isActive()) return;
       const layer = createTowerLayer({ host, source: this.game.canvas, view, resolveUrl: assetUrl, onModelReady: () => this.refreshTowers3d() });
       this.towerLayer3d = layer;
+      this.syncTerrain3d();
       // Tek parmak oyunun; iki parmak egik kameranin. Ikinci parmak inince birincinin oyun jesti geri aliniyor.
       this.detachCameraGestures = attachCameraGestures(host, this.game.canvas, {
         active: () => layer.getView() === "angled",

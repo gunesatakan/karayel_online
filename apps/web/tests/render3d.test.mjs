@@ -23,6 +23,7 @@ import {
   towerModelScale,
   yawFromFacing
 } from "../src/render3d/tower-math.ts";
+import { EDGE_SLOPE, createZoneHeight, edgeSlopeHeight, zoneBlobs } from "../src/render3d/terrain.ts";
 import { findForbidden, readDeployPaths } from "../../../tools/check-client-only.mjs";
 import { TOWER_MODELS_DIR } from "../../../tools/build-itch.mjs";
 
@@ -118,6 +119,31 @@ test("dar ekranda kesit derinlige gore buyuyor", () => {
   const frustum = angledFrustum({ width: 408, height: 674 }, 2, 52, 70);
   assert.ok(frustum.halfHeight * 2 >= 674 * frustum.sin + 70 * frustum.cos - 1e-9);
   assert.ok(Math.abs(frustum.halfWidth / frustum.halfHeight - 2) < 1e-9);
+});
+
+test("arazi: yasak bolge lekeleri donusumlu tepe ve cukur, bolge disi ve kenari dumduz", () => {
+  const input = { cols: 12, rows: 18, cellSize: 34, originX: 0, originY: 55, zoneCells: [3 * 12 + 2, 3 * 12 + 3, 4 * 12 + 3, 10 * 12 + 8, 10 * 12 + 9, 11 * 12 + 9] };
+  assert.deepEqual(zoneBlobs(12, 18, input.zoneCells), [[38, 39, 51], [128, 129, 141]]);
+  const height = createZoneHeight(input);
+  const center = (col, row) => [input.originX + (col + 0.5) * 34, input.originY + (row + 0.5) * 34];
+  const first = height(...center(3, 3));
+  const second = height(...center(9, 10));
+  assert.ok(first !== 0 && second !== 0 && Math.sign(first) !== Math.sign(second), `${first} ${second}`);
+  // Kule kurulan komsu kare ve bolgenin siniri duz.
+  assert.equal(height(...center(1, 3)), 0);
+  assert.equal(height(...center(6, 6)), 0);
+  assert.ok(Math.abs(height(input.originX + 2 * 34 + 0.01, input.originY + 3.5 * 34)) < 0.5);
+});
+
+test("arazi: yamac yalnizca arenanin sag ve solunda, egimi sinirli", () => {
+  const arena = { left: 0, right: 408 };
+  assert.equal(edgeSlopeHeight(200, 300, arena, 34), 0);
+  assert.equal(edgeSlopeHeight(0, -500, arena, 34), 0);
+  for (const out of [10, 40, 80, 150, 300]) {
+    const h = edgeSlopeHeight(-out, 300, arena, 34);
+    assert.ok(h > 0 && h <= out * EDGE_SLOPE * 1.25 + 1e-9, `${out}: ${h}`);
+    assert.ok(edgeSlopeHeight(408 + out, 300, arena, 34) > 0);
+  }
 });
 
 test("modeli olan her kulenin uc kademesi de var; rig dugumleri ve kademe bilgisi tasiniyor", () => {
