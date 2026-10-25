@@ -191,6 +191,11 @@ void main() {
   gl_FragColor = vec4(color, alpha);
 }`;
 
+/** Yeni 3D zeminin (models3d/terrain) koyulastirmasi; yamaclar ve bolge yuzeyleri ayni dokudan, bir tik daha koyu. */
+const GROUND_TINT = 0x5c5c5c;
+const SLOPE_TINT = 0x444444;
+const ZONE_TINT = 0x524e48;
+
 /** Kulelerin tepesine pay: egik kesitte uzun kuleler ust kenardan tasmasin (dunya birimi). */
 const TOWER_HEADROOM = 70;
 
@@ -329,7 +334,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   scene.add(zoneSurface);
   let terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement; stage?: number }) | undefined;
   // Bolumun 3D zemini: isikli, golgeli; Phaser karesi (halkalar, cizgiler, yazilar) ustune ekran karisimiyla.
-  const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
+  // Zemin koyu ve karanlik kalsin ki kuleler, madenler ve dusmanlar one ciksin:
+  // dokunun rengi isikla birlikte eski 2D zeminin (ekranda ortalama ~0,12) duzeyine cekiliyor.
+  const groundMaterial = new THREE.MeshStandardMaterial({ color: GROUND_TINT, roughness: 1, metalness: 0 });
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), groundMaterial);
   ground.position.y = -0.4;
   ground.receiveShadow = true;
@@ -483,8 +490,10 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       groundMaterial.map = texture;
       groundMaterial.needsUpdate = true;
       slopeMaterial.map = texture;
+      slopeMaterial.color.setHex(SLOPE_TINT);
       slopeMaterial.needsUpdate = true;
       zoneMaterial.map = texture;
+      zoneMaterial.color.setHex(ZONE_TINT);
       zoneMaterial.needsUpdate = true;
     }
     board.material = boardScreen;
