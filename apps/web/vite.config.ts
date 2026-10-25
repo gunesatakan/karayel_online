@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 /**
@@ -32,6 +33,13 @@ export default defineConfig({
   base: "./",
   define: {
     __APP_VERSION__: JSON.stringify(resolveAppVersion())
+  },
+  // three.js npm'den degil kopyadan (vendor/three/README.md): kilit dosyasi degismesin.
+  resolve: {
+    alias: [
+      { find: /^three$/, replacement: fileURLToPath(new URL("./vendor/three/build/three.module.js", import.meta.url)) },
+      { find: /^three\/addons\//, replacement: fileURLToPath(new URL("./vendor/three/examples/jsm/", import.meta.url)) }
+    ]
   },
   server: {
     port: 5173

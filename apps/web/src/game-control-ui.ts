@@ -7,6 +7,7 @@ import { AMMO_TYPE_ORDER, ammoTypeLabels, cardRarityLabels, towerAxisLabels } fr
 import { describeTowerAmmo, makeAmmoMarker } from "./tower-ammo";
 import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper, type MessageKey } from "./i18n";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
+import { readTowers3dPreference, setTowers3dPreference, supportsTowers3d } from "./render3d/renderer-mode";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
 import { describeWorkerRow, formatTransportProduct, formatWorkerCargo, formatWorkerReserve, formatWorkerRole, getWorkerPickHint, getWorkerProductOptions, getWorkerRosterStructureKey, type WorkerRosterState } from "./worker-roster";
 import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey, isTowerSheetExpanded, patchTowerSheet, renderTowerSheet, type TowerSheetInput, type TowerSheetModel } from "./tower-sheet";
@@ -3266,6 +3267,12 @@ export function setupGameHudUi(game: Phaser.Game) {
       // Gizlilik: oyuncu tercihi dogrudan depoya; sahneye gitmiyor.
       + `<label>${escapeHudText(t("menu.telemetry.label"))} <input data-toggle="telemetry" type="checkbox" aria-describedby="game-hud-telemetry-note"${readTelemetrySetting() ? " checked" : ""}></label>`
       + `<p id="game-hud-telemetry-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("menu.telemetry.note"))}</p>`
+      // 3D kuleler (deneme): varsayilan kapali; cihaz ya da derleme desteklemiyorsa kutu hic yok.
+      + (supportsTowers3d()
+        ? `<p class="game-hud__popup-section">${escapeHudText(t("hud.view.title"))}</p>`
+          + `<label>${escapeHudText(t("hud.view.towers3d"))} <input data-toggle="towers3d" type="checkbox" aria-describedby="game-hud-towers3d-note"${readTowers3dPreference() ? " checked" : ""}></label>`
+          + `<p id="game-hud-towers3d-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("hud.view.towers3dNote"))}</p>`
+        : "")
       + `</section>`;
   };
   const volumeActions: Record<string, string> = { music: "setMusicVolume", voice: "setVoiceVolume", sfx: "setSfxVolume", hit: "setHitVolume" };
@@ -3309,6 +3316,9 @@ export function setupGameHudUi(game: Phaser.Game) {
     }));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"atlas\"]").forEach((input) => input.addEventListener("change", () => {
       dispatch("setAtlasVoice", input.checked ? 1 : 0);
+    }));
+    popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"towers3d\"]").forEach((input) => input.addEventListener("change", () => {
+      setTowers3dPreference(input.checked);
     }));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"telemetry\"]").forEach((input) => input.addEventListener("change", () => {
       setTelemetryEnabled(input.checked);

@@ -472,6 +472,9 @@ import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } 
 import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../telemetry";
 import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
+import { isTowers3dActive, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
+import { EDGE_MODEL_IDS, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
+import type { Tower3dInput, TowerLayer } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getWaveMusicLevel, getWaveMusicTrackForState, WAVE_MUSIC_TRACKS, WaveMusicPlayer } from "../wave-music";
@@ -2237,6 +2240,7 @@ export class GameScene extends Phaser.Scene {
     // kamera o anki olcuden kuruldugu icin yeniden kurulmasi gerekiyor.
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
     this.installMapPointerInput();
+    this.setupTowerLayer3d();
     // Mac kaydedicisi: sekme gizlenmesi ve WebGL kaybi kare olcusunu acikliyor.
     const onDebugVisibility = () => this.matchDebug?.noteVisibility(document.visibilityState === "hidden");
     const onDebugContextLost = () => this.matchDebug?.noteContextLost();
@@ -10221,6 +10225,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const activeIds = new Set(towers.map((tower) => tower.id));
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
     this.signatureTowers = towers;
+    if (this.towerLayer3d) this.towers3dShown = this.towerLayer3d.sync(this.buildTowers3dInputs(towers));
     const cellSize = this.getMapCellSize();
     const linkRadius = Math.max(14, cellSize * 0.8);
     if (!this.towerGroundGraphics?.active) this.towerGroundGraphics = this.add.graphics().setDepth(2);
@@ -10367,7 +10372,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       rendered.scaleY = selectionScale * textureScale * footprintScaleY;
       this.applyTowerScale(rendered, now);
       const edgePlaced = this.isEdgePlacedDefinition(tower.definitionId);
-      rendered.base.setVisible(!edgePlaced);
+      rendered.base.setVisible(!edgePlaced && !this.towers3dShown.has(tower.id));
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha((tower.status === "Tukenmis" || tower.disabled ? 0.42 : tower.ownerId === this.localSessionId ? 1 : 0.78) * this.getTowerEquipAlpha(tower));
       rendered.halo.setVisible(!edgePlaced && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled);
@@ -10669,6 +10674,107 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * aligned server shot look as if it left a sideways muzzle. Sprites are
    * authored pointing right (+X), matching atan2's zero.
    */
+  /**
+   * 3D kule katmani (render3d/, asama 1). Varsayilan kapali; acikken modeli olan
+   * kuleleri three.js ciziyor ve onlarin 2D govdesi gizleniyor. Halka, menzil,
+   * can cubugu, efektler ve dokunma 2D'de kaliyor. three.js yalnizca 3D acilinca
+   * ayri parca olarak yukleniyor; itch paketinde (VITE_TOWERS_3D=off) hic yok.
+   */
+  private towerLayer3d?: TowerLayer;
+  private towerLayer3dLoading = false;
+  private towers3dShown: ReadonlySet<string> = new Set();
+
+  private setupTowerLayer3d() {
+    const apply = () => {
+      if (isTowers3dActive()) void this.enableTowerLayer3d();
+      else this.disableTowerLayer3d();
+    };
+    window.addEventListener(TOWERS_3D_CHANGED_EVENT, apply);
+    this.game.events.on(Phaser.Core.Events.POST_RENDER, this.renderTowerLayer3d, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      window.removeEventListener(TOWERS_3D_CHANGED_EVENT, apply);
+      this.game.events.off(Phaser.Core.Events.POST_RENDER, this.renderTowerLayer3d, this);
+      this.disableTowerLayer3d();
+    });
+    apply();
+  }
+
+  private async enableTowerLayer3d() {
+    // Derlemede kapaliysa (itch) asagisi olu kod: three.js parcasi pakete hic girmiyor.
+    if (import.meta.env.VITE_TOWERS_3D === "off") return;
+    if (this.towerLayer3d || this.towerLayer3dLoading) return;
+    const host = this.game.canvas.parentElement;
+    if (!host) return;
+    this.towerLayer3dLoading = true;
+    try {
+      const { createTowerLayer } = await import("../render3d/tower-layer");
+      if (!isTowers3dActive() || !this.sys.isActive()) return;
+      this.towerLayer3d = createTowerLayer({ host, resolveUrl: assetUrl, onModelReady: () => this.refreshTowers3d() });
+      this.refreshTowers3d();
+    } catch (error) {
+      // Katman kurulamadi (WebGL, ag): oyun 2D devam ediyor.
+      console.warn("3D tower layer unavailable", error);
+      this.towerLayer3d = undefined;
+    } finally {
+      this.towerLayer3dLoading = false;
+    }
+  }
+
+  private disableTowerLayer3d() {
+    this.towerLayer3d?.dispose();
+    this.towerLayer3d = undefined;
+    this.towers3dShown = new Set();
+    this.applyTowers3dVisibility();
+  }
+
+  /** Model yuklendiginde ya da katman acildiginda: snapshot beklemeden kuleler 3D'ye gecsin. */
+  private refreshTowers3d() {
+    if (!this.towerLayer3d) return;
+    this.towers3dShown = this.towerLayer3d.sync(this.buildTowers3dInputs([...this.towerSnapshots.values()]));
+    this.applyTowers3dVisibility();
+  }
+
+  private applyTowers3dVisibility() {
+    for (const [id, rendered] of this.towers) {
+      const tower = this.towerSnapshots.get(id);
+      if (tower) rendered.base.setVisible(!this.isEdgePlacedDefinition(tower.definitionId) && !this.towers3dShown.has(id));
+    }
+  }
+
+  private buildTowers3dInputs(towers: readonly TowerSnapshot[]): Tower3dInput[] {
+    const cellSize = this.getMapCellSize();
+    const inputs: Tower3dInput[] = [];
+    for (const tower of towers) {
+      if (!hasTowerModel(tower.definitionId)) continue;
+      // Tukenmis, devre disi ya da yikik kule 2D kaliyor: soluk govdesi durumunu anlatiyor.
+      if (tower.disabled || tower.status === "Tukenmis" || (tower.hp !== undefined && tower.hp <= 0)) continue;
+      const tier = getTowerTier(tower.level);
+      if (EDGE_MODEL_IDS.has(tower.definitionId)) {
+        const edge = edgeModelTransform(cellSize, TOWER_VISUAL_SCALE, tower.orientation);
+        inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, x: tower.x, y: tower.y, scale: edge.scale, fixedYaw: edge.yaw });
+        continue;
+      }
+      const span = getTowerGridSpan(tower.definitionId);
+      const bodySize = getTowerBodySize(tower.definitionId, cellSize * span);
+      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span) });
+    }
+    return inputs;
+  }
+
+  /** Phaser karesinden sonra: ana kameranin tuvaldeki yeri ve dunya gorunumu 3D kameraya. */
+  private renderTowerLayer3d() {
+    const layer = this.towerLayer3d;
+    if (!layer) return;
+    const camera = this.cameras.main;
+    const canvasRect = this.game.canvas.getBoundingClientRect();
+    const scaleX = canvasRect.width / Math.max(1, this.scale.gameSize.width);
+    const scaleY = canvasRect.height / Math.max(1, this.scale.gameSize.height);
+    layer.render(
+      new DOMRect(canvasRect.left + camera.x * scaleX, canvasRect.top + camera.y * scaleY, camera.width * scaleX, camera.height * scaleY),
+      camera.worldView
+    );
+  }
+
   private applyTowerFacing(rendered: RenderTower, tower: TowerSnapshot) {
     if (typeof tower.facing !== "number") {
       return;
@@ -10904,7 +11010,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // harciyordu (2026-10 uretim kaydi).
     if (this.isEdgePlacedDefinition(tower.definitionId)) {
       const broken = tower.disabled === true || (tower.hp !== undefined && tower.hp <= 0);
-      const key = `${tower.x}|${tower.y}|${tower.orientation ?? ""}|${tower.definitionId}|${tower.id === this.selectedPlacedTowerId}|${broken}|${tower.gate === true}|${this.getMapCellSize()}`;
+      const key = `${tower.x}|${tower.y}|${tower.orientation ?? ""}|${tower.definitionId}|${tower.id === this.selectedPlacedTowerId}|${broken}|${tower.gate === true}|${this.getMapCellSize()}|${this.towers3dShown.has(tower.id)}`;
       if (this.edgeBodyKeys.get(graphics) === key) return;
       this.edgeBodyKeys.set(graphics, key);
     }
@@ -11089,7 +11195,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private renderAbartiEdgeBody(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    if (!this.isEdgePlacedDefinition(tower.definitionId)) {
+    if (!this.isEdgePlacedDefinition(tower.definitionId) || this.towers3dShown.has(tower.id)) {
       return;
     }
 

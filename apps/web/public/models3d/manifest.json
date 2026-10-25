@@ -1,0 +1,259 @@
+{
+  "note": "Game copies of the 3D preview towers (tools/3d-preview/build-game-lods.py). Not included in the itch.io package.",
+  "targetTriangles": 6000,
+  "textureSize": 512,
+  "models": [
+    {
+      "key": "warrior-1-tier-1",
+      "bytes": 368640,
+      "triangles": 5999,
+      "sha256": "df1440099219fd617023824c9fa9ebfaba57b699aa99651d0e150f2fda8794b1",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-1-tier-1.glb"
+    },
+    {
+      "key": "warrior-1-tier-2",
+      "bytes": 416812,
+      "triangles": 5999,
+      "sha256": "20c0ff28d6b32854590f29f2af275790b24c670b681129b377a2bff7676860f5",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-1-tier-2.glb"
+    },
+    {
+      "key": "warrior-1-tier-3",
+      "bytes": 376456,
+      "triangles": 5999,
+      "sha256": "b2b0924605cb53317596ad5050741c36cac9125f6d9f07aeb8fb1822446ece07",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-1-tier-3.glb"
+    },
+    {
+      "key": "warrior-2-tier-1",
+      "bytes": 393776,
+      "triangles": 5999,
+      "sha256": "998416cecead99846d4e1755f8269b7edbb8d73e82bca922eed14795eb452886",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-2-tier-1.glb"
+    },
+    {
+      "key": "warrior-2-tier-2",
+      "bytes": 404904,
+      "triangles": 5998,
+      "sha256": "5dba78efe33e0900fe18a0b95e3bd8b193f25de11b85ed636111e17922fad173",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-2-tier-2.glb"
+    },
+    {
+      "key": "warrior-2-tier-3",
+      "bytes": 412180,
+      "triangles": 5999,
+      "sha256": "e59fe7a006d4bd6cba9e6e76dde81aa82c03c2d932d4e9bc0d1363f27b8c8e68",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-2-tier-3.glb"
+    },
+    {
+      "key": "warrior-3-tier-1",
+      "bytes": 355608,
+      "triangles": 5998,
+      "sha256": "26e6bacc8a64536a7c2fdf021ae5c29db6bf8435f542b26584d5157afd14ba79",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-3-tier-1.glb"
+    },
+    {
+      "key": "warrior-3-tier-2",
+      "bytes": 412844,
+      "triangles": 5999,
+      "sha256": "2484cf63e97a413653c10927aebd8d7d9d186415627463917dc9dd161546a5fa",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-3-tier-2.glb"
+    },
+    {
+      "key": "warrior-3-tier-3",
+      "bytes": 434644,
+      "triangles": 5999,
+      "sha256": "bffb559a45228d96f5cfae38a379717148121cd0b17884ba838c293b462aeab5",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-3-tier-3.glb"
+    },
+    {
+      "key": "warrior-4-tier-1",
+      "bytes": 373456,
+      "triangles": 5999,
+      "sha256": "f95bfb1d2aaa86889100ab93da023eb9e83539f522b15c701c5009b7c6b03796",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-4-tier-1.glb"
+    },
+    {
+      "key": "warrior-4-tier-2",
+      "bytes": 396612,
+      "triangles": 5999,
+      "sha256": "665e5422561ebe4bb084ca8c76a8578742d84cd2446c0f8aa839d10c44265ee0",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-4-tier-2.glb"
+    },
+    {
+      "key": "warrior-4-tier-3",
+      "bytes": 394024,
+      "triangles": 5999,
+      "sha256": "56508240e75ab3dc388016229ed1db9c1cdf965711b477f95295e62909ff6347",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-4-tier-3.glb"
+    },
+    {
+      "key": "warrior-5-tier-1",
+      "bytes": 399556,
+      "triangles": 5999,
+      "sha256": "a4def152b52399645a68b0080ce24379d162b0b913ad5f8b6a2265a8862be21f",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-5-tier-1.glb"
+    },
+    {
+      "key": "warrior-5-tier-2",
+      "bytes": 431520,
+      "triangles": 5999,
+      "sha256": "ff0c21387c18697079680aecef6c249c9366fe9debee1db061e785245ff82947",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-5-tier-2.glb"
+    },
+    {
+      "key": "warrior-5-tier-3",
+      "bytes": 405592,
+      "triangles": 5999,
+      "sha256": "6df47444326216bf20e2d6c54812f4e018b36d7a41d986a0e59a3ee64e9ca373",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-5-tier-3.glb"
+    },
+    {
+      "key": "warrior-6-tier-1",
+      "bytes": 379380,
+      "triangles": 5999,
+      "sha256": "8eedb28e7ff5e386f99dcba8df432afbf899df1058c6cf9043d53f8366e0f37b",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-6-tier-1.glb"
+    },
+    {
+      "key": "warrior-6-tier-2",
+      "bytes": 400908,
+      "triangles": 5999,
+      "sha256": "3bd3f0f1ba55f1cf72bb325adb32eed9c2bce4ec6a2b1894d37f52e9c1e67f0f",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-6-tier-2.glb"
+    },
+    {
+      "key": "warrior-6-tier-3",
+      "bytes": 380256,
+      "triangles": 5998,
+      "sha256": "ad6cb1bb78c7db91717acd6d6f87ecb80569d3ceb0e1385ec1fa02bcaabbcb39",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-6-tier-3.glb"
+    },
+    {
+      "key": "zeynep-1-tier-1",
+      "bytes": 317372,
+      "triangles": 5999,
+      "sha256": "b4679d63fccc49c6a1a65ec763e1fa87b27bd28f7c8906ef26149182ffe0a5e6",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-1-tier-1.glb"
+    },
+    {
+      "key": "zeynep-1-tier-2",
+      "bytes": 324640,
+      "triangles": 5999,
+      "sha256": "87df054390e49b67502360ea2b202730431c05f324f0c32ba112d3da5a0b376d",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-1-tier-2.glb"
+    },
+    {
+      "key": "zeynep-1-tier-3",
+      "bytes": 342168,
+      "triangles": 5998,
+      "sha256": "c2bed7ba68927ffe415461608b443f1c7c18a1428c31d416b62593384c09bd01",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-1-tier-3.glb"
+    },
+    {
+      "key": "zeynep-2-tier-1",
+      "bytes": 350484,
+      "triangles": 5999,
+      "sha256": "c3accf2a380b92f60ca86be070c15f271ee1ba6fbfb385b357a16c0122262a05",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-2-tier-1.glb"
+    },
+    {
+      "key": "zeynep-2-tier-2",
+      "bytes": 349940,
+      "triangles": 5999,
+      "sha256": "bce2ede8bfd37a79f2a5f134c36ede6d280d72e283723a1fbc2c4a7fcf5f46b8",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-2-tier-2.glb"
+    },
+    {
+      "key": "zeynep-2-tier-3",
+      "bytes": 388364,
+      "triangles": 5999,
+      "sha256": "71e09ebfc19f6608de1291736fc4baef89267f8d15b7da42e8751541c2282894",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-2-tier-3.glb"
+    },
+    {
+      "key": "zeynep-3-tier-1",
+      "bytes": 351844,
+      "triangles": 5999,
+      "sha256": "bdafb0aeee8279d8ee6139ef2eeced80bb5abbf6134b5727e3746363f8b0953c",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-3-tier-1.glb"
+    },
+    {
+      "key": "zeynep-3-tier-2",
+      "bytes": 353320,
+      "triangles": 5999,
+      "sha256": "7565909837b7b676959d438d1b0f54fcfcc1380769a487d7c3056bdbebaa044d",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-3-tier-2.glb"
+    },
+    {
+      "key": "zeynep-3-tier-3",
+      "bytes": 364144,
+      "triangles": 5999,
+      "sha256": "096f20b547191b525849192f7fd0a39834b634d1b87fcb377d9c7e36308520a6",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-3-tier-3.glb"
+    },
+    {
+      "key": "zeynep-6-tier-1",
+      "bytes": 297156,
+      "triangles": 5999,
+      "sha256": "5ca44c4df7389901f434a26969a45caf70d3dee57512301097d49963b5ddb332",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-6-tier-1.glb"
+    },
+    {
+      "key": "zeynep-6-tier-2",
+      "bytes": 309248,
+      "triangles": 5998,
+      "sha256": "f31335af21f4ab986b88ba0d02e3eeacf52c4a2b0e23966f84c53de03f3c4aa9",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-6-tier-2.glb"
+    },
+    {
+      "key": "zeynep-6-tier-3",
+      "bytes": 320636,
+      "triangles": 5999,
+      "sha256": "969ab3156e676f0b9a1ed6cad312d3e36d13c44f3b8a1694de4d6dd4e08e3ccf",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-6-tier-3.glb"
+    },
+    {
+      "key": "zeynep-7-tier-1",
+      "bytes": 327496,
+      "triangles": 5999,
+      "sha256": "49cb672860440edf023919f7b471a301b3a4e0d6943db31b19bf7984ce656358",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-7-tier-1.glb"
+    },
+    {
+      "key": "zeynep-7-tier-2",
+      "bytes": 382676,
+      "triangles": 5999,
+      "sha256": "83e90546c082bbf55f28ce5737d3a0c3aaf42e811a8cb4cb3dc2bf7739e02e1a",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-7-tier-2.glb"
+    },
+    {
+      "key": "zeynep-7-tier-3",
+      "bytes": 395900,
+      "triangles": 5998,
+      "sha256": "e8da7ee359966b71bb006f2914c89915db616c44ef13719761bbc899bff0bac5",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-7-tier-3.glb"
+    },
+    {
+      "key": "zeynep-8-tier-1",
+      "bytes": 331440,
+      "triangles": 5999,
+      "sha256": "82b3bf10affcbe117921c34d27f0f2f104a57b9a4a87b398f4a429205c1d32f6",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-8-tier-1.glb"
+    },
+    {
+      "key": "zeynep-8-tier-2",
+      "bytes": 353464,
+      "triangles": 5999,
+      "sha256": "31df555010e1692d9f8da31d3c0d6cdfa195295db080e59ed4d389e419b8aca3",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-8-tier-2.glb"
+    },
+    {
+      "key": "zeynep-8-tier-3",
+      "bytes": 389800,
+      "triangles": 5999,
+      "sha256": "fa0f2a678a55bc4dfbc2c0608e0023e337398403d4a1a6f90b331d00ece03593",
+      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-8-tier-3.glb"
+    }
+  ]
+}

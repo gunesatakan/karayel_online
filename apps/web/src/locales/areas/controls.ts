@@ -239,6 +239,10 @@ export const trControls = {
   "hud.audio.vibration": "Titreşim",
   // ATLAS telsiz anonslari: ac/kapat kutusu ve konusurken ust bilgideki gostergenin ekran okuyucu adi.
   "hud.audio.atlas": "ATLAS sesi",
+  // 3D kuleler (deneme): oyun ici menude ac/kapat ve kisa aciklama.
+  "hud.view.title": "Görünüm",
+  "hud.view.towers3d": "3D kuleler (deneme)",
+  "hud.view.towers3dNote": "Yalnızca kulelerin görünüşünü değiştirir; oyun aynı. Yavaşlarsa kapatın.",
   "hud.atlas.speaking": "ATLAS telsizde konuşuyor",
   // ATLAS-VESAYET konusmasi: dusman yapay zekanin satirinda ayni gostergenin adi.
   "hud.vesayet.speaking": "Düşman yapay zekâ VESAYET telsize sızdı",
@@ -482,6 +486,9 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "hud.audio.hitNote": "Effects off: hit sounds are muted too (they scale with Effects).",
   "hud.audio.vibration": "Vibration",
   "hud.audio.atlas": "ATLAS voice",
+  "hud.view.title": "View",
+  "hud.view.towers3d": "3D towers (beta)",
+  "hud.view.towers3dNote": "Only changes how towers look; the game is the same. Turn it off if it slows down.",
   "hud.atlas.speaking": "ATLAS is speaking on the radio",
   "hud.vesayet.speaking": "Enemy AI VESAYET has breached the radio",
   "hud.quit.button": "Quit to menu",

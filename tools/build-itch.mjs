@@ -29,6 +29,9 @@ const outFile = join(root, "dist/itch/nexhold-web.zip");
 export const ITCH_MAX_FILES = 1000;
 export const ITCH_MAX_FILE_BYTES = 200 * 1024 * 1024;
 
+/** 3D kule modelleri (`apps/web/public/models3d/`): yalnizca Vercel derlemesinde; itch paketi 2D. */
+export const TOWER_MODELS_DIR = "models3d/";
+
 /** Zaten sikistirilmis bicimler: deflate yer kazandirmiyor, oldugu gibi. */
 const STORED_EXTENSIONS = new Set([".png", ".webp", ".jpg", ".jpeg", ".mp3", ".ogg", ".m4a", ".woff2"]);
 
@@ -145,12 +148,17 @@ function main() {
   if (server) env.VITE_GAME_SERVER_URL = server;
   // itch paketinde Yaratici mod yok (`apps/web/src/config.ts`).
   env.VITE_CREATIVE = "off";
+  // itch paketi 2D: 3D kule katmani derlemede kapali, three.js parcasi uretilmiyor
+  // (`apps/web/src/render3d/renderer-mode.ts`) ve modeller pakete girmiyor.
+  env.VITE_TOWERS_3D = "off";
 
   // Tek dizge + kabuk: Windows'ta npm bir .cmd, dogrudan calistirilamiyor.
   const built = spawnSync("npm run build:web", { cwd: root, env, stdio: "inherit", shell: true });
   if (built.status !== 0) process.exit(built.status ?? 1);
 
-  const files = collectFiles(distDir).map((file) => ({ ...file, data: readFileSync(file.full) }));
+  const files = collectFiles(distDir)
+    .filter((file) => !file.name.startsWith(TOWER_MODELS_DIR))
+    .map((file) => ({ ...file, data: readFileSync(file.full) }));
   const problems = checkBundle(files);
   if (problems.length > 0) {
     console.error("Paket itch.io icin hazir degil:");
