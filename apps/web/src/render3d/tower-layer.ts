@@ -39,6 +39,8 @@ import {
   rotateTargetAround,
   standeeCenterHeight,
   MINE_CELL_SCALE,
+  OPERATOR_MODEL_PATHS,
+  OPERATOR_MODEL_YAW_OFFSET,
   WORKER_MODEL_PATH,
   WORKER_MODEL_YAW_OFFSET,
   mineModelPath,
@@ -123,6 +125,20 @@ export type Worker3dInput = {
   color: number;
   role: "gatherer" | "carrier" | "repairer" | "drone";
   carrying: boolean;
+};
+
+/** Operator bedeninin yeri ve durumu (Phaser'daki resmin son hali). */
+export type Operator3dInput = {
+  id: string;
+  characterId: string;
+  x: number;
+  y: number;
+  /** Phaser donusu: 0'da yuz kuzeyde (resim yukari bakiyor). */
+  rotation: number;
+  /** Govdenin genisligi (dunya birimi). */
+  size: number;
+  /** Dusmus beden: sonuk, yerde. */
+  down: boolean;
 };
 
 /** Madenin yeri ve durumu (Phaser'daki ikonun son hali). */
@@ -244,6 +260,8 @@ export type TowerLayer = {
    * yanlarinda kayalik yamac. `groundImage` haritanin zemin resmi (yamaclarin dokusu).
    */
   setTerrain(terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement; stage?: number }) | undefined): void;
+  /** Egik gorunumde 3D operator bedenleri. Donen kume: modeli yuklenmis olanlar. */
+  syncOperators(operators: readonly Operator3dInput[]): ReadonlySet<string>;
   /** Egik gorunumde 3D isciler. Donen kume: modeli yuklenmis olanlar (sprite'lari gizlenebilir). */
   syncWorkers(workers: readonly Worker3dInput[]): ReadonlySet<string>;
   /**
@@ -786,6 +804,63 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     return workersShown;
   }
 
+  // Operatorler: karakter basina model; dusunce karartilmis kopya malzeme (madenlerdeki gibi).
+  const operators = new Map<string, { root: THREE.Object3D; characterId: string; down: boolean; shadow: THREE.Mesh }>();
+  const operatorsShown = new Set<string>();
+
+  function removeOperator(id: string) {
+    const operator = operators.get(id);
+    if (!operator) return;
+    scene.remove(operator.root);
+    scene.remove(operator.shadow);
+    operator.shadow.material.dispose();
+    operators.delete(id);
+  }
+
+  function syncOperators(list: readonly Operator3dInput[]) {
+    operatorsShown.clear();
+    const active = new Set<string>();
+    for (const input of list) {
+      const path = OPERATOR_MODEL_PATHS[input.characterId];
+      if (!path) continue;
+      const source = loaded.get(path);
+      if (!source) {
+        request(path);
+        continue;
+      }
+      active.add(input.id);
+      let operator = operators.get(input.id);
+      if (operator && operator.characterId !== input.characterId) {
+        removeOperator(input.id);
+        operator = undefined;
+      }
+      if (!operator) {
+        const shadow = new THREE.Mesh(shadowGeometry, new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false, toneMapped: false, color: 0x000000, opacity: 0.35 }));
+        shadow.rotation.x = -Math.PI / 2;
+        operator = { root: source.clone(true), characterId: input.characterId, down: false, shadow };
+        operators.set(input.id, operator);
+        scene.add(operator.root);
+        scene.add(shadow);
+        shadowDirty = true;
+      }
+      const ground = zoneHeight(input.x, input.y);
+      // Uctugu icin yerden bir boy kadar yukarida, sallanmadan; dusunce yerde.
+      operator.root.position.set(input.x, ground + (input.down ? 0 : input.size * 0.55), input.y);
+      operator.root.scale.setScalar(input.size);
+      // Resim donus 0'da kuzeye (-z) bakiyor; +Z yuzlu model icin yarim tur.
+      operator.root.rotation.y = Math.PI - input.rotation + OPERATOR_MODEL_YAW_OFFSET;
+      if (operator.down !== input.down) {
+        setMineDepleted(operator.root, input.down);
+        operator.down = input.down;
+      }
+      operator.shadow.position.set(input.x, ground + 0.25, input.y);
+      operator.shadow.scale.setScalar(input.size * 0.45);
+      operatorsShown.add(input.id);
+    }
+    for (const id of [...operators.keys()]) if (!active.has(id)) removeOperator(id);
+    return operatorsShown;
+  }
+
   function syncMines(list: readonly Mine3dInput[]) {
     const active = new Set<string>();
     minesShown.clear();
@@ -1246,6 +1321,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     for (const instance of instances.values()) scene.remove(instance.root);
     instances.clear();
     for (const id of [...workers.keys()]) removeWorker(id);
+    for (const id of [...operators.keys()]) removeOperator(id);
     ringGeometry.dispose();
     crateGeometry.dispose();
     crystalGeometry.dispose();
@@ -1283,7 +1359,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   return {
     sync, syncEnemies, captureBoard, render, clientToWorld, worldToClient, dispose,
-    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines, syncWorkers, hasGround: groundReady,
+    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines, syncWorkers, syncOperators, hasGround: groundReady,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
     setAirBodySize: (size) => { airBodySize = size; },
     setView: (next) => {
@@ -1292,6 +1368,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         syncEnemies([]);
         syncMines([]);
         syncWorkers([]);
+        syncOperators([]);
       }
     },
     getView: () => view

@@ -1,0 +1,27 @@
+{
+  "note": "Game copies of the Tripo operators models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
+  "targetTriangles": 8000,
+  "textureSize": 512,
+  "models": [
+    {
+      "key": "operator-zeynep",
+      "bytes": 548636,
+      "triangles": 7999,
+      "height": 0.5705,
+      "leveledDegrees": 0,
+      "turnedDegrees": 0,
+      "sha256": "9a2bb150c150b230ed6d656f96b4976278638f9df386979ba6ab1c97e11159ea",
+      "source": "Tripo H3.1 / art-direction/operators/zeynep.png"
+    },
+    {
+      "key": "operator-warrior",
+      "bytes": 564992,
+      "triangles": 7999,
+      "height": 0.5433,
+      "leveledDegrees": 0,
+      "turnedDegrees": 0,
+      "sha256": "7ca64a019de26ed8c9faa8eeae05a5898c30f34b2d69ef01a36daf1df110eb43",
+      "source": "Tripo H3.1 / art-direction/operators/warrior.png"
+    }
+  ]
+}

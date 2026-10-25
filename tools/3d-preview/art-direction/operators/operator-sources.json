@@ -1,0 +1,24 @@
+[
+  {
+    "key": "operator-zeynep",
+    "character": "zeynep (ZentaX)",
+    "model": "apps/web/public/models3d/operator-zeynep.glb",
+    "reference": "art-direction/operators/zeynep.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 159da91e-477e-4d5d-b35e-0b5ae733e3f2#0",
+    "sourceId": "27ceb139-35f0-4bd2-82b4-70d1f748e61a",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 75,
+    "facing": "claws reach along model -X (OPERATOR_MODEL_YAW_OFFSET = PI/2)"
+  },
+  {
+    "key": "operator-warrior",
+    "character": "warrior (AttackLord)",
+    "model": "apps/web/public/models3d/operator-warrior.glb",
+    "reference": "art-direction/operators/warrior.png",
+    "conceptImage": "Tripo GPT Image 2.5 / dfd987b1-ca7c-448c-b167-9357dc5955d1#0",
+    "sourceId": "53e2c12c-f5ba-4353-8594-366b62e3b7f3",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 75,
+    "facing": "claws reach along model -X (OPERATOR_MODEL_YAW_OFFSET = PI/2)"
+  }
+]

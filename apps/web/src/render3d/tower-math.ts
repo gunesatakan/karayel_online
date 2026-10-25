@@ -71,6 +71,14 @@ export const WORKER_MODEL_PATH = "models3d/worker-drone.glb";
 /** Modelin burnu (goz): Tripo modeli gozu +X yonunde kurdu; +Z burunlu modellerin donusune ceyrek tur. */
 export const WORKER_MODEL_YAW_OFFSET = -Math.PI / 2;
 
+/** Operator bedenleri (Tripo; build-structure-lods.py -- operators): karakter -> model. */
+export const OPERATOR_MODEL_PATHS: Readonly<Record<string, string>> = {
+  zeynep: "models3d/operator-zeynep.glb",
+  warrior: "models3d/operator-warrior.glb"
+};
+/** Modelin yuzu: Phaser resmi yukari bakiyor (donus 0'da yuz kuzeyde); Tripo bedenlerinin kollari -X yonunde. */
+export const OPERATOR_MODEL_YAW_OFFSET = Math.PI / 2;
+
 export function mineModelPath(kind: string) {
   return `models3d/mine-${kind}.glb`;
 }

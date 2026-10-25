@@ -169,6 +169,11 @@ export class OperatorBodyView {
     this.overlay = scene.add.graphics().setDepth(OPERATOR_BODY_DEPTHS.overlay);
   }
 
+  /** Cizilen bedenler (egik 3D gorunum onlari 3D modelle ciziyor, resimlerini gizliyor). */
+  bodies() {
+    return [...this.views.entries()].map(([id, view]) => ({ id, characterId: view.characterId, image: view.image, x: view.x, y: view.y, rotation: view.rotation, down: view.down }));
+  }
+
   /** Son cizilen yer (yenilgi sahnesi bedenin patlamasini oraya koyuyor). */
   position(id: string) {
     const view = this.views.get(id);

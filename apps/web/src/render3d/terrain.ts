@@ -24,9 +24,9 @@ export type TerrainInput = {
 };
 
 /** Tepenin yuksekligi ve cukurun derinligi (hucre); bolge kenarindan icerideki yumusama payi. */
-export const ZONE_HILL_CELLS = 0.85;
-export const ZONE_PIT_CELLS = 1.1;
-export const ZONE_RAMP_CELLS = 0.9;
+export const ZONE_HILL_CELLS = 1.5;
+export const ZONE_PIT_CELLS = 1.9;
+export const ZONE_RAMP_CELLS = 0.8;
 /** Kenar yamaci: egim (yukselis / uzaklik) ve en yuksek nokta (hucre). Egim 0,45 ~ 24 derece: 25 derecenin ustundeki kamera arenanin kenarini yamacin arkasinda kaybetmiyor. */
 export const EDGE_SLOPE = 0.45;
 export const EDGE_MAX_CELLS = 3.2;

@@ -17,6 +17,8 @@ import {
   EDGE_MODEL_IDS,
   BUILDING_MODEL_KINDS,
   MINE_KINDS,
+  OPERATOR_MODEL_PATHS,
+  OPERATOR_MODEL_YAW_OFFSET,
   WALL_MODEL_PATH,
   WORKER_MODEL_PATH,
   buildingModelPath,
@@ -235,6 +237,24 @@ test("ikmal binalarinin iki kademesi ve duvar modeli var; arazi dokulari 2048 px
     assert.equal(jpeg[1], 0xd8);
     assert.ok(jpeg.length < 2.5 * 1024 * 1024, `stage-${stage}: ${jpeg.length}`);
   }
+});
+
+test("operator bedenleri: iki karakterin modeli var, kollari donus 0'da kuzeye bakiyor", () => {
+  assert.deepEqual(Object.keys(OPERATOR_MODEL_PATHS).sort(), ["warrior", "zeynep"]);
+  for (const [character, path] of Object.entries(OPERATOR_MODEL_PATHS)) {
+    assert.ok(path.startsWith(TOWER_MODELS_DIR), path);
+    const url = new URL(path, publicDir);
+    assert.ok(existsSync(url), `${path} eksik`);
+    const bytes = readFileSync(url);
+    const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString("utf8"));
+    assert.ok(json.nodes.some((node) => node.extras?.kind === "operator" && node.extras?.character === character), `${path}: kok dugum`);
+    assert.ok(json.images.every((image) => image.mimeType === "image/jpeg"), `${path}: JPEG`);
+    assert.ok(bytes.length < 800 * 1024, `${path}: ${bytes.length} bayt`);
+  }
+  // Kollar modelde -X'te; donus 0'da (pi + kayma) Y donusu -X'i kuzeye (-z) cevirmeli.
+  const yaw = Math.PI + OPERATOR_MODEL_YAW_OFFSET;
+  const forward = [-Math.cos(yaw), Math.sin(yaw)]; // (x cos + z sin, -x sin + z cos), x = -1
+  assert.ok(Math.abs(forward[0]) < 1e-9 && Math.abs(forward[1] + 1) < 1e-9, `${forward}`);
 });
 
 test("koruma: sunucu yayinini tetikleyen yollar yakalaniyor, istemci yollari serbest", () => {

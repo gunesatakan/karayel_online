@@ -474,7 +474,7 @@ import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
 import { EDGE_MODEL_IDS, MINE_KINDS, STANDEE_SIZE_SCALE, WORKER_SIZE_SCALE, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
-import type { Enemy3dInput, EnemyBar, Mine3dInput, Tower3dInput, TowerLayer, Worker3dInput } from "../render3d/tower-layer";
+import type { Enemy3dInput, EnemyBar, Mine3dInput, Operator3dInput, Tower3dInput, TowerLayer, Worker3dInput } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getWaveMusicLevel, getWaveMusicTrackForState, WAVE_MUSIC_TRACKS, WaveMusicPlayer } from "../wave-music";
@@ -10981,6 +10981,18 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       });
     }
     const workersShown = layer.syncWorkers(workers);
+    // Operator bedenleri: 3D model; golge, iz, is isini ve can cubugu zeminde kaliyor.
+    const operatorInputs: Operator3dInput[] = [];
+    const operatorImages = new Map<string, Phaser.GameObjects.Image>();
+    for (const body of this.operatorBodyView?.bodies() ?? []) {
+      if (!body.image.active) continue;
+      operatorImages.set(body.id, body.image);
+      operatorInputs.push({ id: body.id, characterId: body.characterId, x: body.x, y: body.y, rotation: body.rotation, size: Math.abs(body.image.displayWidth), down: body.down });
+    }
+    for (const id of layer.syncOperators(operatorInputs)) {
+      const image = operatorImages.get(id);
+      if (image) image.cameraFilter |= both;
+    }
     for (const [id, sprite] of this.drones) if (workersShown.has(id)) sprite.cameraFilter |= both;
     const minesShown = layer.syncMines(mines);
     for (const [id, sprite] of this.resourceSprites) {
