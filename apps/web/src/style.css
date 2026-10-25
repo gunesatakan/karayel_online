@@ -3013,7 +3013,10 @@ button.wave-report:active { transform: scale(0.99); }
   padding-top: 4px;
 }
 
-/* Bes ikincil dugme: uc sutun; son dugme iki sutunu kaplar. */
+/*
+ * Alti ikincil dugme (Yaratici dahil): uc sutun, iki sira. Yaratici kapaliyken
+ * (itch) bes dugme: son dugme iki sutunu kaplar (`command--wide`).
+ */
 .home-actions__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
