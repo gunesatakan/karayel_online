@@ -192,9 +192,9 @@ void main() {
 }`;
 
 /** Yeni 3D zeminin (models3d/terrain) koyulastirmasi; yamaclar ve bolge yuzeyleri ayni dokudan, bir tik daha koyu. */
-const GROUND_TINT = 0x5c5c5c;
-const SLOPE_TINT = 0x444444;
-const ZONE_TINT = 0x524e48;
+const GROUND_TINT = 0x6c6c72;
+const SLOPE_TINT = 0x505056;
+const ZONE_TINT = 0x5e5b56;
 
 /** Kulelerin tepesine pay: egik kesitte uzun kuleler ust kenardan tasmasin (dunya birimi). */
 const TOWER_HEADROOM = 70;
@@ -273,13 +273,14 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   const room = new RoomEnvironment();
   const environment = pmrem.fromScene(room, 0.04);
   scene.environment = environment.texture;
-  scene.environmentIntensity = 0.55;
+  // Ay yuzeyi: ortam ve gok isigi kisik, golgeler derin; sahneyi soguk beyaz ve sert bir gunes ayirt ediyor.
+  scene.environmentIntensity = 0.22;
   room.dispose();
   pmrem.dispose();
-  scene.add(new THREE.HemisphereLight(0xc7e3ed, 0x424b38, 1.5));
+  scene.add(new THREE.HemisphereLight(0xaab6cc, 0x14161a, 0.45));
   // Gunes on izlemedeki yonde, (-6, 14, 8): sol-onden ~54 derece; golgeler kulenin
   // arkasina (kameradan uzaga) dusuyor, egik kamerada gorunuyor.
-  const sun = new THREE.DirectionalLight(0xffe4bb, 3.0);
+  const sun = new THREE.DirectionalLight(0xeef2ff, 3.4);
   const sunLength = Math.hypot(-6, 14, 8);
   const sunDirection = { x: -6 / sunLength, y: 14 / sunLength, z: 8 / sunLength };
   sun.castShadow = true;
@@ -290,7 +291,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   sun.shadow.camera.far = 4000;
   scene.add(sun);
   scene.add(sun.target);
-  const rim = new THREE.DirectionalLight(0x7cb9d4, 1.4);
+  const rim = new THREE.DirectionalLight(0x7c9cd4, 0.7);
   rim.position.set(4, 5, -9);
   scene.add(rim);
 
@@ -318,7 +319,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   slopes.castShadow = slopes.receiveShadow = true;
   slopes.visible = false;
   scene.add(slopes);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000), new THREE.MeshStandardMaterial({ color: 0x10181a, roughness: 1, metalness: 0 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000), new THREE.MeshStandardMaterial({ color: 0x08090b, roughness: 1, metalness: 0 }));
   floor.rotation.x = -Math.PI / 2;
   // Cukurlarin dibinin de altinda.
   floor.position.y = -80;
@@ -1065,9 +1066,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       return;
     }
 
-    // Egik: tum tuval; tahta Phaser kamerasinin gordugu dunya parcasi, cevresi on izlemenin zemin rengi.
+    // Egik: tum tuval; tahta Phaser kamerasinin gordugu dunya parcasi, cevresi uzay karanligi.
     resize(canvasRect);
-    renderer.setClearColor(0x142125, 1);
+    renderer.setClearColor(0x06080b, 1);
     lastRect = canvasRect;
     lastWorld = { x: worldView.x, y: worldView.y, width: worldView.width, height: worldView.height };
     board.visible = true;
