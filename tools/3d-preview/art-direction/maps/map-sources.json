@@ -1,0 +1,32 @@
+[
+  {
+    "stage": 1,
+    "texture": "apps/web/public/models3d/terrain/stage-1.jpg",
+    "conceptImage": "Tripo GPT Image 2.5 4K / d5071f62-6893-4233-b2ad-b8dbe29269dd",
+    "note": "4096 px source, 2048 px JPEG game copy; arena width = image width, mirrored repeat along the arena"
+  },
+  {
+    "stage": 2,
+    "texture": "apps/web/public/models3d/terrain/stage-2.jpg",
+    "conceptImage": "Tripo GPT Image 2.5 4K / afb1946f-c0a0-424e-8c47-54adb20beab7",
+    "note": "4096 px source, 2048 px JPEG game copy; arena width = image width, mirrored repeat along the arena"
+  },
+  {
+    "stage": 3,
+    "texture": "apps/web/public/models3d/terrain/stage-3.jpg",
+    "conceptImage": "Tripo GPT Image 2.5 4K / 66c0e5a0-29af-4772-8935-4dbb10102817",
+    "note": "4096 px source, 2048 px JPEG game copy; arena width = image width, mirrored repeat along the arena"
+  },
+  {
+    "stage": 4,
+    "texture": "apps/web/public/models3d/terrain/stage-4.jpg",
+    "conceptImage": "Tripo GPT Image 2.5 4K / 48dfbbe6-1363-4fd4-990c-9a9426c8918b",
+    "note": "4096 px source, 2048 px JPEG game copy; arena width = image width, mirrored repeat along the arena"
+  },
+  {
+    "stage": 5,
+    "texture": "apps/web/public/models3d/terrain/stage-5.jpg",
+    "conceptImage": "Tripo GPT Image 2.5 4K / 8bf9e447-77b7-4848-8d1a-baa6e998c9f6",
+    "note": "regenerated: the first stage-5 image (1ca6deeb) was stored truncated by Tripo"
+  }
+]

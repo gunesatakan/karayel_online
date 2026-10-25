@@ -58,6 +58,10 @@ export type Tower3dInput = {
   scale: number;
   /** Kenar rayinin sabit donusu; varsa `facing` yerine. */
   fixedYaw?: number;
+  /** Kule disi yapilar (ikmal binalari, duvar): kendi model yolu; yoksa kule modeli. */
+  modelPath?: string;
+  /** Dikey olcek carpani (acik kapi: duvar alcaliyor). */
+  heightScale?: number;
 };
 
 /** Phaser'daki dusman sprite'inin son hali: pano onu birebir kopyaliyor. */
@@ -104,7 +108,7 @@ export type EnemyBar = {
 export type OrbitState = { yaw: number; elevation: number; zoom: number };
 
 /** Madenin yeri ve durumu (Phaser'daki ikonun son hali). */
-export type Mine3dInput = { id: string; kind: string; x: number; y: number; cellSize: number; depleted: boolean };
+export type Mine3dInput = { id: string; kind: string; x: number; y: number; cellSize: number; depleted: boolean; /** Kalan miktar yazisi (2D'deki etiket). */ label: string };
 
 export type WorldView = { x: number; y: number; width: number; height: number };
 
@@ -216,7 +220,13 @@ export type TowerLayer = {
    * Arazi (render3d/terrain): yasak bolgeler tepe ya da cukur, arenanin
    * yanlarinda kayalik yamac. `groundImage` haritanin zemin resmi (yamaclarin dokusu).
    */
-  setTerrain(terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement }) | undefined): void;
+  setTerrain(terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement; stage?: number }) | undefined): void;
+  /**
+   * Bolumun yuksek cozunurluklu 3D zemini (models3d/terrain/stage-N.jpg) yuklendi mi.
+   * Yuklendiyse zemin 3D'de cizili; Phaser karesi ustune yalnizca isik olarak
+   * ("ekran" karisimi) biniyor, Phaser'in kendi zemin resmi gizlenmeli.
+   */
+  hasGround(): boolean;
   /** Egik gorunumde 3D cizilen madenler. Donen kume: modeli yuklenmis olanlar (2D ikonlari gizlenebilir). */
   syncMines(mines: readonly Mine3dInput[]): ReadonlySet<string>;
   setView(view: LayerView): void;
@@ -317,7 +327,22 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   zoneSurface.position.y = -0.4;
   zoneSurface.visible = false;
   scene.add(zoneSurface);
-  let terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement }) | undefined;
+  let terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement; stage?: number }) | undefined;
+  // Bolumun 3D zemini: isikli, golgeli; Phaser karesi (halkalar, cizgiler, yazilar) ustune ekran karisimiyla.
+  const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), groundMaterial);
+  ground.position.y = -0.4;
+  ground.receiveShadow = true;
+  ground.visible = false;
+  ground.renderOrder = -2;
+  scene.add(ground);
+  const boardOpaque = board.material;
+  const boardScreen = new THREE.MeshBasicMaterial({
+    map: boardTexture, toneMapped: false, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcColorFactor
+  });
+  const groundTextures = new Map<number, THREE.Texture | null>();
+  let groundTexture3d: THREE.Texture | undefined;
   let zoneHeight: (x: number, z: number) => number = () => 0;
   let terrainKey = "";
   let groundTexture: THREE.Texture | undefined;
@@ -379,6 +404,17 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     board.geometry.dispose();
     board.geometry = boardGeometry;
     shadowCatcher.geometry = boardGeometry;
+    ground.geometry.dispose();
+    if (terrain) {
+      const t = terrain;
+      const arenaWidth = t.cols * t.cellSize;
+      // Zemin resmi arenanin genisligine birebir; boyuna aynalanarak tekrar (resim kare, arena 2:3).
+      const margin = cell * 10;
+      ground.geometry = buildGrid(world.x - margin, world.y - margin, world.width + margin * 2, world.height + margin * 2, cell / 4, zoneHeight,
+        (x, z) => [(x - t.originX) / arenaWidth, 1 - (z - t.originY) / arenaWidth], false);
+    } else {
+      ground.geometry = new THREE.PlaneGeometry(1, 1);
+    }
     zoneSurface.geometry.dispose();
     if (terrain && terrain.zoneCells.length > 0) {
       const zones = new Set(terrain.zoneCells);
@@ -430,14 +466,65 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     return merged;
   }
 
-  function setTerrain(next: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement }) | undefined) {
+  function groundReady() {
+    return Boolean(terrain?.stage && groundTextures.get(terrain.stage));
+  }
+
+  /** Zemin, bolge yuzeyi ve yamaclar ayni yuksek cozunurluklu dokudan; tahta isik olarak ustunde. */
+  function applyGround() {
+    const texture = terrain?.stage ? groundTextures.get(terrain.stage) : undefined;
+    if (!texture) {
+      board.material = boardOpaque;
+      ground.visible = false;
+      return;
+    }
+    if (groundTexture3d !== texture) {
+      groundTexture3d = texture;
+      groundMaterial.map = texture;
+      groundMaterial.needsUpdate = true;
+      slopeMaterial.map = texture;
+      slopeMaterial.needsUpdate = true;
+      zoneMaterial.map = texture;
+      zoneMaterial.needsUpdate = true;
+    }
+    board.material = boardScreen;
+  }
+
+  function loadGround(stage: number) {
+    if (groundTextures.has(stage)) return;
+    groundTextures.set(stage, null);
+    new THREE.TextureLoader().load(options.resolveUrl(`models3d/terrain/stage-${stage}.jpg`), (texture: THREE.Texture) => {
+      if (disposed) {
+        texture.dispose();
+        return;
+      }
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.MirroredRepeatWrapping;
+      texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      groundTextures.set(stage, texture);
+      applyGround();
+    }, undefined, () => {
+      // Dokusu olmayan bolum: zemin eskisi gibi Phaser karesinden.
+      console.warn("3D ground texture missing for stage", stage);
+    });
+  }
+
+  function setTerrain(next: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement; stage?: number }) | undefined) {
     terrain = next;
+    if (next?.stage) loadGround(next.stage);
     zoneHeight = next ? createZoneHeight(next) : () => 0;
     terrainKey = "";
     const image = next?.groundImage;
-    if (image && groundTexture?.image !== image) {
+    if (groundReady()) {
+      applyGround();
+    } else if (image && groundTexture?.image !== image) {
       groundTexture?.dispose();
     shadowCatcher.material.dispose();
+    boardOpaque.dispose();
+    boardScreen.dispose();
+    groundTextures.forEach((texture) => texture?.dispose());
+    board.material = groundMaterial;
       groundTexture = new THREE.Texture(image);
       groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
       groundTexture.colorSpace = THREE.SRGBColorSpace;
@@ -448,6 +535,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       zoneMaterial.map = groundTexture;
       zoneMaterial.needsUpdate = true;
     }
+    if (!groundReady()) applyGround();
   }
 
   // Efekt duzlemi: ayni tuvalin ikinci kopyasi, zemin alindiktan sonra cizilen
@@ -520,7 +608,38 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   }
 
   // Madenler: model bir kez yukleniyor, her maden bir kopya; tukenmis madenin malzemesi karartilmis kopya.
-  const mines = new Map<string, { kind: string; root: THREE.Object3D; depleted: boolean }>();
+  const mines = new Map<string, { kind: string; root: THREE.Object3D; depleted: boolean; label?: { sprite: THREE.Object3D; canvas: HTMLCanvasElement; texture: THREE.Texture; text: string } }>();
+
+  /** Kalan miktar: keskin, kameraya donuk yazi (Phaser karesindeki yazi egik ve bulanik kaliyordu). */
+  function mineLabel(text: string) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 80;
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    sprite.renderOrder = 9;
+    const label = { sprite, canvas, texture, text: "" };
+    drawLabel(label, text);
+    return label;
+  }
+
+  function drawLabel(label: { canvas: HTMLCanvasElement; texture: THREE.Texture; text: string }, text: string) {
+    label.text = text;
+    const context = label.canvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, label.canvas.width, label.canvas.height);
+    context.font = "bold 54px monospace";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.lineJoin = "round";
+    context.lineWidth = 10;
+    context.strokeStyle = "rgba(8, 14, 24, 0.92)";
+    context.strokeText(text, 128, 42);
+    context.fillStyle = "#e2e8f0";
+    context.fillText(text, 128, 42);
+    label.texture.needsUpdate = true;
+  }
   const minesShown = new Set<string>();
   const dimmed = new Map<unknown, unknown>();
 
@@ -578,11 +697,29 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         setMineDepleted(instance.root, mine.depleted);
         instance.depleted = mine.depleted;
       }
+      if (mine.label && !instance.label) {
+        instance.label = mineLabel(mine.label);
+        scene.add(instance.label.sprite);
+      }
+      if (instance.label) {
+        if (instance.label.text !== mine.label) drawLabel(instance.label, mine.label);
+        instance.label.sprite.visible = mine.label !== "";
+        // 2D'deki gibi madenin hemen guneyinde, zeminden biraz yukarida.
+        const height = mine.cellSize * 0.28;
+        instance.label.sprite.scale.set(height * 3.2, height, 1);
+        instance.label.sprite.position.set(mine.x, zoneHeight(mine.x, mine.y) + height * 0.6, mine.y + mine.cellSize * 0.46);
+        instance.label.sprite.material.opacity = mine.depleted ? 0.5 : 1;
+      }
       minesShown.add(mine.id);
     }
     for (const [id, instance] of mines) {
       if (!active.has(id)) {
         scene.remove(instance.root);
+        if (instance.label) {
+          scene.remove(instance.label.sprite);
+          instance.label.texture.dispose();
+          instance.label.sprite.material.dispose();
+        }
         mines.delete(id);
         shadowDirty = true;
       }
@@ -596,7 +733,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     visible.clear();
     for (const tower of towers) {
       active.add(tower.id);
-      const key = towerModelPath(tower.definitionId, tower.tier);
+      const key = tower.modelPath ?? towerModelPath(tower.definitionId, tower.tier);
       const source = loaded.get(key);
       if (!source) {
         request(key);
@@ -616,7 +753,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         shadowDirty = true;
       }
       instance.root.position.set(tower.x, 0, tower.y);
-      instance.root.scale.setScalar(tower.scale);
+      instance.root.scale.set(tower.scale, tower.scale * (tower.heightScale ?? 1), tower.scale);
       if (tower.fixedYaw !== undefined) {
         instance.root.rotation.y = tower.fixedYaw;
       } else if (instance.yaw && typeof tower.facing === "number") {
@@ -897,6 +1034,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       slopes.visible = false;
       floor.visible = false;
       zoneSurface.visible = false;
+      ground.visible = false;
+      shadowCatcher.visible = true;
       air.visible = false;
       boardCaptured = false;
       renderer.setClearColor(0x000000, 0);
@@ -926,6 +1065,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     slopes.visible = Boolean(terrain);
     floor.visible = true;
     zoneSurface.visible = Boolean(terrain && terrain.zoneCells.length > 0);
+    ground.visible = groundReady();
+    // 3D zemin golgeyi kendisi aliyor.
+    shadowCatcher.visible = !ground.visible;
     // Doku: Phaser tuvalinin yalnizca ana kameranin dikdortgeni (flipY: v=1 tuvalin ustu).
     boardTexture.repeat.set(viewport.width / viewport.gameWidth, viewport.height / viewport.gameHeight);
     boardTexture.offset.set(viewport.x / viewport.gameWidth, 1 - (viewport.y + viewport.height) / viewport.gameHeight);
@@ -976,7 +1118,11 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     disposed = true;
     for (const instance of instances.values()) scene.remove(instance.root);
     instances.clear();
-    for (const instance of mines.values()) scene.remove(instance.root);
+    for (const instance of mines.values()) {
+      scene.remove(instance.root);
+      instance.label?.texture.dispose();
+      instance.label?.sprite.material.dispose();
+    }
     mines.clear();
     dimmed.forEach((material) => (material as { dispose(): void }).dispose());
     for (const [id, standee] of standees) removeStandee(id, standee);
@@ -985,7 +1131,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     const textures = new Set<THREE.Texture>([boardTexture, airTexture, shadowTexture, ...[...standeeTextures.values()].map((entry) => entry.texture)]);
     standeeTextures.clear();
     groundTexture?.dispose();
-    for (const object of [...loaded.values(), board, air, slopes, floor, zoneSurface]) {
+    for (const object of [...loaded.values(), board, air, slopes, floor, zoneSurface, ground]) {
       object.traverse((node: THREE.Object3D) => {
         const mesh = node as THREE.Mesh;
         if (!mesh.isMesh) return;
@@ -1005,7 +1151,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   return {
     sync, syncEnemies, captureBoard, render, clientToWorld, worldToClient, dispose,
-    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines,
+    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines, hasGround: groundReady,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
     setAirBodySize: (size) => { airBodySize = size; },
     setView: (next) => {

@@ -473,7 +473,7 @@ import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../teleme
 import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
-import { EDGE_MODEL_IDS, MINE_KINDS, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
+import { EDGE_MODEL_IDS, MINE_KINDS, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
 import type { Enemy3dInput, EnemyBar, Mine3dInput, Tower3dInput, TowerLayer } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
@@ -2487,7 +2487,8 @@ export class GameScene extends Phaser.Scene {
       originX: origin.x,
       originY: origin.y,
       zoneCells: this.getActiveBuildZones()?.cells ?? [],
-      groundImage
+      groundImage,
+      stage: getStage(this.roomStage ?? this.selectedStage).id
     });
   }
 
@@ -10907,6 +10908,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       child.cameraFilter = (child.cameraFilter & ~both) | (isAir ? mainBit : airBit);
       if (isAir && !airContent) airContent = hasVisibleContent(child);
     }
+    // 3D zemin hazirsa Phaser'in zemin resmi tahtaya girmiyor: tahta yalnizca isik olarak 3D zeminin ustunde.
+    if (this.terrainImage && layer.hasGround()) this.terrainImage.cameraFilter |= both;
     const cellSize = this.getMapCellSize();
     layer.setAirBodySize(getEnemySpriteDisplaySize({ race: "meka", type: "grunt" }, cellSize));
     const enemies: Enemy3dInput[] = [];
@@ -10955,10 +10958,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     for (const [id, sprite] of this.resourceSprites) {
       const kind = sprite.texture.key.replace(/^resource-/, "");
       if (!sprite.active || !MINE_KINDS.has(kind)) continue;
-      mines.push({ id, kind, x: sprite.x, y: sprite.y, cellSize, depleted: sprite.alpha < 0.5 });
+      mines.push({ id, kind, x: sprite.x, y: sprite.y, cellSize, depleted: sprite.alpha < 0.5, label: this.resourceAmountLabels.get(id)?.text ?? "" });
     }
     const minesShown = layer.syncMines(mines);
-    for (const [id, sprite] of this.resourceSprites) if (minesShown.has(id)) sprite.cameraFilter |= both;
+    for (const [id, sprite] of this.resourceSprites) {
+      if (!minesShown.has(id)) continue;
+      sprite.cameraFilter |= both;
+      // Kalan miktar 3D'de keskin yazi olarak.
+      const label = this.resourceAmountLabels.get(id);
+      if (label) label.cameraFilter |= both;
+    }
   }
 
   /**
@@ -11011,6 +11020,18 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Tukenmis, devre disi ya da yikik kule 2D kaliyor: soluk govdesi durumunu anlatiyor.
       if (tower.disabled || tower.status === "Tukenmis" || (tower.hp !== undefined && tower.hp <= 0)) continue;
       const tier = getTowerTier(tower.level);
+      // Ikmal binalari: hucreyi kaplayan disk, yonu yok; kademe 2D resimlerdeki gibi seviye 5'te.
+      const building = buildingModelPath(tower.definitionId, tower.level);
+      if (building) {
+        inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, x: tower.x, y: tower.y, scale: getTowerBodySize(tower.definitionId, cellSize), fixedYaw: 0, modelPath: building });
+        continue;
+      }
+      // Duvar: kenar boyunca tam bir hucre (parcalar birbirine degiyor); acik kapi alcak.
+      if (tower.definitionId === WALL_MODEL_ID) {
+        const edge = edgeModelTransform(cellSize, 1, tower.orientation);
+        inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, x: tower.x, y: tower.y, scale: edge.scale, fixedYaw: edge.yaw, modelPath: WALL_MODEL_PATH, heightScale: tower.gate ? 0.3 : 1 });
+        continue;
+      }
       if (EDGE_MODEL_IDS.has(tower.definitionId)) {
         const edge = edgeModelTransform(cellSize, TOWER_VISUAL_SCALE, tower.orientation);
         inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, x: tower.x, y: tower.y, scale: edge.scale, fixedYaw: edge.yaw });

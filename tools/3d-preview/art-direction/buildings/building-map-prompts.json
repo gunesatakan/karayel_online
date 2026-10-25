@@ -1,0 +1,29 @@
+{
+  "buildings": {
+    "generator": "Tripo Studio / GPT Image 2.5 / 1:1 / 2 images; input: the building's game icon for that level (tower-supply-<kind>[-level-5].png)",
+    "tiers": {
+      "1": "LEVEL 1-4 materials, exactly as in the icon: dark gunmetal armor with brushed copper and brass trims, riveted plates, the icon's signature light colour as controlled glowing accents.",
+      "2": "LEVEL 5+ materials, exactly as in the icon: polished chrome and silver steel armor with crisp beveled panels, glowing violet-purple and magenta energy accents."
+    },
+    "kinds": {
+      "energy": "ENERGY TOWER (power generator): a reactor cradle in the centre holding a large glowing faceted energy crystal core, three armored capacitor pylons spaced around it with light strips.",
+      "ammunition": "ARMORY (ammunition depot): three racks of large shell cartridges arranged radially around a small central glowing furnace hub, a long magazine rack of shells along the front.",
+      "warehouse": "RAW MATERIAL WAREHOUSE: the circular platform divided by a cross of steel walkways into four storage bays holding crystal crates, white canister cells, cargo boxes and fuel tubes, with a round hatch in the centre.",
+      "repair": "REPAIR CENTER: a workshop platform with a central gear-and-wrench repair hub, articulated robotic repair arms around it, tool racks and small status lights.",
+      "wall": "DEFENSIVE WALL SEGMENT: one straight modular barricade segment, length ~4x thickness, height ~0.45 of length, flat square ends, wider footing, layered dark gunmetal plates with copper trims, reinforced top rail, two small cyan lights (no icon input)."
+    },
+    "footprint": "One circular armored base plate that fits one square map tile; compact low building, height about half of its width.",
+    "style": "Premium stylized-realistic hard-surface 3D game asset; semi-matte metal, crisp bevels, machined panel gaps, strong contact shadows; one isolated object on a light-grey background, elevated 35-degree view; image-to-3D input with clearly separated solid parts."
+  },
+  "maps": {
+    "generator": "Tripo Studio / GPT Image 2.5 / 4K (comes out 4096 x 4096) / 1 image, no input image",
+    "common": "Top-down orthographic GROUND TEXTURE for a dark sci-fi tower-defense arena seen exactly from above; evenly lit from the top-left; only the ground (no buildings, roads, paths, grid, creatures, text); photographic-quality detail at a 12 x 18 tile scale; calm readable centre, darker rougher left and right borders; mid-dark values; no vignette or frame.",
+    "themes": {
+      "1": "golem quarry: cracked bedrock, packed earth, stone rubble, teal mineral glints, boulders on the edges",
+      "2": "fortified industrial deck: riveted blue-grey steel plates, weld seams, drainage grates and cable trenches on the edges, hazard paint only at the outermost edges",
+      "3": "alien hive moor: olive-umber organic soil, roots, chitin, resin, faint bioluminescent spores, root mats on the edges",
+      "4": "scorched fallen battlefield: charred red-brown earth, ash, ember fissures, burnt debris on the edges",
+      "5": "folded-space plain: indigo-violet faceted crystalline slabs, violet seams, impossible geometry, crystal clusters on the edges"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "note": "Game copies of the Tripo mine models (tools/3d-preview/build-mine-lods.py). Not included in the itch.io package.",
+  "note": "Game copies of the Tripo mine models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
   "targetTriangles": 8000,
   "textureSize": 512,
   "models": [

@@ -24,7 +24,32 @@ export const MODEL_BODY_DIAMETER_CELLS = 0.836;
 
 export type TowerTier = 1 | 2 | 3;
 
+/**
+ * Ikmal binalari (Tripo; tools/3d-preview/build-structure-lods.py): tanim ->
+ * bina turu. Seviye 1-4 ve 5+ iki kademe, 2D resimlerdeki gibi. AttackLord'un
+ * tamir binasi ortak tamir modelini kullaniyor.
+ */
+export const BUILDING_MODEL_KINDS: Readonly<Record<string, string>> = {
+  "warehouse-1": "warehouse",
+  "repair-depot-1": "repair",
+  "warrior-7": "ammunition",
+  "zeynep-9": "ammunition",
+  "archer-7": "ammunition",
+  "warrior-8": "energy",
+  "zeynep-10": "energy",
+  "archer-8": "energy"
+};
+/** Duvar: bir hucre kenari boyunda kenar yapisi; modelin boyu 1 birim. */
+export const WALL_MODEL_ID = "wall-1";
+export const WALL_MODEL_PATH = "models3d/wall-1.glb";
+
+export function buildingModelPath(definitionId: string, level: number) {
+  const kind = BUILDING_MODEL_KINDS[definitionId];
+  return kind ? `models3d/building-${kind}-tier-${level >= 5 ? 2 : 1}.glb` : undefined;
+}
+
 export function hasTowerModel(definitionId: string) {
+  if (definitionId in BUILDING_MODEL_KINDS || definitionId === WALL_MODEL_ID) return true;
   return TOWER_MODEL_IDS.has(definitionId);
 }
 
@@ -33,7 +58,7 @@ export function towerModelPath(definitionId: string, tier: TowerTier) {
   return `models3d/${definitionId}-tier-${tier}.glb`;
 }
 
-/** 3D modeli olan madenler (Tripo; tools/3d-preview/build-mine-lods.py). Model tabani 1 birim genis. */
+/** 3D modeli olan madenler (Tripo; tools/3d-preview/build-structure-lods.py). Model tabani 1 birim genis. */
 export const MINE_KINDS: ReadonlySet<string> = new Set(["energy", "gunpowder", "iron", "mystic", "plasma"]);
 /** Madenin tabani hucrenin bu kadari: 2D ikonun (0,71 hucre) biraz ustu, komsu karelere tasmiyor. */
 export const MINE_CELL_SCALE = 0.86;

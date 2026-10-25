@@ -10,5 +10,5 @@
   },
   "footprint": "Footprint and proportions: the whole object sits on a roughly circular low rocky base that fits one square map tile; it is a low mound, overall height about half of its width, not a tower. Nothing extends outside the base footprint.",
   "style": "Premium stylized-realistic 3D game asset matching dark gritty sci-fi strategy art; semi-matte rock, crisp sculpted bevels, strong contact shadows, clear material separation; glowing parts as controlled accents; one isolated object on a plain light-grey background, centered at 85%, elevated 35-degree three-quarter view; no text or particles; image-to-3D input with clearly separated solid parts.",
-  "pipeline": "Option 0 of each concept -> Tripo H3.1 image-to-3D -> decoded (meshopt/quantization removed) -> build-mine-lods.py (levelled, centred, 1 unit wide, ~8k triangles, 512 px JPEG)."
+  "pipeline": "Option 0 of each concept -> Tripo H3.1 image-to-3D -> decoded (meshopt/quantization removed) -> build-structure-lods.py (levelled, centred, 1 unit wide, ~8k triangles, 512 px JPEG)."
 }

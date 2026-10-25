@@ -1,0 +1,87 @@
+{
+  "note": "Game copies of the Tripo buildings models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
+  "targetTriangles": 8000,
+  "textureSize": 512,
+  "models": [
+    {
+      "key": "building-energy-tier-1",
+      "bytes": 612512,
+      "triangles": 8000,
+      "height": 0.3569,
+      "leveledDegrees": 0.0,
+      "turnedDegrees": 0,
+      "sha256": "1398d2a377c227f12a7c4d713c5aa0727a9e9a71ce26c6b4e47db79ad257ced8",
+      "source": "Tripo H3.1 / art-direction/buildings/energy-t1.png"
+    },
+    {
+      "key": "building-energy-tier-2",
+      "bytes": 634288,
+      "triangles": 7999,
+      "height": 0.279,
+      "leveledDegrees": 0.02,
+      "turnedDegrees": 0,
+      "sha256": "8e427ff59ec73299f12128fc595bd4e7f0faf3d4542ae8707d787c6e222c7ee8",
+      "source": "Tripo H3.1 / art-direction/buildings/energy-t2.png"
+    },
+    {
+      "key": "building-ammunition-tier-1",
+      "bytes": 575136,
+      "triangles": 7999,
+      "height": 0.2803,
+      "leveledDegrees": 54.09,
+      "turnedDegrees": 0,
+      "sha256": "a5363cd29d15b089e76215783b3462e4bbd2b16237e1380c5fc9f7d3d812d784",
+      "source": "Tripo H3.1 / art-direction/buildings/ammunition-t1.png"
+    },
+    {
+      "key": "building-ammunition-tier-2",
+      "bytes": 643728,
+      "triangles": 7999,
+      "height": 0.1956,
+      "leveledDegrees": 0.0,
+      "turnedDegrees": 0,
+      "sha256": "474ba5d0bfc3524607483be60a333b0128ce1a749c18b3b177cae4c257295d8f",
+      "source": "Tripo H3.1 / art-direction/buildings/ammunition-t2.png"
+    },
+    {
+      "key": "building-warehouse-tier-1",
+      "bytes": 717656,
+      "triangles": 7999,
+      "height": 0.2197,
+      "leveledDegrees": 0.03,
+      "turnedDegrees": 0,
+      "sha256": "088026da06c469a3255b32a5e8db790ca06e350aa7ca98cc6eefa2a4be8bf9ac",
+      "source": "Tripo H3.1 / art-direction/buildings/warehouse-t1.png"
+    },
+    {
+      "key": "building-warehouse-tier-2",
+      "bytes": 637848,
+      "triangles": 8000,
+      "height": 0.2122,
+      "leveledDegrees": 0.0,
+      "turnedDegrees": 0,
+      "sha256": "eccc826bd134a136e65b24dccaaae51b8ea9fcb5c6d30ce264d8c59da858458b",
+      "source": "Tripo H3.1 / art-direction/buildings/warehouse-t2.png"
+    },
+    {
+      "key": "building-repair-tier-1",
+      "bytes": 611000,
+      "triangles": 8000,
+      "height": 0.2848,
+      "leveledDegrees": 0.02,
+      "turnedDegrees": 0,
+      "sha256": "d3595da45f6259905de5c51f3f2545d25eaf471057e56bc728b7ae584dcfb704",
+      "source": "Tripo H3.1 / art-direction/buildings/repair-t1.png"
+    },
+    {
+      "key": "building-repair-tier-2",
+      "bytes": 625008,
+      "triangles": 8000,
+      "height": 0.4011,
+      "leveledDegrees": 0.0,
+      "turnedDegrees": 0,
+      "sha256": "6dc9484a6d4f78b6825ed127fdde23dada8b9025be85aa1dec53b0660f6a22ff",
+      "source": "Tripo H3.1 / art-direction/buildings/repair-t2.png"
+    }
+  ]
+}

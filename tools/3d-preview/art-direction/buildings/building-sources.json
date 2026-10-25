@@ -1,0 +1,92 @@
+[
+  {
+    "key": "energy-t1",
+    "model": "apps/web/public/models3d/building-energy-tier-1.glb",
+    "reference": "art-direction/buildings/energy-t1.png",
+    "gameIcon": "apps/web/public/images/towers/tower-supply-energy.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 95e4036e-8068-49df-8fbe-42520384911f#0",
+    "sourceId": "772e5187-8b9d-42a9-84e4-2ff6f72a3b7f",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "key": "energy-t2",
+    "model": "apps/web/public/models3d/building-energy-tier-2.glb",
+    "reference": "art-direction/buildings/energy-t2.png",
+    "gameIcon": "apps/web/public/images/towers/tower-supply-energy-level-5.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 80ace7b7-516f-4113-83c4-9f7e03375693#0",
+    "sourceId": "0c705390-2bf3-4275-a1d2-1862f339fe40",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "key": "ammunition-t1",
+    "model": "apps/web/public/models3d/building-ammunition-tier-1.glb",
+    "reference": "art-direction/buildings/ammunition-t1.png",
+    "gameIcon": "apps/web/public/images/towers/tower-supply-ammunition.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 490053ac-84de-41e4-a3fe-839ad311a792#0",
+    "sourceId": "8006902f-92c6-47e7-9fd8-dde9abf9bc10",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "key": "ammunition-t2",
+    "model": "apps/web/public/models3d/building-ammunition-tier-2.glb",
+    "reference": "art-direction/buildings/ammunition-t2.png",
+    "gameIcon": "apps/web/public/images/towers/tower-supply-ammunition-level-5.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 1318d153-1852-4a32-883d-fb6171d605f3#0",
+    "sourceId": "9de418a6-7832-4e31-8b3f-3a7a05999f7d",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "key": "warehouse-t1",
+    "model": "apps/web/public/models3d/building-warehouse-tier-1.glb",
+    "reference": "art-direction/buildings/warehouse-t1.png",
+    "gameIcon": "apps/web/public/images/towers/tower-supply-warehouse.png",
+    "conceptImage": "Tripo GPT Image 2.5 / a092d6e3-e054-4931-8140-b8da283ef087#0",
+    "sourceId": "dd5e51c4-a262-44a7-9f1f-4138fa049425",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "key": "warehouse-t2",
+    "model": "apps/web/public/models3d/building-warehouse-tier-2.glb",
+    "reference": "art-direction/buildings/warehouse-t2.png",
+    "gameIcon": "apps/web/public/images/towers/tower-supply-warehouse-level-5.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 3aa05e0d-52dc-4e19-bace-be8d064a4d8e#0",
+    "sourceId": "d6fb18d4-2867-44d5-97ef-4232bba42f5b",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "key": "repair-t1",
+    "model": "apps/web/public/models3d/building-repair-tier-1.glb",
+    "reference": "art-direction/buildings/repair-t1.png",
+    "gameIcon": "apps/web/public/images/towers/tower-supply-repair.png",
+    "conceptImage": "Tripo GPT Image 2.5 / a51f92ba-062e-4c90-a55f-51bb01f8eefc#0",
+    "sourceId": "981cf8b6-ff62-4b0d-8b04-b18edab9fcea",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "key": "repair-t2",
+    "model": "apps/web/public/models3d/building-repair-tier-2.glb",
+    "reference": "art-direction/buildings/repair-t2.png",
+    "gameIcon": "apps/web/public/images/towers/tower-supply-repair-level-5.png",
+    "conceptImage": "Tripo GPT Image 2.5 / 34cff54e-515a-4bc6-ad83-87abc779d1ae#0",
+    "sourceId": "16d7c3f4-3909-49da-ab1a-65ed4f1f38d3",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  },
+  {
+    "key": "wall",
+    "model": "apps/web/public/models3d/wall-1.glb",
+    "reference": "art-direction/buildings/wall.png",
+    "gameIcon": null,
+    "conceptImage": "Tripo GPT Image 2.5 / b85903cd-b70f-43c9-bd52-725586cdbde6#0",
+    "sourceId": "29342f92-c0d1-4211-b1c0-af7fbc1cb04c",
+    "generator": "Tripo H3.1 (HD Model)",
+    "credits": 55
+  }
+]

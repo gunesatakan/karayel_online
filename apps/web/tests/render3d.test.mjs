@@ -14,7 +14,10 @@ import {
   angledGroundToScreen,
   angledScreenToGround,
   EDGE_MODEL_IDS,
+  BUILDING_MODEL_KINDS,
   MINE_KINDS,
+  WALL_MODEL_PATH,
+  buildingModelPath,
   MODEL_BODY_DIAMETER_CELLS,
   mineModelPath,
   TOWER_MODEL_IDS,
@@ -182,6 +185,39 @@ test("her madenin modeli var: tek kok dugum, tabani 1 birim, JPEG dokulu ve hafi
     assert.ok(Math.abs(width - 1) < 0.02 && Math.abs(accessor.min[1]) < 0.02, `${path}: genislik ${width}, taban ${accessor.min[1]}`);
     assert.ok(json.images.every((image) => image.mimeType === "image/jpeg"), `${path}: JPEG`);
     assert.ok(bytes.length < 800 * 1024, `${path}: ${bytes.length} bayt`);
+  }
+});
+
+test("ikmal binalarinin iki kademesi ve duvar modeli var; arazi dokulari 2048 px JPEG", () => {
+  const read = (path) => {
+    const url = new URL(path, publicDir);
+    assert.ok(existsSync(url), `${path} eksik`);
+    const bytes = readFileSync(url);
+    return { bytes, json: JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString("utf8")) };
+  };
+  for (const id of Object.keys(BUILDING_MODEL_KINDS)) {
+    for (const level of [1, 5]) {
+      const path = buildingModelPath(id, level);
+      assert.ok(path.startsWith(TOWER_MODELS_DIR), path);
+      const { bytes, json } = read(path);
+      const root = json.nodes.find((node) => node.name === path.slice(TOWER_MODELS_DIR.length, -4));
+      assert.ok(root, `${path}: kok dugum`);
+      assert.equal(root.extras.tier, level >= 5 ? 2 : 1);
+      assert.ok(bytes.length < 800 * 1024, `${path}: ${bytes.length} bayt`);
+    }
+  }
+  assert.equal(buildingModelPath("zeynep-1", 1), undefined);
+  const wall = read(WALL_MODEL_PATH);
+  const accessor = wall.json.accessors[wall.json.meshes[0].primitives[0].attributes.POSITION];
+  // Boy X'te tam 1 (bir hucre kenari), kalinlik ondan az.
+  assert.ok(Math.abs(accessor.max[0] - accessor.min[0] - 1) < 0.02 && accessor.max[2] - accessor.min[2] < 0.5);
+  for (const stage of [1, 2, 3, 4, 5]) {
+    const url = new URL(`models3d/terrain/stage-${stage}.jpg`, publicDir);
+    assert.ok(existsSync(url), `stage-${stage}`);
+    const jpeg = readFileSync(url);
+    assert.equal(jpeg[0], 0xff);
+    assert.equal(jpeg[1], 0xd8);
+    assert.ok(jpeg.length < 2.5 * 1024 * 1024, `stage-${stage}: ${jpeg.length}`);
   }
 });
 

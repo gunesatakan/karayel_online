@@ -1,0 +1,17 @@
+{
+  "note": "Game copies of the Tripo wall models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
+  "targetTriangles": 8000,
+  "textureSize": 512,
+  "models": [
+    {
+      "key": "wall-1",
+      "bytes": 769408,
+      "triangles": 8000,
+      "height": 0.4051,
+      "leveledDegrees": 0.02,
+      "turnedDegrees": -90.13,
+      "sha256": "7b0a4caeb43b7611340c2e236ac62b7d490426187764a52739a2dc8d4b02484a",
+      "source": "Tripo H3.1 / art-direction/buildings/wall.png"
+    }
+  ]
+}
