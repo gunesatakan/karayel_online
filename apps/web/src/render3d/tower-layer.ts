@@ -673,7 +673,39 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     muzzle: (x, z) => {
       const instance = nearestInstance(x, z);
       if (!instance?.muzzle) return undefined;
+      // Kule bu karede kurulduysa dunya matrisi henuz yok.
+      instance.root.updateMatrixWorld(true);
       return instance.muzzle.getWorldPosition(muzzleWorld).clone();
+    },
+    aim: (x, z, dirX, dirZ) => {
+      const cellSize = terrain?.cellSize ?? 34;
+      let best: { y: number; distance: number } | undefined;
+      for (const standee of standees.values()) {
+        const position = standee.mesh.position;
+        const dx = position.x - x;
+        const dz = position.z - z;
+        const along = dx * dirX + dz * dirZ;
+        if (along < -cellSize * 0.3) continue;
+        // Ucus hattina yakin olan (yanindan gecilen degil) dusman.
+        if (Math.abs(dx * dirZ - dz * dirX) > cellSize * 0.8) continue;
+        const distance = Math.max(0, along);
+        if (!best || distance < best.distance) best = { y: position.y, distance };
+      }
+      return best;
+    },
+    bodyAt: (x, z) => {
+      const reach = ((terrain?.cellSize ?? 34) * 0.7) ** 2;
+      let best = reach;
+      let y: number | undefined;
+      for (const standee of standees.values()) {
+        const position = standee.mesh.position;
+        const gap = (position.x - x) ** 2 + (position.z - z) ** 2;
+        if (gap < best) {
+          best = gap;
+          y = position.y;
+        }
+      }
+      return y;
     },
     kick: (x, z, strength) => {
       const recoil = nearestInstance(x, z)?.recoil;

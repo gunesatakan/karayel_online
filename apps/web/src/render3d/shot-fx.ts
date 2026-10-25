@@ -63,6 +63,13 @@ export type ShotFxDeps = {
   bodyHeight(): number;
   /** (x, z) yakinindaki kulenin namlu ucu (dunya); modeli yoksa `undefined`. */
   muzzle(x: number, z: number): THREE.Vector3 | undefined;
+  /**
+   * Ucus yonunde (x, z)'den ilerideki ilk dusman: govdesinin ortasinin
+   * yuksekligi ve yatay uzakligi. Mermi araziyi degil hedefi izliyor.
+   */
+  aim(x: number, z: number, dirX: number, dirZ: number): { y: number; distance: number } | undefined;
+  /** (x, z)'deki dusmanin govde ortasi (yoksa `undefined`): carpma ve isinin ucu orada. */
+  bodyAt(x: number, z: number): number | undefined;
   /** Kulenin namlusunu geri tep (0-1). */
   kick?(x: number, z: number, strength: number): void;
   reducedMotion?(): boolean;
@@ -412,9 +419,15 @@ type Flight = {
   recipe: ShotRecipe;
   root: THREE.Object3D;
   material: THREE.MeshStandardMaterial;
-  startY: number;
-  startX: number;
-  startZ: number;
+  /** Sunucunun yolundaki son yer (yatay). */
+  pathX: number;
+  pathZ: number;
+  /** Namlu ucu ile sunucunun dogum noktasi arasindaki fark: ilk hucrede sifira iniyor. */
+  offsetX: number;
+  offsetZ: number;
+  /** Kavissiz yukseklik: namludan hedefin govdesine duz hat. */
+  baseY: number;
+  /** Cizilen yer. */
   x: number;
   y: number;
   z: number;
@@ -507,8 +520,9 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     return (root.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
   }
 
+  /** Dusmanin govde ortasi: oradaki dusmandan, yoksa piyade boyundan. */
   function targetHeight(x: number, z: number) {
-    return deps.groundHeight(x, z) + deps.bodyHeight();
+    return deps.bodyAt(x, z) ?? deps.groundHeight(x, z) + deps.bodyHeight();
   }
 
   function muzzlePoint(x: number, z: number) {
@@ -536,7 +550,7 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
         x, y, z,
         vx: dx * v, vy: lift * v, vz: dz * v,
         color: colors[index % colors.length],
-        size: (options.size ?? 0.075) * c * (0.7 + rand() * 0.6),
+        size: (options.size ?? 0.05) * c * (0.7 + rand() * 0.6),
         lifeMs: (options.life ?? 380) * (0.6 + rand() * 0.7),
         shape: SHAPE.spark,
         stretch: options.stretch ?? 0.06,
@@ -591,11 +605,11 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     const dz = Math.sin(input.angle);
     const tier = recipe.tier;
     flare(p.x + dx * c * 0.1, p.y, p.z + dz * c * 0.1, recipe.muzzle.flash * c, recipe.core, 70 + tier * 15);
-    light.spawn({ x: p.x, y: p.y, z: p.z, vx: dx * c * 9, vz: dz * c * 9, color: recipe.color, size: c * 0.12 * tier, lifeMs: 90, shape: SHAPE.spark, stretch: 0.02, drag: 14, fade: 1 });
+    light.spawn({ x: p.x, y: p.y, z: p.z, vx: dx * c * 9, vz: dz * c * 9, color: recipe.color, size: c * 0.05 * tier, lifeMs: 90, shape: SHAPE.spark, stretch: 0.02, drag: 14, fade: 1 });
     sparkBurst(p.x, p.y, p.z, count(recipe.muzzle.sparks), 5.5, [recipe.core, recipe.color], { dirX: dx, dirZ: dz, bias: 0.82, up: 0.1, life: 200, gravity: 4 });
     if (recipe.muzzle.smoke > 0) smokePuffs(p.x + dx * c * 0.2, p.y, p.z + dz * c * 0.2, count(recipe.muzzle.smoke), 0.35, 0x4a4a52, 0.32);
     if (recipe.muzzle.ring) {
-      light.spawn({ x: p.x + dx * c * 0.15, y: p.y, z: p.z + dz * c * 0.15, color: recipe.color, size: c * 0.15, sizeTo: c * 0.55 * tier, lifeMs: 160, shape: SHAPE.ring, fade: 1.5, alpha: 0.85 });
+      light.spawn({ x: p.x + dx * c * 0.1, y: p.y, z: p.z + dz * c * 0.1, color: recipe.color, size: c * 0.08, sizeTo: c * 0.28 * tier, lifeMs: 160, shape: SHAPE.ring, fade: 1.5, alpha: 0.85 });
     }
     deps.kick?.(input.x, input.y, 0.45 + tier * 0.2);
   }
@@ -603,7 +617,7 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
   function anticipationEvent(input: ShotEventInput, recipe: ShotRecipe) {
     const c = cell();
     const p = muzzlePoint(input.x, input.y);
-    light.spawn({ x: p.x, y: p.y, z: p.z, color: recipe.color, size: c * 0.08, sizeTo: c * 0.32 * recipe.tier, lifeMs: 120, shape: SHAPE.glow, fade: 0.4, fadeIn: 0.6 });
+    light.spawn({ x: p.x, y: p.y, z: p.z, color: recipe.color, size: c * 0.05, sizeTo: c * 0.18 * recipe.tier, lifeMs: 120, shape: SHAPE.glow, fade: 0.4, fadeIn: 0.6 });
     // Namluya cekilen kivilcimlar: sarj.
     for (let index = 0; index < count(3 + recipe.tier * 2); index += 1) {
       const theta = rand() * Math.PI * 2;
@@ -620,7 +634,7 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     const x = input.x;
     const z = input.y;
     const ground = deps.groundHeight(x, z);
-    const y = ground + deps.bodyHeight();
+    const y = targetHeight(x, z);
     const dx = Math.cos(input.angle);
     const dz = Math.sin(input.angle);
     const hit = recipe.hit;
@@ -786,7 +800,7 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     const c = cell();
     const x = input.x;
     const z = input.y;
-    const y = deps.groundHeight(x, z) + deps.bodyHeight();
+    const y = targetHeight(x, z);
     const now = performance.now();
     const key = input.key ?? `${Math.round(x)}:${Math.round(z)}`;
     // Surekli lazer saniyede onlarca temas: kivilcim ve yanik izi kisitli.
@@ -824,11 +838,14 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
       let flight = flights.get(projectile.id);
       if (!flight) {
         const root = makeBody(recipe);
-        const start = muzzlePoint(projectile.x, projectile.y);
+        // Namlu ucunda doguyor: sunucunun dogum noktasi 2D'nin, 3D namlu baska yerde.
+        const tip = muzzlePoint(projectile.x, projectile.y);
         flight = {
           id: projectile.id, recipe, root, material: bodyMaterial(root),
-          startY: start.y, startX: projectile.x, startZ: projectile.y,
-          x: projectile.x, y: start.y, z: projectile.y,
+          pathX: projectile.x, pathZ: projectile.y,
+          offsetX: tip.x - projectile.x, offsetZ: tip.z - projectile.y,
+          baseY: tip.y,
+          x: tip.x, y: tip.y, z: tip.z,
           traveled: 0, seen: true, seed: hash01(projectile.id), trailCarry: 0
         };
         flight.material.color.setHex(recipe.color);
@@ -837,22 +854,35 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
         flights.set(projectile.id, flight);
       }
       flight.seen = true;
-      const step = Math.hypot(projectile.x - flight.x, projectile.y - flight.z);
+      const stepX = projectile.x - flight.pathX;
+      const stepZ = projectile.y - flight.pathZ;
+      const step = Math.hypot(stepX, stepZ);
+      flight.pathX = projectile.x;
+      flight.pathZ = projectile.y;
       flight.traveled += step;
-      // Namludan govdeye: iki hucrede govdenin yuksekligine iniyor; paket kavisle.
-      const settle = 1 - Math.exp(-flight.traveled / (c * 1.6));
-      const goal = targetHeight(projectile.x, projectile.y);
-      const lob = recipe.arc * c * Math.sin(Math.PI * Math.min(1, flight.traveled / (c * 3.4)));
-      const y = flight.startY + (goal - flight.startY) * settle + lob;
+      // Yukseklik araziyi izlemiyor: ileride vuracagi dusmanin govdesine duz hat
+      // (kalan yol kadar her adimda ona yaklasiyor). Hedef yoksa ayni yukseklikte.
+      const moving = step > 0.001;
+      const dirX = moving ? stepX / step : Math.cos(Math.atan2(projectile.vy ?? 0, projectile.vx ?? 1));
+      const dirZ = moving ? stepZ / step : Math.sin(Math.atan2(projectile.vy ?? 0, projectile.vx ?? 1));
+      const aim = deps.aim(projectile.x, projectile.y, dirX, dirZ);
+      if (aim && moving) flight.baseY += (aim.y - flight.baseY) * Math.min(1, step / (step + aim.distance));
+      // Sunucu'nun paketi kavisle: yolun kesrine gore yay.
+      const remaining = aim?.distance ?? c * 2;
+      const fraction = flight.traveled / Math.max(1e-3, flight.traveled + remaining);
+      const lob = recipe.arc * c * Math.sin(Math.PI * Math.min(1, fraction));
+      // Namlu ile yol arasindaki fark ilk hucrede kapaniyor.
+      const blend = Math.max(0, 1 - flight.traveled / (c * 1.1));
+      const ease = blend * blend * (3 - 2 * blend);
       const px = flight.x;
       const py = flight.y;
       const pz = flight.z;
-      flight.x = projectile.x;
-      flight.y = y;
-      flight.z = projectile.y;
-      // Yon: son adimdan (yukseklik dahil); duruyorsa hizdan.
-      if (step > 0.001) TMP_DIR.set(flight.x - px, flight.y - py, flight.z - pz);
-      else TMP_DIR.set(projectile.vx ?? 1, 0, projectile.vy ?? 0);
+      flight.x = projectile.x + flight.offsetX * ease;
+      flight.y = flight.baseY + lob;
+      flight.z = projectile.y + flight.offsetZ * ease;
+      const moved = Math.hypot(flight.x - px, flight.y - py, flight.z - pz);
+      if (moved > 0.001) TMP_DIR.set(flight.x - px, flight.y - py, flight.z - pz);
+      else TMP_DIR.set(dirX, 0, dirZ);
       if (TMP_DIR.lengthSq() < 1e-6) TMP_DIR.set(1, 0, 0);
       TMP_DIR.normalize();
       TMP_Q.setFromUnitVectors(UP, TMP_DIR);
@@ -865,11 +895,11 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
       flight.root.position.set(flight.x, flight.y, flight.z);
       const pulse = recipe.shape === "arc" ? 0.85 + 0.3 * Math.sin(now / 28 + flight.seed * 40) : 1;
       flight.root.scale.set(body.width * c * pulse, body.length * c, body.width * c * pulse);
-      // Govdenin halesi (tek kare) ve izi (yol boyunca).
-      light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.color, size: c * (0.26 + recipe.tier * 0.07) * pulse, lifeMs: 0, shape: SHAPE.glow, alpha: 0.7 });
-      light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.core, size: c * 0.1 * pulse, lifeMs: 0, shape: SHAPE.glow, alpha: 0.9 });
-      if (recipe.tier >= 3) light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.accent, size: c * 0.5, lifeMs: 0, shape: SHAPE.glow, alpha: 0.35 });
-      emitTrail(flight, px, py, pz, step, recipe, now);
+      // Govdenin halesi (tek kare, govdeden biraz buyuk) ve izi (yol boyunca).
+      light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.color, size: c * (0.12 + recipe.tier * 0.03) * pulse, lifeMs: 0, shape: SHAPE.glow, alpha: 0.75 });
+      light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.core, size: c * 0.05 * pulse, lifeMs: 0, shape: SHAPE.glow, alpha: 0.9 });
+      if (recipe.tier >= 3) light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.accent, size: c * 0.22, lifeMs: 0, shape: SHAPE.glow, alpha: 0.3 });
+      emitTrail(flight, px, py, pz, moved, recipe, now);
     }
     for (const [id, flight] of flights) {
       if (flight.seen) continue;
@@ -881,7 +911,8 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
   function emitTrail(flight: Flight, px: number, py: number, pz: number, step: number, recipe: ShotRecipe, now: number) {
     if (step <= 0) return;
     const c = cell();
-    flight.trailCarry += (step / c) * recipe.trail.density * 12 * budget();
+    // Iz parcaciklari kucuk: hucre basina sik, aralarinda bosluk kalmasin.
+    flight.trailCarry += (step / c) * recipe.trail.density * 26 * budget();
     const n = Math.min(12, Math.floor(flight.trailCarry));
     flight.trailCarry -= n;
     const trail = recipe.trail;
@@ -896,13 +927,13 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
         const dirx = flight.x - px;
         const dirz = flight.z - pz;
         const len = Math.hypot(dirx, dirz) || 1;
-        x += (-dirz / len) * Math.cos(phase) * c * 0.12;
-        z += (dirx / len) * Math.cos(phase) * c * 0.12;
-        y += Math.sin(phase) * c * 0.12;
+        x += (-dirz / len) * Math.cos(phase) * c * 0.06;
+        z += (dirx / len) * Math.cos(phase) * c * 0.06;
+        y += Math.sin(phase) * c * 0.06;
       }
       light.spawn({
         x, y, z,
-        vx: (rand() - 0.5) * c * 0.2, vy: (rand() - 0.2) * c * 0.2, vz: (rand() - 0.5) * c * 0.2,
+        vx: (rand() - 0.5) * c * 0.1, vy: (rand() - 0.2) * c * 0.1, vz: (rand() - 0.5) * c * 0.1,
         color: index % 3 === 0 ? recipe.core : recipe.color,
         alpha: 0.85,
         size: trail.size * c, sizeTo: trail.size * c * 0.15,
@@ -916,7 +947,7 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
           x, y, z,
           vx: (rand() - 0.5) * c * 1.6, vy: (rand() - 0.1) * c * 1.4, vz: (rand() - 0.5) * c * 1.6,
           color: recipe.tier >= 3 ? recipe.accent : recipe.core,
-          size: c * 0.025, lifeMs: 260, shape: SHAPE.spark, stretch: 0.05, drag: 2.5, gravity: c * 3, fade: 1
+          size: c * 0.018, lifeMs: 260, shape: SHAPE.spark, stretch: 0.05, drag: 2.5, gravity: c * 3, fade: 1
         });
       }
     }

@@ -67,7 +67,7 @@ export type ShotRecipe = {
   body: { length: number; width: number; spin: number };
   /** Iz: birim yol basina parcacik, omur (ms), boy (hucre), kivilcim payi (0-1). */
   trail: { density: number; lifeMs: number; size: number; sparkle: number };
-  /** Kavis: yolun ortasindaki ek yukseklik (hucre). */
+  /** Kavis: yolun ortasindaki ek yukseklik (hucre); 0 duz hat (namludan hedefin govdesine). */
   arc: number;
   muzzle: { flash: number; sparks: number; smoke: number; ring: boolean };
   hit: {
@@ -106,7 +106,7 @@ type TowerSeed = {
 /** Tonlar 2D profillerinden (vfx-profiles `base`, warrior-5 rampasi). */
 const TOWERS: Readonly<Record<string, TowerSeed>> = {
   "warrior-1": { shape: "tracer", impact: "lock", colors: [0x4dffbd, 0x4dffbd, 0x7dffd0], accent: 0xffffff },
-  "warrior-2": { shape: "packet", impact: "uplink", colors: [0x58d9ff, 0x58d9ff, 0x8be6ff], accent: 0xf0f9ff, heavy: true, arc: 1.4 },
+  "warrior-2": { shape: "packet", impact: "uplink", colors: [0x58d9ff, 0x58d9ff, 0x8be6ff], accent: 0xf0f9ff, heavy: true, arc: 0.9 },
   "warrior-3": { shape: "cell", impact: "contain", colors: [0x7fe5e8, 0x7fe5e8, 0xa5f3f5], accent: 0x60a5fa },
   "warrior-4": { shape: "gaze", impact: "collapse", colors: [0xcb79ff, 0xcb79ff, 0xdda0ff], accent: 0xff4fd8 },
   "warrior-5": { shape: "orb", impact: "burst", beam: "laser", colors: [0xef4444, 0x60a5fa, 0xe0f2fe], accent: 0xffffff },
@@ -166,21 +166,22 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
     color,
     core: whiten(color, [0.55, 0.72, 0.9][index]),
     accent: seed.accent,
+    // Govde kulenin kucuk bir parcasi (kule ~1 hucre): mermi 0,1-0,3 hucre.
     body: {
-      length: { tracer: 0.42, packet: 0.3, cell: 0.28, gaze: 0.3, arc: 0.34, lance: 0.62, orb: 0.26 }[seed.shape] * (1 + index * 0.12),
-      width: { tracer: 0.07, packet: 0.24, cell: 0.24, gaze: 0.24, arc: 0.3, lance: 0.1, orb: 0.22 }[seed.shape] * (1 + index * 0.18) * heavy,
+      length: { tracer: 0.22, packet: 0.15, cell: 0.13, gaze: 0.13, arc: 0.14, lance: 0.3, orb: 0.11 }[seed.shape] * (1 + index * 0.08),
+      width: { tracer: 0.035, packet: 0.11, cell: 0.11, gaze: 0.11, arc: 0.12, lance: 0.05, orb: 0.09 }[seed.shape] * (1 + index * 0.1) * (seed.heavy ? 1.1 : 1),
       spin: { tracer: 0, packet: 2.2, cell: 1.6, gaze: 0.4, arc: 3, lance: 0, orb: 0.8 }[seed.shape]
     },
     trail: {
       density: (seed.shape === "tracer" || seed.shape === "lance" ? 0.55 : 0.4) * power,
       lifeMs: 150 + index * 90,
-      size: 0.16 * (1 + index * 0.3) * heavy,
+      size: 0.06 * (1 + index * 0.25) * (seed.heavy ? 1.1 : 1),
       sparkle: [0.1, 0.3, 0.55][index]
     },
-    arc: seed.arc ?? 0.25,
-    muzzle: { flash: 0.55 * power * heavy, sparks: Math.round(4 * power), smoke: index === 0 ? 0 : index, ring: index >= 1 },
+    arc: seed.arc ?? 0,
+    muzzle: { flash: 0.3 * power * heavy, sparks: Math.round(4 * power), smoke: index === 0 ? 0 : index, ring: index >= 1 },
     hit: {
-      flash: 0.7 * power * heavy,
+      flash: 0.5 * power * heavy,
       sparks: Math.round(10 * power * heavy),
       speed: 3.2 + index * 1.1,
       debris: seed.impact === "burst" || seed.impact === "uplink" || seed.impact === "lock" ? Math.round(4 * power) : Math.round(2 * power),
