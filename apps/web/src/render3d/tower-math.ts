@@ -115,13 +115,30 @@ export const ANGLED_ELEVATION_DEGREES = 45;
 export const ANGLED_ELEVATION_RANGE = { min: 15, max: 70 } as const;
 export const ANGLED_ZOOM_RANGE = { min: 0.5, max: 5 } as const;
 
+/**
+ * Egik kameranin dikey gorus acisi (derece). Perspektif derinligi veriyor:
+ * yakindaki kuleler ve dusmanlar buyuk, uzaktakiler kucuk, tahtanin uzak
+ * kenari daraliyor (ortografikte uzak ve yakin ayni boydaydi, harita egik
+ * basilmis bir resim gibiydi). Dar aci bozulmayi sinirli tutuyor: acilista
+ * yakin kenar uzak kenarin ~1,4 kati.
+ */
+export const ANGLED_FOV_DEGREES = 28;
+
+/** Ufkun ustune giden isin zemine inmiyor: ufkun bu kadar altina (egim, ~1,7 derece) indiriliyor. */
+const HORIZON_DIP = 0.03;
+
 export type OrbitView = {
   /** Kameranin baktigi zemin noktasi. */
   target: { x: number; z: number };
   /** Kameranin hedef cevresindeki donusu (radyan); 0'da kamera guneyde, kuzeye bakiyor. */
   yaw: number;
-  /** Yakinlasma uygulanmis ortografik yari kesit ve yukseklik acisinin sin/cos'u. */
+  /**
+   * Yakinlasma uygulanmis yari kesit (hedefin kamera duzleminde gorunen alan)
+   * ve yukseklik acisinin sin/cos'u.
+   */
   frustum: { halfWidth: number; halfHeight: number; sin: number; cos: number };
+  /** Kameranin hedefe uzakligi: perspektif. Yoksa ortografik (sonsuz uzak). */
+  distance?: number;
 };
 
 /**
@@ -168,6 +185,51 @@ export function angledFrustum(view: { width: number; height: number }, aspect: n
 }
 
 /**
+ * Perspektif egik kameranin acilis kesiti ve uzakligi. Perspektifte yakin
+ * kenar genisliyor: ortografik kesit (`angledFrustum`) tahtanin dort kosesi
+ * ve uzak kenardaki kulelerin tepesi (`headroom`, ortografikteki gibi)
+ * ekrana sigana kadar buyutuluyor. Kesitin yarisi hedefin derinliginde;
+ * uzaklik `halfHeight / tan(fov / 2)`.
+ */
+export function angledPerspectiveFit(view: { width: number; height: number }, aspect: number, elevationDegrees = ANGLED_ELEVATION_DEGREES, headroom = 0, fovDegrees = ANGLED_FOV_DEGREES) {
+  const base = angledFrustum(view, aspect, elevationDegrees, headroom);
+  const tan = Math.tan((fovDegrees * Math.PI) / 360);
+  const target = { x: view.width / 2, z: view.height / 2 };
+  // Donmemis kamerada kuzey (z = 0) uzak kenar.
+  const points: Array<[number, number, number]> = [
+    [0, 0, headroom], [view.width, 0, headroom],
+    [0, 0, 0], [view.width, 0, 0], [0, view.height, 0], [view.width, view.height, 0]
+  ];
+  const at = (scale: number) => {
+    const frustum = { ...base, halfWidth: base.halfWidth * scale, halfHeight: base.halfHeight * scale };
+    return { frustum, distance: frustum.halfHeight / tan };
+  };
+  const fits = (scale: number) => {
+    const orbit = { target, yaw: 0, ...at(scale) };
+    return points.every(([x, z, height]) => {
+      const ndc = angledGroundToScreen(x, z, height, orbit);
+      return Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1;
+    });
+  };
+  // Buyudukce perspektif azaliyor, sonunda ortografik kesite (sigiyor) yaklasiyor.
+  let low = 1;
+  let high = 1;
+  for (let step = 0; step < 16 && !fits(high); step += 1) {
+    low = high;
+    high *= 1.5;
+  }
+  if (high > low) {
+    for (let step = 0; step < 24; step += 1) {
+      const mid = (low + high) / 2;
+      if (fits(mid)) high = mid;
+      else low = mid;
+    }
+  }
+  const fitted = at(high);
+  return { ...fitted.frustum, distance: fitted.distance };
+}
+
+/**
  * Kameranin ekseni. Kameradan hedefe bakis `forward` = -(sin a cos e, sin e,
  * cos a cos e); ekranin sagi `right` = (cos a, 0, -sin a); ekranin yukarisi
  * `up` = right x forward. three.js'in `lookAt`i (yukari +Y) ayni ekseni kuruyor.
@@ -183,7 +245,8 @@ export function orbitBasis(yaw: number, sin: number, cos: number) {
 
 /**
  * Egik kamerada ekran noktasi (NDC) -> zemin noktasi (y = 0): ekrandaki kayit
- * kamera duzleminde (hedef + sag * u + yukari * v), oradan bakis yonunde zemine.
+ * hedefin kamera duzleminde (hedef + sag * u + yukari * v). Ortografikte
+ * oradan bakis yonunde, perspektifte kameradan o noktaya giden isinla zemine.
  */
 export function angledScreenToGround(ndcX: number, ndcY: number, view: OrbitView) {
   const { forward, right, up } = orbitBasis(view.yaw, view.frustum.sin, view.frustum.cos);
@@ -192,18 +255,33 @@ export function angledScreenToGround(ndcX: number, ndcY: number, view: OrbitView
   const px = view.target.x + right.x * u + up.x * v;
   const py = up.y * v;
   const pz = view.target.z + right.z * u + up.z * v;
-  const t = -py / forward.y;
-  return { x: px + forward.x * t, z: pz + forward.z * t };
+  const distance = view.distance;
+  if (!distance) {
+    const t = -py / forward.y;
+    return { x: px + forward.x * t, z: pz + forward.z * t };
+  }
+  // Kamera hedefin `distance` gerisinde, bakis yonunun tersinde.
+  const ox = view.target.x - forward.x * distance;
+  const oy = -forward.y * distance;
+  const oz = view.target.z - forward.z * distance;
+  const dx = px - ox;
+  const dz = pz - oz;
+  const dy = Math.min(py - oy, -HORIZON_DIP * Math.hypot(dx, dz));
+  const t = -oy / dy;
+  return { x: ox + dx * t, z: oz + dz * t };
 }
 
 /** Zemin ustundeki nokta -> egik kamerada ekran (NDC); `angledScreenToGround`un tersi. */
 export function angledGroundToScreen(x: number, z: number, height: number, view: OrbitView) {
-  const { right, up } = orbitBasis(view.yaw, view.frustum.sin, view.frustum.cos);
+  const { forward, right, up } = orbitBasis(view.yaw, view.frustum.sin, view.frustum.cos);
   const dx = x - view.target.x;
   const dz = z - view.target.z;
+  // Perspektif: noktanin derinligi hedefinkinden ne kadar fazlaysa o kadar kucuk.
+  const distance = view.distance;
+  const scale = distance ? distance / (distance + dx * forward.x + height * forward.y + dz * forward.z) : 1;
   return {
-    x: (dx * right.x + dz * right.z) / view.frustum.halfWidth,
-    y: (dx * up.x + height * up.y + dz * up.z) / view.frustum.halfHeight
+    x: ((dx * right.x + dz * right.z) * scale) / view.frustum.halfWidth,
+    y: ((dx * up.x + height * up.y + dz * up.z) * scale) / view.frustum.halfHeight
   };
 }
 

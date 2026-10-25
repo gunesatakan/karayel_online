@@ -29,9 +29,10 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import {
   ANGLED_ELEVATION_DEGREES,
   ANGLED_ELEVATION_RANGE,
+  ANGLED_FOV_DEGREES,
   ANGLED_ZOOM_RANGE,
-  angledFrustum,
   angledGroundToScreen,
+  angledPerspectiveFit,
   angledScreenToGround,
   clampOrbit,
   orbitBasis,
@@ -243,6 +244,10 @@ const ZONE_TINT = 0x5e5b56;
 
 /** Kulelerin tepesine pay: egik kesitte uzun kuleler ust kenardan tasmasin (dunya birimi). */
 const TOWER_HEADROOM = 70;
+/** Egik gorunumun cevresi (uzay karanligi) ve sisin rengi. */
+const ANGLED_CLEAR_COLOR = 0x06080b;
+/** Sisin tahtanin otesinde tamamen kapandigi derinlik (dunya birimi). */
+const ANGLED_FOG_DEPTH = 2400;
 
 export type TowerLayer = {
   /** Snapshot'in kuleleri. Donen kume: modeli yuklenmis ve gorunen kuleler (2D govdeleri gizlenebilir). */
@@ -640,7 +645,12 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   }
   const shadowTexture = new THREE.CanvasTexture(shadowCanvas);
 
+  // Tepeden gorunum 2D hucrelere birebir oturuyor: ortografik. Egik gorunum perspektif (derinlik).
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 6000);
+  const angledCamera = new THREE.PerspectiveCamera(ANGLED_FOV_DEGREES, 1, 1, 10000);
+  // Alcak egimde perspektif ufka kadar goruyor: tahtanin otesindeki zemin uzay karanligina karisiyor.
+  const fog = new THREE.Fog(ANGLED_CLEAR_COLOR, 1, 2);
+  let fitCache: { key: string; fit: ReturnType<typeof angledPerspectiveFit> } | undefined;
 
   const loader = new GLTFLoader();
   const requested = new Set<string>();
@@ -1234,16 +1244,21 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   }
 
   /**
-   * Egik kameranin su anki kesiti. Yakinlasma 1'de harita kuzeyi yukarida
-   * genislige sigiyor (egimle derinligi sigmazsa kesit buyuyor).
+   * Egik kameranin su anki kesiti ve uzakligi. Yakinlasma 1'de harita kuzeyi
+   * yukarida, dort kosesiyle ekranda (perspektifte yakin kenar genis).
+   * Yakinlasma kamerayi hedefe yaklastiriyor.
    */
   function orbitView(): OrbitView | undefined {
     if (!lastRect || !lastWorld) return undefined;
-    const base = angledFrustum(lastWorld, lastRect.width / Math.max(1, lastRect.height), orbit.elevation, TOWER_HEADROOM);
+    const aspect = lastRect.width / Math.max(1, lastRect.height);
+    const key = `${lastWorld.width}:${lastWorld.height}:${aspect}:${orbit.elevation}`;
+    if (fitCache?.key !== key) fitCache = { key, fit: angledPerspectiveFit(lastWorld, aspect, orbit.elevation, TOWER_HEADROOM) };
+    const base = fitCache.fit;
     return {
       target: orbit.target ?? mapCenter(lastWorld),
       yaw: orbit.yaw,
-      frustum: { halfWidth: base.halfWidth / orbit.zoom, halfHeight: base.halfHeight / orbit.zoom, sin: base.sin, cos: base.cos }
+      frustum: { halfWidth: base.halfWidth / orbit.zoom, halfHeight: base.halfHeight / orbit.zoom, sin: base.sin, cos: base.cos },
+      distance: base.distance / orbit.zoom
     };
   }
 
@@ -1343,6 +1358,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       boardCaptured = false;
       shots.setVisible(false);
       renderer.setClearColor(0x000000, 0);
+      scene.fog = null;
       const scaleX = canvasRect.width / Math.max(1, viewport.gameWidth);
       const scaleY = canvasRect.height / Math.max(1, viewport.gameHeight);
       resize(new DOMRect(canvasRect.left + viewport.x * scaleX, canvasRect.top + viewport.y * scaleY, viewport.width * scaleX, viewport.height * scaleY));
@@ -1362,7 +1378,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
     // Egik: tum tuval; tahta Phaser kamerasinin gordugu dunya parcasi, cevresi uzay karanligi.
     resize(canvasRect);
-    renderer.setClearColor(0x06080b, 1);
+    renderer.setClearColor(ANGLED_CLEAR_COLOR, 1);
     lastRect = canvasRect;
     lastWorld = { x: worldView.x, y: worldView.y, width: worldView.width, height: worldView.height };
     board.visible = true;
@@ -1391,22 +1407,26 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     boardCaptured = false;
 
     const current = orbitView();
-    if (!current) return;
+    if (!current?.distance) return;
+    const distance = current.distance;
     const { forward } = orbitBasis(current.yaw, current.frustum.sin, current.frustum.cos);
-    camera.left = -current.frustum.halfWidth;
-    camera.right = current.frustum.halfWidth;
-    camera.top = current.frustum.halfHeight;
-    camera.bottom = -current.frustum.halfHeight;
-    camera.up.set(0, 1, 0);
-    camera.position.set(current.target.x - forward.x * 3000, -forward.y * 3000, current.target.z - forward.z * 3000);
-    camera.lookAt(current.target.x, 0, current.target.z);
-    camera.updateProjectionMatrix();
+    // Hedeften en uzak tahta noktasi bile sisin onunde; sis yalnizca tahtanin otesinde.
+    const reach = Math.hypot(lastWorld.width, lastWorld.height);
+    fog.near = distance + reach;
+    fog.far = fog.near + ANGLED_FOG_DEPTH;
+    scene.fog = fog;
+    angledCamera.aspect = current.frustum.halfWidth / current.frustum.halfHeight;
+    angledCamera.near = Math.max(1, distance * 0.05);
+    angledCamera.far = fog.far + 200;
+    angledCamera.position.set(current.target.x - forward.x * distance, -forward.y * distance, current.target.z - forward.z * distance);
+    angledCamera.lookAt(current.target.x, 0, current.target.z);
+    angledCamera.updateProjectionMatrix();
     updateShadows();
     const now = performance.now();
     updateRecoils(now);
     shots.setVisible(true);
     shots.update(now);
-    renderer.render(scene, camera);
+    renderer.render(scene, angledCamera);
   }
 
   function clientToWorld(clientX: number, clientY: number) {

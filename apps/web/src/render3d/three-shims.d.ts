@@ -12,6 +12,8 @@ declare module "three" {
   export const HemisphereLight: any;
   export const DirectionalLight: any;
   export const OrthographicCamera: any; export type OrthographicCamera = any;
+  export const PerspectiveCamera: any; export type PerspectiveCamera = any;
+  export const Fog: any;
   export const Object3D: any; export type Object3D = any;
   export const Mesh: any; export type Mesh = any;
   export const Texture: any; export type Texture = any;

@@ -7,7 +7,9 @@ import { existsSync, readFileSync } from "node:fs";
 import {
   ANGLED_ELEVATION_DEGREES,
   ANGLED_ELEVATION_RANGE,
+  ANGLED_FOV_DEGREES,
   angledFrustum,
+  angledPerspectiveFit,
   classifyTwoFingerGesture,
   clampOrbit,
   recenterWhileRotating,
@@ -152,6 +154,58 @@ test("ayakta duran panonun alt kenari ekranda ayagina degiyor", () => {
     // Kameraya donuk pano ekranda tam boyunda: merkez yarim boy yukarida.
     assert.ok(Math.abs(toScreen(300, standeeCenterHeight(size)) - toScreen(300, 0) - size / 2) < 1e-9, `${size}`);
   }
+});
+
+const perspectiveAt = (yaw, elevation, zoom = 1, target = { x: 204, z: 392 }, aspect = 766 / 1266) => {
+  const fit = angledPerspectiveFit({ width: 408, height: 674 }, aspect, elevation, 70);
+  return {
+    target,
+    yaw,
+    frustum: { sin: fit.sin, cos: fit.cos, halfWidth: fit.halfWidth / zoom, halfHeight: fit.halfHeight / zoom },
+    distance: fit.distance / zoom
+  };
+};
+
+test("perspektif kamera: ekran -> zemin -> ekran her donus, egim ve yakinlasmada ayni noktaya donuyor", () => {
+  for (const [yaw, elevation, zoom] of [[0, 45, 1], [0.44, 38, 1.7], [2.44, 35, 1.5], [-1.05, 15, 3], [Math.PI, 70, 0.5]]) {
+    const view = perspectiveAt(yaw, elevation, zoom, { x: 150, z: 300 });
+    for (const [x, z] of [[204, 392], [0, 55], [408, 729], [120, 600], [350, 100]]) {
+      const ndc = angledGroundToScreen(x, z, 0, view);
+      const back = angledScreenToGround(ndc.x, ndc.y, view);
+      assert.ok(Math.abs(back.x - x) < 1e-6 && Math.abs(back.z - z) < 1e-6, `${yaw},${elevation}: ${x},${z}`);
+    }
+  }
+});
+
+test("perspektif kamera: acilista tahtanin dort kosesi ve uzak kenarin kule payi ekranda, yakin kenar uzak kenardan genis", () => {
+  // Uzak kenar kuzey (z = 0): orada kulelerin tepesi de ekranda.
+  const points = [[0, 0, 0], [408, 0, 0], [0, 674, 0], [408, 674, 0], [0, 0, 70], [408, 0, 70]];
+  for (const aspect of [766 / 1266, 1, 1.6]) {
+    for (const elevation of [15, 30, 45, 70]) {
+      const view = perspectiveAt(0, elevation, 1, { x: 204, z: 337 }, aspect);
+      let reach = 0;
+      for (const [x, z, height] of points) {
+        const ndc = angledGroundToScreen(x, z, height, view);
+        assert.ok(Math.abs(ndc.x) <= 1 + 1e-9 && Math.abs(ndc.y) <= 1 + 1e-9, `${aspect},${elevation}: ${x},${z},${height}`);
+        reach = Math.max(reach, Math.abs(ndc.x), Math.abs(ndc.y));
+      }
+      // Bir kenar ekrana degiyor: kesit gereksiz buyuk degil.
+      assert.ok(reach > 0.999, `${aspect},${elevation}: ${reach}`);
+    }
+  }
+  const view = perspectiveAt(0, 45);
+  const width = (z) => angledGroundToScreen(408, z, 0, view).x - angledGroundToScreen(0, z, 0, view).x;
+  assert.ok(width(674) > width(0) * 1.2, `${width(674)} / ${width(0)}`);
+  // Uzaklik gorus acisindan: hedefin kesiti tam aciya sigiyor.
+  assert.ok(Math.abs(view.frustum.halfHeight / view.distance - Math.tan((ANGLED_FOV_DEGREES * Math.PI) / 360)) < 1e-9);
+});
+
+test("perspektif kamera: ufkun ustundeki nokta zemine inmiyor, sonlu ve kameranin onunde", () => {
+  const view = perspectiveAt(0, 15, 1);
+  const far = angledScreenToGround(0, 1, view);
+  assert.ok(Number.isFinite(far.x) && Number.isFinite(far.z));
+  // Kamera guneyde, kuzeye bakiyor: ekranin ustu hedefin kuzeyinde.
+  assert.ok(far.z < view.target.z);
 });
 
 test("dar ekranda kesit derinlige gore buyuyor", () => {
