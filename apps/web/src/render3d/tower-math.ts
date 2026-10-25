@@ -130,6 +130,8 @@ export type OrbitView = {
  */
 export const STANDEE_SIZE_SCALE = 0.5;
 export const WORKER_SIZE_SCALE = 0.5;
+/** Operator bedeni 2D resminin yarisi boyunda, yerde duruyor. */
+export const OPERATOR_SIZE_SCALE = 0.5;
 
 /**
  * Donus haritanin merkezi cevresinde: kamera `yaw`u `radians` kadar donerken

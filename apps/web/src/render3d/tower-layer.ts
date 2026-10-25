@@ -41,6 +41,7 @@ import {
   MINE_CELL_SCALE,
   OPERATOR_MODEL_PATHS,
   OPERATOR_MODEL_YAW_OFFSET,
+  OPERATOR_SIZE_SCALE,
   WORKER_MODEL_PATH,
   WORKER_MODEL_YAW_OFFSET,
   mineModelPath,
@@ -844,9 +845,10 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         shadowDirty = true;
       }
       const ground = zoneHeight(input.x, input.y);
-      // Uctugu icin yerden bir boy kadar yukarida, sallanmadan; dusunce yerde.
-      operator.root.position.set(input.x, ground + (input.down ? 0 : input.size * 0.55), input.y);
-      operator.root.scale.setScalar(input.size);
+      // Isciler gibi yerde, sallanmadan; model tabani y = 0'da.
+      const size = input.size * OPERATOR_SIZE_SCALE;
+      operator.root.position.set(input.x, ground, input.y);
+      operator.root.scale.setScalar(size);
       // Resim donus 0'da kuzeye (-z) bakiyor; +Z yuzlu model icin yarim tur.
       operator.root.rotation.y = Math.PI - input.rotation + OPERATOR_MODEL_YAW_OFFSET;
       if (operator.down !== input.down) {
@@ -854,7 +856,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         operator.down = input.down;
       }
       operator.shadow.position.set(input.x, ground + 0.25, input.y);
-      operator.shadow.scale.setScalar(input.size * 0.45);
+      operator.shadow.scale.setScalar(size * 0.45);
       operatorsShown.add(input.id);
     }
     for (const id of [...operators.keys()]) if (!active.has(id)) removeOperator(id);
