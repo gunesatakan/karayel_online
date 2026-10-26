@@ -18,7 +18,6 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { FXAAPass } from "three/addons/postprocessing/FXAAPass.js";
 
 export const TARGET_LIGHT = {
   exposure: 1.0,
@@ -380,36 +379,50 @@ export function targetStyleAccent(model: THREE.Object3D): number | undefined {
 }
 
 /**
- * Parlama gecisi: sahne HDR hedefe, 1'den parlaklar yayiliyor, ton esleme ve sRGB,
- * en sonda FXAA kenar yumusatmasi. Cok ornekli (MSAA) HDR hedef kullanilmiyor:
- * Chrome/ANGLE'da cozumu bozuluyordu ("texture format / sampler type" hatasi,
- * vuruslar baslayinca ekran karariyordu). Yuksek piksel oraninda (`antialias`
- * kapali) FXAA atlaniyor: kenarlar zaten ince, goruntu daha keskin ve ucuz.
+ * Parlama gecisi: sahne HDR hedefe, 1'den parlaklar yayiliyor, ton esleme ve sRGB.
+ * Kenar yumusatma cok ornekli (MSAA) sahne hedefiyle: FXAA gibi resmi
+ * bulaniklastirmiyor (telefonda dusuk oranda kare zaten buyutuluyor). Tek hedef
+ * MSAA'li: son gecis ekrana ciziyor ve tamponlari degistirmiyor (`needsSwap`),
+ * sahne her karede ayni hedefe (ikinci hedef bellege hic kurulmuyor). Ornek
+ * sayisi cihazin RGBA16F icin destekledigi en cok 4; 2,5 ve ustu oranda
+ * (pikseller zaten ince) ya da 4K gibi buyuk hedefte (bellek ve bant) MSAA yok.
+ * Eskiden MSAA'ya baglanan "texture format / sampler type" uyarisi MSAA'dan
+ * degildi: golge haritasi ilk karelerde cizilmiyordu (tower-layer `updateShadows`).
  * Parlama ekranin CSS boyutunun yarisinda (telefonda ceyregi), piksel oraniyla buyumuyor.
  */
-export function createBloom(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Object3D, coarsePointer: boolean) {
+const MSAA_MAX_RATIO = 2.5;
+const MSAA_MAX_PIXELS = 4_200_000;
+
+export function createBloom(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Object3D, coarsePointer: boolean, msaa = true) {
   const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
   const composer = new EffectComposer(renderer, target);
   const renderPass = new RenderPass(scene, camera);
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), TARGET_LIGHT.bloomStrength, TARGET_LIGHT.bloomRadius, TARGET_LIGHT.bloomThreshold);
+  const output = new OutputPass();
+  output.needsSwap = false;
   composer.addPass(renderPass);
   composer.addPass(bloom);
-  composer.addPass(new OutputPass());
-  const fxaa = new FXAAPass();
-  composer.addPass(fxaa);
+  composer.addPass(output);
+  const maxSamples = msaa ? halfFloatSamples(renderer) : 0;
   let size = "";
   return {
-    render(width: number, height: number, antialias = true) {
-      const key = `${width}x${height}@${renderer.getPixelRatio()}`;
+    render(width: number, height: number) {
+      const ratio = renderer.getPixelRatio();
+      const key = `${width}x${height}@${ratio}`;
       if (key !== size) {
         size = key;
-        composer.setPixelRatio(renderer.getPixelRatio());
+        const samples = ratio < MSAA_MAX_RATIO && width * height * ratio * ratio <= MSAA_MAX_PIXELS ? maxSamples : 0;
+        for (const buffer of [composer.renderTarget1, composer.renderTarget2]) {
+          if (buffer.samples === samples) continue;
+          buffer.samples = samples;
+          buffer.dispose();
+        }
+        composer.setPixelRatio(ratio);
         composer.setSize(width, height);
         // Parlama yayilimi yumusak: CSS boyutunun yarisi (telefonda ceyregi) yetiyor.
         const scale = coarsePointer ? 0.25 : 0.5;
         bloom.setSize(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
       }
-      fxaa.enabled = antialias;
       composer.render();
     },
     dispose() {
@@ -418,4 +431,15 @@ export function createBloom(renderer: THREE.WebGLRenderer, scene: THREE.Scene, c
       target.dispose();
     }
   };
+}
+
+/** RGBA16F hedefte desteklenen en cok ornek (en cok 4); sorgu yoksa 0 (MSAA'siz). */
+function halfFloatSamples(renderer: THREE.WebGLRenderer) {
+  try {
+    const gl = renderer.getContext() as WebGL2RenderingContext;
+    const counts = gl.getInternalformatParameter(gl.RENDERBUFFER, gl.RGBA16F, gl.SAMPLES) as Int32Array | null;
+    return counts && counts.length > 0 ? Math.min(4, counts[0]) : 0;
+  } catch {
+    return 0;
+  }
 }

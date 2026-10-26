@@ -495,6 +495,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   const accents = new Map<string, number | undefined>();
   let bloom: ReturnType<typeof createBloom> | undefined;
   const bloomOff = typeof location !== "undefined" && new URLSearchParams(location.search).get("bloom3d") === "off";
+  // `?msaa3d=off`: kenar yumusatmasiz (ariza ayiklama ya da sorunlu ekran karti).
+  const msaaOff = typeof location !== "undefined" && new URLSearchParams(location.search).get("msaa3d") === "off";
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), groundMaterial);
   ground.position.y = -0.4;
   ground.receiveShadow = true;
@@ -1953,8 +1955,24 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     return modelShown;
   }
 
+  /**
+   * Phaser tuvali olcek basamagi ya da pencere (telefonu cevirme, Safari'nin cubugu)
+   * degisince yeniden boyutlaniyor; three dokunun yerini buyutmuyor (texStorage,
+   * boyut onbellek anahtarinda yok) ve her yukleme "offset overflows" hatasiyla
+   * dusuyordu: tahta katmani donup kaliyordu. Boyut degisince iki doku bastan kuruluyor.
+   */
+  let sourceSize = "";
+  function fitSourceTextures() {
+    const size = `${options.source.width}x${options.source.height}`;
+    if (size === sourceSize) return;
+    sourceSize = size;
+    boardTexture.dispose();
+    airTexture.dispose();
+  }
+
   function captureBoard() {
     if (disposed || view !== "angled") return;
+    fitSourceTextures();
     boardTexture.needsUpdate = true;
     // Simdi yukle: tuval birazdan efekt kamerasiyla yeniden ciziliyor.
     renderer.initTexture(boardTexture);
@@ -1963,6 +1981,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   function captureAir() {
     if (disposed || view !== "angled") return;
+    fitSourceTextures();
     airTexture.needsUpdate = true;
     // Simdi yukle: tuval birazdan ekran panelleri icin temizleniyor.
     renderer.initTexture(airTexture);
@@ -1972,18 +1991,20 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   let width = 0;
   let height = 0;
   /**
-   * Kalite basamagi (resolution.ts): 3D piksel orani (cihazinkini, en cok 2'yi
-   * gecmiyor) ve egik gorunumde Phaser tuvalinin olcegi; kare suresine gore
-   * iniyor ya da cikiyor. `?res3d=1.5` 3D oranini sabitliyor, basamak degismiyor (deneme).
+   * Kalite basamagi (resolution.ts): 3D piksel orani (cihazinkini gecmiyor; tavan
+   * basamaktan: masaustunde 2, telefonda 3) ve egik gorunumde Phaser tuvalinin
+   * olcegi; kare suresine gore iniyor ya da cikiyor. `?res3d=1.5` 3D oranini
+   * sabitliyor, basamak degismiyor (deneme).
    */
   const forcedRatio = Number(new URLSearchParams(location.search).get("res3d")) || 0;
-  const maxRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const maxRatio = window.devicePixelRatio || 1;
   const ladder = coarsePointer ? TOUCH_QUALITY : DESKTOP_QUALITY;
   const quality = createQualityGovernor(coarsePointer ? TOUCH_QUALITY_START : DESKTOP_QUALITY_START, performance.now());
   let pixelRatio = forcedRatio || Math.min(ladder[quality.level].pixelRatio, maxRatio);
   let boardScale = ladder[quality.level].boardScale;
   setAngledRenderScale(boardScale);
   let shadowDirty = true;
+  let shadowDrawn = false;
   let shadowSignature = "";
   let frame = 0;
 
@@ -1999,9 +2020,12 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   function updateShadows() {
     frame += 1;
-    if (shadowDirty && frame % 3 === 0) {
+    // Ilk karede hemen: golge haritasi yokken golge alan malzemeler karsilastirmasiz
+    // bos dokuyla ciziliyor (ANGLE "texture format / sampler type" uyarisi).
+    if (shadowDirty && (frame % 3 === 0 || !shadowDrawn)) {
       renderer.shadowMap.needsUpdate = true;
       shadowDirty = false;
+      shadowDrawn = true;
     }
   }
 
@@ -2197,7 +2221,10 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     // Zemin `captureBoard`da alindiysa tuvalde artik yalnizca efektler var.
     // Zemin ve efektler Phaser karesinde ayri ayri alindi (`captureBoard`, `captureAir`);
     // tuvalde artik yalnizca ekran panelleri var. Alinmadiysa (ilk kare) zemin tuvalden.
-    if (!boardCaptured) boardTexture.needsUpdate = true;
+    if (!boardCaptured) {
+      fitSourceTextures();
+      boardTexture.needsUpdate = true;
+    }
     if (airCaptured) {
       air.visible = true;
       air.position.set(worldView.x + worldView.width / 2, standeeCenterHeight(airBodySize, orbit.elevation), worldView.y + worldView.height / 2);
@@ -2240,9 +2267,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       renderer.render(scene, angledCamera);
       return;
     }
-    bloom ??= createBloom(renderer, scene, angledCamera, coarsePointer);
-    // 1,75 ve ustu oranda FXAA gereksiz: kenarlar ince, goruntu keskin.
-    bloom.render(width, height, pixelRatio < 1.75);
+    bloom ??= createBloom(renderer, scene, angledCamera, coarsePointer, !msaaOff);
+    bloom.render(width, height);
   }
 
   function clientToWorld(clientX: number, clientY: number) {

@@ -101,19 +101,37 @@ test("kalite basamagi: yavas karede iner, rahatsa 30 sn sonra cikar, her inis be
     }
   }
   assert.ok(DESKTOP_QUALITY[DESKTOP_QUALITY_START].pixelRatio === 2);
-  assert.ok(TOUCH_QUALITY[TOUCH_QUALITY_START].boardScale === 1.25);
+  assert.ok(TOUCH_QUALITY[0].pixelRatio >= 1.5, "telefonda 3D 1,5'in altina inmiyor");
+  assert.ok(TOUCH_QUALITY.at(-1).pixelRatio === 3 && TOUCH_QUALITY.at(-1).boardScale === 2, "telefonun ust basamagi 3 kat ekranda keskin");
+  assert.ok(TOUCH_QUALITY[TOUCH_QUALITY_START].pixelRatio >= 2.5 && TOUCH_QUALITY[TOUCH_QUALITY_START].boardScale === 2);
   const levels = DESKTOP_QUALITY.length;
-  const run = (state, from, frames, step) => { let now = from; for (let k = 0; k < frames; k += 1) { now += step; stepQualityGovernor(state, now, levels); } return now; };
+  // `step`: sabit kare suresi ya da basamaga bagli kare suresi (ekran kartinin yuku).
+  const run = (state, from, frames, step) => { let now = from; for (let k = 0; k < frames; k += 1) { now += typeof step === "function" ? step(state.level) : step; stepQualityGovernor(state, now, levels); } return now; };
+  const gpu = (level) => (level >= DESKTOP_QUALITY_START ? 25 : 16.7);
   const state = createQualityGovernor(DESKTOP_QUALITY_START, 0);
-  let now = run(state, 0, 120, 25);
-  assert.ok(state.level < DESKTOP_QUALITY_START, "yavas karelerle iniyor");
-  now = run(state, now, 200, 16.7);
-  const low = state.level;
+  let now = run(state, 0, 120, gpu);
+  assert.equal(state.level, DESKTOP_QUALITY_START - 1, "yavas karelerle iniyor; inis kareyi hizlandirdi, orada kaliyor");
   now = run(state, now, 600, 16.7);
-  assert.equal(state.level, low, "inisten hemen sonra cikmiyor");
-  // Uc inisten sonra bekleme 2 dakikaya cikti: rahat karelerle ondan sonra geri cikiyor.
-  now = run(state, now, 9000, 16.7);
-  assert.ok(state.level > low, "rahat karelerle geri cikiyor");
+  assert.equal(state.level, DESKTOP_QUALITY_START - 1, "inisten hemen sonra cikmiyor");
+  now = run(state, now, 2400, 16.7);
+  assert.equal(state.level, DESKTOP_QUALITY_START, "rahat karelerle 30 sn sonra geri cikiyor");
+  now = run(state, now, 120, gpu);
+  assert.equal(state.level, DESKTOP_QUALITY_START - 1, "ust basamak yine yavas: iniyor");
+  now = run(state, now, 2400, 16.7);
+  assert.equal(state.level, DESKTOP_QUALITY_START - 1, "ikinci inisten sonra bekleme 60 sn");
+  run(state, now, 1800, 16.7);
+  assert.equal(state.level, DESKTOP_QUALITY_START, "60 sn sonra geri cikiyor");
+
+  // Pil tasarrufu: tarayici kareyi 30'da tutuyor, basamak inse de hizlanmiyor.
+  const capped = createQualityGovernor(TOUCH_QUALITY_START, 0);
+  now = run(capped, 0, 3600, 33.3);
+  assert.ok(capped.level >= TOUCH_QUALITY_START, "30 kare siniri netligi dusurmuyor");
+  // Sinir kalkinca hedef yine 60 kare: ust basamak yetmiyorsa iniyor.
+  now = run(capped, now, 300, 16.7);
+  const top = capped.level;
+  run(capped, now, 120, (level) => (level >= top ? 25 : 16.7));
+  assert.equal(capped.level, top - 1, "sinir kalkinca yavas kare yine basamak indiriyor");
+
   const fast = createQualityGovernor(1, 0);
   run(fast, 0, 9000, 8.3);
   assert.equal(fast.level, levels - 1, "120 Hz ekranda en ust basamak");

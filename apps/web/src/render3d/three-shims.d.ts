@@ -109,7 +109,3 @@ declare module "three/addons/postprocessing/UnrealBloomPass.js" {
 declare module "three/addons/postprocessing/OutputPass.js" {
   export const OutputPass: any;
 }
-
-declare module "three/addons/postprocessing/FXAAPass.js" {
-  export const FXAAPass: any;
-}
