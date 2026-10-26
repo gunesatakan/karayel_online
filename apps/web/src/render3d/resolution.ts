@@ -5,7 +5,8 @@
  * 8'den 20 ms'ye cikiyordu, 3D'nin 2 kat cozunurlugu ise ~1,5 ms). Ust basamak
  * 4K ekranda keskin. Telefonda 3D ekranin kendi oranina kadar (en cok 3) cikiyor
  * ve 1,5'in altina inmiyor: telefon ekrani 3 kat yogun, 1,25'te cizilen kare 2,4
- * kat buyutulup bulanik gorunuyordu. Phaser tuvali telefonda 2D'deki gibi 2'ye kadar.
+ * kat buyutulup bulanik gorunuyordu. Phaser tuvali (kule paneli, dugmeler, seri
+ * afisi, zemin isaretleri) telefonda ust basamakta ekranin oraninda (3).
  *
  * Kasmasin diye kare suresine bakiliyor (`stepQualityGovernor`): 45 karelik
  * ortalama hedefin %11 ustundeyse (60 karede 18,5 ms) bir basamak iniliyor.
@@ -28,15 +29,15 @@ export const TOUCH_QUALITY: readonly QualityLevel[] = [
   { pixelRatio: 1.5, boardScale: 1.25 },
   { pixelRatio: 2, boardScale: 1.5 },
   { pixelRatio: 2.5, boardScale: 2 },
-  { pixelRatio: 3, boardScale: 2 }
+  { pixelRatio: 3, boardScale: 3 }
 ];
 /**
  * Baslangic basamagi: masaustu en ust (2 / 1,75; Phaser'i 2,25'e cikarmak orta bir
- * ekran kartinda kareyi 14'ten 18 ms'ye tasiyordu), telefon bir alti (2,5 / 2):
- * kareler rahatsa 30 sn sonra en uste cikiyor.
+ * ekran kartinda kareyi 14'ten 18 ms'ye tasiyordu), telefon da en ust (3 / 3):
+ * yetmeyen telefon ilk saniyede iniyor (inis kareyi hizlandirmadiysa geri cikiyor).
  */
 export const DESKTOP_QUALITY_START = 3;
-export const TOUCH_QUALITY_START = 2;
+export const TOUCH_QUALITY_START = 3;
 
 const FRAME_MS = 1000 / 60;
 const WINDOW_FRAMES = 45;

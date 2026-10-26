@@ -27,8 +27,13 @@ export function getRenderScaleNow() {
   });
   // Egik 3D gorunumde Phaser tuvali gorunmuyor: karesi her karede iki kez 3D
   // katmanina doku olarak kopyalaniyor ve bedeli piksel sayisiyla buyuyor; sinir
-  // kalite basamagindan (render3d/resolution.ts). 2D'de (ve tepeden 3D'de) olcek bugunku gibi.
-  return getActiveTowerView() === "angled" ? Math.min(scale, getAngledRenderScale(finePointer)) : scale;
+  // kalite basamagindan (render3d/resolution.ts). Telefonda paylasilan 2 tavani
+  // yerine cihazin orani: kule paneli, dugmeler ve seri afisi 3 kat ekranda
+  // 2'de cizilip buyutulunce bulaniyordu; kare yetmezse basamak iniyor.
+  // 2D'de (ve tepeden 3D'de) olcek bugunku gibi.
+  if (getActiveTowerView() !== "angled") return scale;
+  const touchScale = Math.max(1, window.devicePixelRatio || 1);
+  return Math.min(finePointer ? scale : touchScale, getAngledRenderScale(finePointer));
 }
 
 /**

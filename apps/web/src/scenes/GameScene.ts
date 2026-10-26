@@ -1952,6 +1952,15 @@ export class GameScene extends Phaser.Scene {
   /** Kule panelindeki satis dugmesinin dunya dikdortgeni; yoksa satilamaz. */
   private sellButtonRect?: { x: number; y: number; width: number; height: number };
   private selectedSellText?: Phaser.GameObjects.Text;
+  /**
+   * Cozunurlugu kameraya bagli yazilar (`trackTextResolution`). Phaser yaziyi
+   * varsayilan 1 kat cozunurlukte ciziyor; kamera onu tuval olceginde (telefonda
+   * 2-3, masaustunde ~1,75) buyuttugu icin 9-13 px yazi (kule paneli, satis
+   * dugmesi) bulaniyordu. Kendi cozunurlugunu secenler (dik tabelalar, seri
+   * afisi) kumeden cikiyor.
+   */
+  private readonly sharpTexts = new Set<Phaser.GameObjects.Text>();
+  private sharpTextResolution = 1;
   /** Dunya kadar buyuk zemin; olcu degisince birlikte buyur. */
   private backdrop?: Phaser.GameObjects.Rectangle;
   /** Tuvalin son saglam olcusu; hic olculmediyse yok. */
@@ -2090,6 +2099,11 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     configureHiDpiCamera(this);
+    this.events.on(Phaser.Scenes.Events.ADDED_TO_SCENE, this.trackTextResolution, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off(Phaser.Scenes.Events.ADDED_TO_SCENE, this.trackTextResolution, this);
+      this.sharpTexts.clear();
+    });
     // Haritanin disinda kalan her sey de siyah: arenanin kenarinda ton degisimi
     // olursa oyun alani bir kutunun icinde duruyormus gibi gorunuyor, oysa
     // istenen sey uzayin kesintisiz devam etmesi.
@@ -9732,6 +9746,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     camera.setZoom(getSceneRenderScale(this));
     camera.centerOn(pointer.worldX, pointer.worldY);
     this.arenaZoomed = true;
+    this.refreshTextResolution();
     return false;
   }
 
@@ -9847,6 +9862,31 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     camera.setZoom(getSceneRenderScale(this) * view.fit);
     camera.centerOn(view.left + view.width / 2, view.top + view.height / 2);
     this.arenaZoomed = false;
+    this.refreshTextResolution();
+  }
+
+  /** Yeni yazi kameranin yakinlasmasinda ciziliyor (en cok 4 kat). */
+  private trackTextResolution(object: Phaser.GameObjects.GameObject) {
+    if (!(object instanceof Phaser.GameObjects.Text) || this.sharpTexts.has(object)) return;
+    this.sharpTexts.add(object);
+    object.once(Phaser.GameObjects.Events.DESTROY, () => this.sharpTexts.delete(object));
+    object.setResolution(this.sharpTextResolution);
+  }
+
+  /** Kendi cozunurlugunu secen yazi: kamera degisince ustune yazilmiyor. */
+  private fixTextResolution(text: Phaser.GameObjects.Text, resolution: number) {
+    this.sharpTexts.delete(text);
+    text.setResolution(resolution);
+  }
+
+  /** Kameranin yakinlasmasi degisti (tuval olcegi, kalite basamagi, pencere): yazilar yeniden. */
+  private refreshTextResolution() {
+    const next = Phaser.Math.Clamp(Math.ceil(this.cameras.main.zoom * 4) / 4, 1, 4);
+    if (next === this.sharpTextResolution) return;
+    this.sharpTextResolution = next;
+    for (const text of this.sharpTexts) {
+      if (text.active) text.setResolution(next);
+    }
   }
 
   private renderMelisNightmareMapLocks(active: boolean) {
@@ -11126,7 +11166,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const text = object instanceof Phaser.GameObjects.Text ? object : undefined;
       if (text && !this.uprightTexts.has(text)) {
         // Yatik 8 px yazi buyutulunce bulaniyordu: tuvali 3 kat cozunurlukte.
-        text.setResolution(3);
+        this.fixTextResolution(text, 3);
         this.uprightTexts.add(text);
       }
       const frame = object.frame;
@@ -13856,7 +13896,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
     // Yazilar CSS boyunda ama tuval cozunurlugunde: buyutulunce bulaniklasmasin.
     for (const part of parts) {
-      if (part instanceof Phaser.GameObjects.Text) part.setResolution(Math.max(1, gamePxPerCss));
+      if (part instanceof Phaser.GameObjects.Text) this.fixTextResolution(part, Math.max(1, gamePxPerCss));
     }
     container.add(parts);
     this.rampageContainer = container;

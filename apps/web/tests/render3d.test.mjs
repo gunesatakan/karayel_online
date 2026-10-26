@@ -102,8 +102,8 @@ test("kalite basamagi: yavas karede iner, rahatsa 30 sn sonra cikar, her inis be
   }
   assert.ok(DESKTOP_QUALITY[DESKTOP_QUALITY_START].pixelRatio === 2);
   assert.ok(TOUCH_QUALITY[0].pixelRatio >= 1.5, "telefonda 3D 1,5'in altina inmiyor");
-  assert.ok(TOUCH_QUALITY.at(-1).pixelRatio === 3 && TOUCH_QUALITY.at(-1).boardScale === 2, "telefonun ust basamagi 3 kat ekranda keskin");
-  assert.ok(TOUCH_QUALITY[TOUCH_QUALITY_START].pixelRatio >= 2.5 && TOUCH_QUALITY[TOUCH_QUALITY_START].boardScale === 2);
+  assert.ok(TOUCH_QUALITY.at(-1).pixelRatio === 3 && TOUCH_QUALITY.at(-1).boardScale === 3, "telefonun ust basamagi 3 kat ekranda keskin (3D ve Phaser)");
+  assert.equal(TOUCH_QUALITY_START, TOUCH_QUALITY.length - 1, "telefon en ustten basliyor");
   const levels = DESKTOP_QUALITY.length;
   // `step`: sabit kare suresi ya da basamaga bagli kare suresi (ekran kartinin yuku).
   const run = (state, from, frames, step) => { let now = from; for (let k = 0; k < frames; k += 1) { now += typeof step === "function" ? step(state.level) : step; stepQualityGovernor(state, now, levels); } return now; };
