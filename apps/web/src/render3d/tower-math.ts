@@ -99,6 +99,35 @@ export function towerModelScale(bodySize: number, span: number) {
   return bodySize / (MODEL_BODY_DIAMETER_CELLS * Math.max(1, span));
 }
 
+/**
+ * Hedef stil kulenin seviyeyle buyumesi: modelin en genis yeri 2D govde
+ * capinin (`getTowerBodySize`) bu kati. Seviye 1'de kucuk ve sade, her
+ * yukseltmede biraz buyuyor, kademe atlayinca (5 ve 10) belirgin sicrama;
+ * 10'da hucreyi neredeyse dolduruyor. Modelin kendi olcusunden bagimsiz.
+ */
+export function towerLevelGrowth(level: number) {
+  const value = Math.max(1, Math.floor(level));
+  if (value >= 10) return 1.22;
+  if (value >= 5) return 0.94 + (value - 5) * 0.03;
+  return 0.76 + (value - 1) * 0.03;
+}
+
+/**
+ * Yukseltme "pop"unun olcek carpani (`age` 0-1): kule kucukten hizla buyuyor,
+ * kisa bir an asiyor ve yerine oturuyor. Kademe atlayista daha derin ve uzun.
+ */
+export function upgradePopFactor(age: number, big: boolean) {
+  if (age >= 1) return 1;
+  const from = big ? 0.6 : 0.88;
+  const over = big ? 0.16 : 0.07;
+  if (age < 0.35) {
+    const rise = Math.max(0, age) / 0.35;
+    return from + (1 + over - from) * (1 - (1 - rise) ** 3);
+  }
+  const settle = (age - 0.35) / 0.65;
+  return 1 + over * (1 - settle) ** 2 * Math.cos(settle * Math.PI * 1.5);
+}
+
 /** Kenar rayinin olcegi ve donusu: model uzun ekseni X'te, iki hucre boyunda. */
 export function edgeModelTransform(cellSize: number, visualScale: number, orientation: "horizontal" | "vertical" | undefined) {
   return { scale: cellSize * visualScale, yaw: orientation === "vertical" ? Math.PI / 2 : 0 };

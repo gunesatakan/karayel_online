@@ -180,7 +180,9 @@ export const PLINTH_HEIGHT_CELLS = 0.1;
 
 /**
  * Kule kaidesi: yuvarlak koseli koyu kare ve ustunde kulenin kimlik renginde
- * parlayan yuvarlak koseli halka. Olcu birimi hucre (sahnede hucre boyuyla olceklenir).
+ * parlayan yuvarlak koseli halka. Kademeyle zenginlesiyor: 1'de sade ve sonuk
+ * halka, 2'de parlak halka ve kose cubuklari, 3'te genis alt basamak ve
+ * koselerde parlayan kristaller. Olcu birimi hucre (sahnede hucre boyuyla olceklenir).
  */
 export function createPlinthFactory() {
   const roundedSquare = (half: number, r: number) => {
@@ -196,9 +198,11 @@ export function createPlinthFactory() {
     shape.quadraticCurveTo(-half, -half, -half + r, -half);
     return shape;
   };
-  const geometries = new Map<number, { slab: THREE.BufferGeometry; ring: THREE.BufferGeometry }>();
+  type Parts = { slab: THREE.BufferGeometry; ring: THREE.BufferGeometry; stud: THREE.BufferGeometry; skirt: THREE.BufferGeometry; crystal: THREE.BufferGeometry; half: number; depth: number };
+  const geometries = new Map<number, Parts>();
   const slabMaterial = new THREE.MeshStandardMaterial({ color: 0x283041, roughness: 0.62, metalness: 0.25 });
-  const ringMaterials = new Map<number, THREE.MeshStandardMaterial>();
+  const skirtMaterial = new THREE.MeshStandardMaterial({ color: 0x1d2330, roughness: 0.7, metalness: 0.2 });
+  const glowMaterials = new Map<string, THREE.MeshStandardMaterial>();
   const geometry = (span: number) => {
     let entry = geometries.get(span);
     if (!entry) {
@@ -211,47 +215,78 @@ export function createPlinthFactory() {
       const ring = new THREE.ExtrudeGeometry(ringShape, { depth: 0.012, bevelEnabled: false, curveSegments: 6 });
       ring.rotateX(-Math.PI / 2);
       ring.translate(0, depth + 0.025, 0);
-      entry = { slab, ring };
+      const stud = new THREE.CylinderGeometry(0.03, 0.036, 0.03, 10);
+      stud.translate(0, depth + 0.04, 0);
+      const skirt = new THREE.ExtrudeGeometry(roundedSquare(half + 0.05, 0.12 * span), { depth: 0.035, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 1, curveSegments: 6 });
+      skirt.rotateX(-Math.PI / 2);
+      const crystal = new THREE.OctahedronGeometry(0.045, 0);
+      crystal.scale(1, 1.9, 1);
+      crystal.translate(0, 0.13, 0);
+      entry = { slab, ring, stud, skirt, crystal, half, depth };
       geometries.set(span, entry);
     }
     return entry;
   };
-  const ringMaterial = (accent: number) => {
-    let material = ringMaterials.get(accent);
+  const glowMaterial = (accent: number, intensity: number) => {
+    const key = `${accent}:${intensity}`;
+    let material = glowMaterials.get(key);
     if (!material) {
-      material = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: accent, emissiveIntensity: 2.0, roughness: 0.4, metalness: 0 });
-      ringMaterials.set(accent, material);
+      material = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: accent, emissiveIntensity: intensity, roughness: 0.4, metalness: 0 });
+      glowMaterials.set(key, material);
     }
     return material;
   };
   return {
-    create(accent: number, span: number) {
+    create(accent: number, span: number, tier: 1 | 2 | 3 = 2) {
       const parts = geometry(span);
       const group = new THREE.Group();
       const slab = new THREE.Mesh(parts.slab, slabMaterial);
       slab.castShadow = slab.receiveShadow = true;
-      group.add(slab, new THREE.Mesh(parts.ring, ringMaterial(accent)));
+      // Halka: 1'de parlama esiginin altinda (sade), 2-3'te yayiliyor.
+      group.add(slab, new THREE.Mesh(parts.ring, glowMaterial(accent, tier === 1 ? 0.8 : tier === 2 ? 2 : 3)));
+      if (tier >= 2) {
+        const corner = parts.half * 0.86 - 0.075 * span;
+        for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          const stud = new THREE.Mesh(parts.stud, glowMaterial(accent, tier === 3 ? 3 : 2));
+          stud.position.set(sx * corner, 0, sz * corner);
+          group.add(stud);
+        }
+      }
+      if (tier === 3) {
+        const skirt = new THREE.Mesh(parts.skirt, skirtMaterial);
+        skirt.receiveShadow = true;
+        group.add(skirt);
+        const corner = parts.half + 0.01;
+        for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          const crystal = new THREE.Mesh(parts.crystal, glowMaterial(accent, 3.4));
+          crystal.position.set(sx * corner, 0, sz * corner);
+          crystal.rotation.y = Math.PI / 4;
+          group.add(crystal);
+        }
+      }
       return group;
     },
     dispose() {
-      geometries.forEach((entry) => { entry.slab.dispose(); entry.ring.dispose(); });
+      geometries.forEach((entry) => { entry.slab.dispose(); entry.ring.dispose(); entry.stud.dispose(); entry.skirt.dispose(); entry.crystal.dispose(); });
       slabMaterial.dispose();
-      ringMaterials.forEach((material) => material.dispose());
+      skirtMaterial.dispose();
+      glowMaterials.forEach((material) => material.dispose());
     }
   };
 }
 
 /**
  * Hedef stil modelin isimasini oyunun isigina gore ayarlar (modelde 2,2 yaziyor;
- * parlama gecisiyle birlikte cam kubbeler beyaza patliyordu). Malzemeler modelin
- * butun kopyalarinca paylasiliyor; bir kez cagirmak yetiyor.
+ * parlama gecisiyle birlikte cam kubbeler beyaza patliyordu). `glow` kademe carpani
+ * (kademe 1 sonuk, 3 parlak). Malzemeler modelin butun kopyalarinca paylasiliyor;
+ * bir kez cagirmak yetiyor.
  */
-export function tuneTargetMaterials(model: THREE.Object3D) {
+export function tuneTargetMaterials(model: THREE.Object3D, glow = 1) {
   model.traverse((node: THREE.Object3D) => {
     const mesh = node as THREE.Mesh;
     if (!mesh.isMesh) return;
     for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-      if (material?.emissiveMap) material.emissiveIntensity = TARGET_LIGHT.towerGlow;
+      if (material?.emissiveMap) material.emissiveIntensity = TARGET_LIGHT.towerGlow * glow;
     }
   });
 }

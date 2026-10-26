@@ -25,10 +25,10 @@ declare module "three" {
   export const TorusGeometry: any;
   export const BoxGeometry: any;
   export const OctahedronGeometry: any;
-  export const Group: any;
+  export const Group: any; export type Group = any;
   export const ShadowMaterial: any;
   export const MeshStandardMaterial: any;
-  export const Sprite: any;
+  export const Sprite: any; export type Sprite = any;
   export const SpriteMaterial: any;
   export const BufferGeometry: any; export type BufferGeometry = any;
   export const Float32BufferAttribute: any;
@@ -36,7 +36,7 @@ declare module "three" {
   export const MirroredRepeatWrapping: number;
   export const TextureLoader: any;
   export const PCFShadowMap: number;
-  export const Color: any;
+  export const Color: any; export type Color = any;
   export const Vector2: any;
   export const Vector4: any;
   export const LinearFilter: number;
@@ -69,6 +69,11 @@ declare module "three" {
   export const WebGLRenderTarget: any; export type WebGLRenderTarget = any;
   export const HalfFloatType: number;
   export const ClampToEdgeWrapping: number;
+  // Kademe gorunusu (tower-tiers) ve namlu nisani.
+  export const RingGeometry: any;
+  export const Points: any; export type Points = any;
+  export const PointsMaterial: any;
+  export const Box3: any; export type Box3 = any;
 }
 
 declare module "three/addons/loaders/GLTFLoader.js" {

@@ -48,11 +48,15 @@ import {
   WORKER_MODEL_YAW_OFFSET,
   mineModelPath,
   towerModelPath,
+  MODEL_BODY_DIAMETER_CELLS,
+  towerLevelGrowth,
+  upgradePopFactor,
   yawFromFacing,
   type OrbitView,
   type TowerTier
 } from "./tower-math";
 import { createShotFx, type ShotFx } from "./shot-fx";
+import { createTierFx } from "./tower-tiers";
 import { createZoneHeight, edgeSlopeHeight, terrainShade, type TerrainInput } from "./terrain";
 import { PLINTH_HEIGHT_CELLS, TARGET_LIGHT, createBloom, createPlinthFactory, createRockFrame, createTileBoard, targetStyleAccent, tuneTargetMaterials, type TileBoard } from "./target-look";
 
@@ -60,6 +64,8 @@ export type Tower3dInput = {
   id: string;
   definitionId: string;
   tier: TowerTier;
+  /** Seviye (kuleler): hedef stil kule seviyeyle buyuyor, yukseltme kutlaniyor. */
+  level?: number;
   x: number;
   y: number;
   /** Kare kulesinde oyunun yonu; kenar rayinda kullanilmiyor. */
@@ -166,7 +172,23 @@ type Instance = {
   recoil: { node: THREE.Object3D; baseZ: number; at: number; strength: number } | undefined;
   /** Hedef stil kulenin kaidesi (egik gorunumde; model onun ustune kalkiyor). */
   plinth?: THREE.Object3D;
+  /** Namlunun dikey nisani (`addPitchPivot`): dugum, su anki aci, golgenin cizildigi aci. */
+  pitch: THREE.Object3D | undefined;
+  pitchAngle: number;
+  shadowPitch: number;
+  /** Oyun kuleyi hedefe donduruyor (`facing` geliyor): yalnizca o zaman nisan aliyor. */
+  aims: boolean;
+  /** Kok ekstrasindan yayilim (1x1 -> 1, 2x2 -> 2, kenar rayi -> 0) ve kimlik rengi. */
+  span: number;
+  accent: number | undefined;
+  /** Sync'teki olcek; yukseltme "pop"u bunun ustune. */
+  scale: number;
+  heightScale: number;
+  pop?: { at: number; big: boolean };
 };
+
+/** Kademeye gore isima: kademe 1 sade (parlama esiginin altinda), 3 parlak ve nabiz atiyor. */
+const TIER_GLOW = { 1: 0.55, 2: 1, 3: 1.15 } as const;
 type Standee = { mesh: THREE.Mesh; material: THREE.ShaderMaterial; shadow: THREE.Mesh; bar: THREE.Mesh; barMaterial: THREE.ShaderMaterial; textureKey: string };
 
 // Kameraya donuk pano: merkez modelin konumunda, koseler goruntu duzleminde.
@@ -621,6 +643,15 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   const requested = new Set<string>();
   const loaded = new Map<string, THREE.Object3D>();
   const instances = new Map<string, Instance>();
+  /** Model anahtari -> en genis yeri ve boyu (model biriminde, yuklenince olculuyor). */
+  const modelSizes = new Map<string, { width: number; height: number }>();
+  /** Kulenin son bilinen seviyesi ve kademesi: artinca yukseltme kutlaniyor. */
+  const levels = new Map<string, { level: number; tier: TowerTier }>();
+  /** Kademe 3 kulelerin nabiz atan isimasi: malzeme -> taban parlakligi. */
+  const pulsing = new Map<THREE.MeshStandardMaterial, number>();
+  const tierFx = createTierFx(scene);
+  const aimPivot = new THREE.Vector3();
+  let lastAim = 0;
   const visible = new Set<string>();
   let view: LayerView = options.view;
   let airBodySize = 0;
@@ -714,13 +745,119 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       gltf.scene.traverse((node: THREE.Object3D) => {
         if ((node as THREE.Mesh).isMesh) node.castShadow = node.receiveShadow = true;
       });
-      if (targetStyleAccent(gltf.scene) !== undefined) tuneTargetMaterials(gltf.scene);
+      const size = new THREE.Box3().setFromObject(gltf.scene).getSize(new THREE.Vector3());
+      modelSizes.set(key, { width: Math.max(size.x, size.z), height: size.y });
+      addPitchPivot(gltf.scene);
+      if (targetStyleAccent(gltf.scene) !== undefined) {
+        const tier = towerTierOf(gltf.scene);
+        tuneTargetMaterials(gltf.scene, tier ? TIER_GLOW[tier] : 1);
+        if (tier === 3) {
+          gltf.scene.traverse((node: THREE.Object3D) => {
+            const material = (node as THREE.Mesh).material;
+            if ((node as THREE.Mesh).isMesh && material?.emissiveMap) pulsing.set(material, material.emissiveIntensity);
+          });
+        }
+      }
       loaded.set(key, gltf.scene);
       options.onModelReady();
     }).catch((error: unknown) => {
       // Yuklenemeyen model: o kule 2D kalir, oyun etkilenmez.
       console.warn("3D tower model could not load", key, error);
     });
+  }
+
+  /** Kule modelinin kademesi (kok ekstrasi; ikmal binalari ve duvarda yok). */
+  function towerTierOf(model: THREE.Object3D): TowerTier | undefined {
+    let tier: TowerTier | undefined;
+    model.traverse((node: THREE.Object3D) => {
+      const data = node.userData as { footprintCells?: number; tier?: number } | undefined;
+      if (tier === undefined && typeof data?.footprintCells === "number" && (data.tier === 1 || data.tier === 2 || data.tier === 3)) tier = data.tier;
+    });
+    return tier;
+  }
+
+  /**
+   * Namlunun dikey nisani icin dugum: geri tepen parcanin cocuklari (namlu ucu
+   * dahil) kendi kutularinin ortasinda donen `barrels-pitch` altina tasiniyor.
+   * Model yuklenince bir kez; kopyalar ayni yapida.
+   */
+  function addPitchPivot(model: THREE.Object3D) {
+    const barrels = model.getObjectByName("barrels-recoil");
+    if (!barrels || barrels.children.length === 0 || model.getObjectByName("barrels-pitch")) return;
+    model.updateMatrixWorld(true);
+    const toLocal = barrels.matrixWorld.clone().invert();
+    const box = new THREE.Box3();
+    for (const child of barrels.children) box.union(new THREE.Box3().setFromObject(child).applyMatrix4(toLocal));
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const pivot = new THREE.Object3D();
+    pivot.name = "barrels-pitch";
+    pivot.position.copy(center);
+    for (const child of [...barrels.children]) {
+      child.position.sub(center);
+      pivot.add(child);
+    }
+    barrels.add(pivot);
+  }
+
+  /**
+   * Namlu hedefe egiliyor: kulenin baktigi hatta en yakin dusmanin govdesine
+   * (cukurdaki asagida, ucan yukarida). Vurus namlunun ucundan ayni hatta
+   * cikiyor (shot-fx). Aci yumusak; golge yalnizca belirgin degisimde.
+   */
+  function updateAim(now: number) {
+    const dt = Math.min(0.1, Math.max(0, (now - lastAim) / 1000));
+    lastAim = now;
+    const cellSize = terrain?.cellSize ?? 34;
+    for (const instance of instances.values()) {
+      const pitch = instance.pitch;
+      if (!pitch || !instance.yaw || !instance.aims) continue;
+      pitch.getWorldPosition(aimPivot);
+      const yaw = instance.yaw.rotation.y + instance.root.rotation.y;
+      const dirX = Math.sin(yaw);
+      const dirZ = Math.cos(yaw);
+      let target = 0;
+      let nearest = Infinity;
+      for (const standee of standees.values()) {
+        const position = standee.mesh.position;
+        const dx = position.x - aimPivot.x;
+        const dz = position.z - aimPivot.z;
+        const along = dx * dirX + dz * dirZ;
+        if (along < cellSize * 0.3 || along > cellSize * 9 || along >= nearest) continue;
+        if (Math.abs(dx * dirZ - dz * dirX) > cellSize * 0.9) continue;
+        nearest = along;
+        target = Math.atan2(aimPivot.y - position.y, along);
+      }
+      // Arti aci namluyu asagi egiyor (+Z ileri).
+      target = Math.max(-0.35, Math.min(0.5, target));
+      instance.pitchAngle += (target - instance.pitchAngle) * Math.min(1, dt * 9);
+      pitch.rotation.x = instance.pitchAngle;
+      if (Math.abs(instance.pitchAngle - instance.shadowPitch) > 0.08) {
+        instance.shadowPitch = instance.pitchAngle;
+        shadowDirty = true;
+      }
+    }
+  }
+
+  /** Sync'teki olcek ve yukseltme "pop"u. */
+  function applyScale(instance: Instance, now: number) {
+    let factor = 1;
+    const pop = instance.pop;
+    if (pop) {
+      const age = (now - pop.at) / (pop.big ? 650 : 420);
+      if (age >= 1) instance.pop = undefined;
+      else factor = upgradePopFactor(age, pop.big);
+      shadowDirty = true;
+    }
+    const scale = instance.scale * factor;
+    instance.root.scale.set(scale, scale * instance.heightScale, scale);
+  }
+
+  /** Kademe 3 isimasi nabiz gibi (malzeme o modelin butun kopyalarinda ortak). */
+  function updatePulse(now: number) {
+    if (pulsing.size === 0) return;
+    const wave = 1 + 0.15 * Math.sin((now / 1000) * 2.6);
+    for (const [material, base] of pulsing) material.emissiveIntensity = base * wave;
   }
 
   // Madenler: model bir kez yukleniyor, her maden bir kopya; tukenmis madenin malzemesi karartilmis kopya.
@@ -1014,10 +1151,6 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         // Kopya geometri ve malzemeyi paylasiyor: ayni kuleden kac tane olursa olsun tek GPU kaynagi.
         const root = source.clone(true);
         const barrels = root.getObjectByName("barrels-recoil");
-        instance = {
-          key, root, yaw: root.getObjectByName("turret-yaw"), muzzle: root.getObjectByName("muzzle-socket"),
-          recoil: barrels ? { node: barrels, baseZ: barrels.position.z, at: -Infinity, strength: 0 } : undefined
-        };
         // Hedef stil kule: kimlik renginde halkali ortak kaide (kenar rayinda yok).
         if (!accents.has(key)) accents.set(key, targetStyleAccent(source));
         const accent = accents.get(key);
@@ -1027,13 +1160,22 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
           const cells = node.userData?.footprintCells;
           if (typeof cells === "number") span = Math.round(Math.sqrt(cells));
         });
+        instance = {
+          key, root, yaw: root.getObjectByName("turret-yaw"), muzzle: root.getObjectByName("muzzle-socket"),
+          recoil: barrels ? { node: barrels, baseZ: barrels.position.z, at: -Infinity, strength: 0 } : undefined,
+          pitch: root.getObjectByName("barrels-pitch"), pitchAngle: 0, shadowPitch: 0, aims: false,
+          span, accent, scale: tower.scale, heightScale: 1
+        };
         if (accent !== undefined && span > 0) {
-          instance.plinth = plinths.create(accent, span);
+          // Kaide kademeyle zenginlesiyor; ikmal binalari ve duvar eskisi gibi.
+          instance.plinth = plinths.create(accent, span, tower.modelPath ? 2 : tower.tier);
           scene.add(instance.plinth);
         }
         instances.set(tower.id, instance);
         scene.add(root);
         shadowDirty = true;
+        // Bir sonraki kademenin modeli onceden: yukseltme aninda hazir olsun.
+        if (!tower.modelPath && tower.tier < 3) request(towerModelPath(tower.definitionId, (tower.tier + 1) as TowerTier));
       }
       const cell = terrain?.cellSize ?? 34;
       const onPlinth = Boolean(instance.plinth) && view === "angled";
@@ -1042,19 +1184,44 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         instance.plinth.position.set(tower.x, 0, tower.y);
         instance.plinth.scale.setScalar(cell);
       }
-      instance.root.position.set(tower.x, onPlinth ? PLINTH_HEIGHT_CELLS * cell : 0, tower.y);
-      instance.root.scale.set(tower.scale, tower.scale * (tower.heightScale ?? 1), tower.scale);
+      // Hedef stil kule seviyeyle buyuyor: modelin en genis yeri govde capinin
+      // `towerLevelGrowth` kati (modeller kendi olculerinde farkli; ust kademe
+      // uzun namlu yuzunden kucuk kaliyordu).
+      const size = modelSizes.get(key);
+      const grows = tower.level !== undefined && !tower.modelPath && instance.span > 0 && instance.accent !== undefined && size !== undefined && size.width > 0;
+      const scale = grows ? tower.scale * ((MODEL_BODY_DIAMETER_CELLS * instance.span) / size.width) * towerLevelGrowth(tower.level ?? 1) : tower.scale;
+      const base = onPlinth ? PLINTH_HEIGHT_CELLS * cell : 0;
+      instance.scale = scale;
+      instance.heightScale = tower.heightScale ?? 1;
+      instance.root.position.set(tower.x, base, tower.y);
+      instance.aims = tower.fixedYaw === undefined && typeof tower.facing === "number";
       if (tower.fixedYaw !== undefined) {
         instance.root.rotation.y = tower.fixedYaw;
       } else if (instance.yaw && typeof tower.facing === "number") {
         instance.yaw.rotation.y = yawFromFacing(tower.facing);
       }
+      // Yukseltme: seviye artinca kule "pop" yapiyor, zeminde dalga; kademe atlayinca isik sutunu.
+      if (tower.level !== undefined) {
+        const known = levels.get(tower.id);
+        if (known && tower.level > known.level && view === "angled") {
+          const big = tower.tier > known.tier;
+          instance.pop = { at: performance.now(), big };
+          if (instance.accent !== undefined) tierFx.celebrate(tower.x, tower.y, base, (size?.height ?? 1) * scale, cell, Math.max(1, instance.span), instance.accent, big);
+        }
+        levels.set(tower.id, { level: tower.level, tier: tower.tier });
+      }
+      applyScale(instance, performance.now());
+      tierFx.update(tower.id, tower.tier, grows ? instance.accent : undefined, {
+        x: tower.x, z: tower.y, base, width: (size?.width ?? 0) * scale, height: (size?.height ?? 0) * scale, cell, span: Math.max(1, instance.span), visible: onPlinth
+      });
       visible.add(tower.id);
     }
     for (const [id, instance] of instances) {
       if (!active.has(id)) {
         removeInstance(instance);
         instances.delete(id);
+        tierFx.remove(id);
+        levels.delete(id);
         shadowDirty = true;
       }
     }
@@ -1200,7 +1367,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   /** Kulelerin golgeye giren hali degistiyse golge haritasi bir sonraki uygun karede. */
   function markShadows(towers: readonly Tower3dInput[]) {
     let signature = "";
-    for (const tower of towers) signature += `${tower.id}:${tower.tier}:${tower.x}:${tower.y}:${Math.round((tower.facing ?? 0) * 50)};`;
+    for (const tower of towers) signature += `${tower.id}:${tower.tier}:${tower.level ?? 0}:${tower.x}:${tower.y}:${Math.round((tower.facing ?? 0) * 50)};`;
     if (signature !== shadowSignature) {
       shadowSignature = signature;
       shadowDirty = true;
@@ -1349,6 +1516,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       air.visible = false;
       boardCaptured = false;
       shots.setVisible(false);
+      tierFx.tick(performance.now(), false);
       renderer.setClearColor(0x000000, 0);
       scene.fog = null;
       const scaleX = canvasRect.width / Math.max(1, viewport.gameWidth);
@@ -1417,6 +1585,10 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     updateShadows();
     const now = performance.now();
     updateRecoils(now);
+    for (const instance of instances.values()) if (instance.pop) applyScale(instance, now);
+    updateAim(now);
+    updatePulse(now);
+    tierFx.tick(now, true);
     shots.setVisible(true);
     shots.update(now);
     // Parlama: isikli seritler, kaide halkalari ve vuruslar (1'den parlaklar) yayiliyor.
@@ -1447,6 +1619,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     shots.dispose();
     for (const instance of instances.values()) removeInstance(instance);
     instances.clear();
+    tierFx.dispose();
     plinths.dispose();
     removeRocks();
     bloom?.dispose();

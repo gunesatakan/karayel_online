@@ -33,6 +33,8 @@ import {
   standeeCenterHeight,
   towerModelPath,
   towerModelScale,
+  towerLevelGrowth,
+  upgradePopFactor,
   yawFromFacing
 } from "../src/render3d/tower-math.ts";
 import { EDGE_SLOPE, createZoneHeight, edgeSlopeHeight } from "../src/render3d/terrain.ts";
@@ -59,6 +61,33 @@ test("model govdesi 2D govdenin capina oturuyor; 2x2 kulede kok olcegi zaten yay
     const scale = towerModelScale(bodySize, span);
     assert.ok(Math.abs(MODEL_BODY_DIAMETER_CELLS * span * scale - bodySize) < 1e-9);
   }
+});
+
+test("kule seviyeyle buyuyor: her yukseltmede biraz, kademe atlayinca belirgin; 10'da hucreye sigiyor", () => {
+  let previous = 0;
+  for (let level = 1; level <= 10; level += 1) {
+    const growth = towerLevelGrowth(level);
+    assert.ok(growth > previous, `seviye ${level} bir oncekinden buyuk`);
+    previous = growth;
+  }
+  const step = (from, to) => towerLevelGrowth(to) - towerLevelGrowth(from);
+  assert.ok(step(4, 5) > step(3, 4) * 2, "kademe 2'ye sicrama");
+  assert.ok(step(9, 10) > step(8, 9) * 2, "kademe 3'e sicrama");
+  assert.ok(towerLevelGrowth(10) / towerLevelGrowth(1) > 1.5);
+  // Govde hucrenin 0,8'i: 10. seviyede model hucreden tasmiyor.
+  assert.ok(towerLevelGrowth(10) * 0.8 <= 1);
+  assert.equal(towerLevelGrowth(14), towerLevelGrowth(10));
+});
+
+test("yukseltme pop'u kucukten basliyor, asiyor ve tam olcekte bitiyor", () => {
+  for (const big of [false, true]) {
+    assert.ok(upgradePopFactor(0, big) < 1);
+    const peak = Math.max(...Array.from({ length: 101 }, (_, index) => upgradePopFactor(index / 100, big)));
+    assert.ok(peak > 1 && peak < 1.2);
+    assert.ok(Math.abs(upgradePopFactor(0.999, big) - 1) < 0.01);
+    assert.equal(upgradePopFactor(1, big), 1);
+  }
+  assert.ok(upgradePopFactor(0, true) < upgradePopFactor(0, false), "kademe atlayisi daha derin");
 });
 
 test("kenar rayi hucre boyunca, dikeyde 90 derece donuk", () => {

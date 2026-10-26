@@ -11098,12 +11098,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       if (EDGE_MODEL_IDS.has(tower.definitionId)) {
         const edge = edgeModelTransform(cellSize, TOWER_VISUAL_SCALE, tower.orientation);
-        inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, x: tower.x, y: tower.y, scale: edge.scale, fixedYaw: edge.yaw });
+        inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, scale: edge.scale, fixedYaw: edge.yaw });
         continue;
       }
       const span = getTowerGridSpan(tower.definitionId);
       const bodySize = getTowerBodySize(tower.definitionId, cellSize * span);
-      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span) });
+      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span) });
     }
     return inputs;
   }
