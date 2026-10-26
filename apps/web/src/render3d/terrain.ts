@@ -7,8 +7,7 @@
  *   gercekci degil: tepe karelerinin her biri ayri, yukselmis bir blok
  *   (`getZoneLayout`); cukur kareleri duz, siyah ve kirmizi kenarli (karo
  *   dokusunda). Dusmanlar bloklarin ustunden geciyor (`createZoneHeight`).
- * - Arenanin sag ve sol disinda kayalik yamaclar. Ust ve alt acik: dusmanlar
- *   ustten giriyor, nexus altta.
+ * - Arenanin cevresi bos: tahta uzayda suzuluyor (target-look).
  *
  * Saf hesap: three.js yok, node testleri dogrudan okuyor.
  */
@@ -30,9 +29,6 @@ export type TerrainInput = {
 export const ZONE_BLOCK_CELLS = { min: 0.5, max: 0.75 } as const;
 /** Blogun disina yumusak rampa (hucre): dusman bloga cikarken sicramiyor. */
 export const ZONE_BLOCK_RAMP_CELLS = 0.15;
-/** Kenar yamaci: egim (yukselis / uzaklik) ve en yuksek nokta (hucre). Egim 0,45 ~ 24 derece: 25 derecenin ustundeki kamera arenanin kenarini yamacin arkasinda kaybetmiyor. */
-export const EDGE_SLOPE = 0.45;
-export const EDGE_MAX_CELLS = 3.2;
 
 /** Tekrarlanabilir deger gurultusu (0..1), iki oktav. */
 export function terrainNoise(x: number, z: number) {
@@ -116,20 +112,6 @@ export function createZoneHeight(input: TerrainInput) {
     }
     return height;
   };
-}
-
-/**
- * Arenanin sag ve sol disindaki yamac: kenarda 0, disariya dogru `EDGE_SLOPE`
- * egimle yukseliyor, `EDGE_MAX_CELLS`te tepeleniyor; ustu kayalik.
- */
-export function edgeSlopeHeight(x: number, z: number, arena: { left: number; right: number }, cellSize: number) {
-  const out = x < arena.left ? arena.left - x : x > arena.right ? x - arena.right : 0;
-  if (out <= 0) return 0;
-  const crest = EDGE_MAX_CELLS * cellSize;
-  const rise = Math.min(crest, out * EDGE_SLOPE);
-  const rough = terrainNoise(x / (cellSize * 0.8), z / (cellSize * 0.8));
-  // Kayaliklar kenardan biraz uzakta basliyor: arenanin siniri temiz kalsin.
-  return rise * (0.75 + 0.5 * rough) * smoothstep(0, cellSize * 0.6, out);
 }
 
 /**

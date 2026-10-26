@@ -1,10 +1,9 @@
 /**
  * Egik 3D gorunumun hedef gorunusu (Endless Defense benzeri, 2026-10-26).
  *
- * - Isik: aydinlik gok/ortam isigi, yumusak sicak gunes, hafif kenar isigi;
- *   tahtanin otesi acik mavi-gri pus.
+ * - Isik: aydinlik gok/ortam isigi, yumusak sicak gunes, hafif kenar isigi.
+ * - Cevre: dekor yok; tahta yildizli uzayda suzuluyor (kalin govde, yildizlar).
  * - Zemin: koyu karolar ve ince acik cizgiler (dunya izgarasiyla birebir).
- * - Cerceve: arenanin yanlarinda koseli, duz golgeli kayalar.
  * - Kule kaidesi: her kulenin altinda ayni koyu kare kaide ve kulenin
  *   kimlik renginde parlayan halka (modelin `accent` ekstrasi).
  * - Yasak bolgeler: tepe karelerinde ayri ayri yukselmis bloklar, cukur
@@ -31,10 +30,8 @@ export const TARGET_LIGHT = {
   sunIntensity: 2.8,
   rim: 0x9db8e6,
   rimIntensity: 0.9,
-  /** Tahtanin otesindeki pus ve bos alanin rengi. */
-  haze: 0x9fb3c6,
-  /** Kayalik ucurumun dibi: pusla birlesen orta ton. */
-  chasm: 0x5a6778,
+  /** Tahtanin cevresi: simsiyah uzay (koyu lacivert ton esleme ve parlamadan gecince belirgin laciverte aciliyordu). */
+  space: 0x000000,
   bloomStrength: 0.5,
   bloomRadius: 0.35,
   bloomThreshold: 1.05,
@@ -100,7 +97,8 @@ export function createTileBoard(input: { cols: number; rows: number; cellSize: n
         context.fillStyle = "#14161b";
         context.fillRect(x, y, tile, tile);
         radius(x + 3 * k, y + 3 * k, tile - 6 * k, tile - 6 * k, 7 * k);
-        context.fillStyle = "#1e222a";
+        // Satranc tahtasi gibi iki ton (cok hafif).
+        context.fillStyle = (row + col) % 2 === 0 ? "#1e222a" : "#242934";
         context.fill();
         radius(x + 8 * k, y + 8 * k, tile - 16 * k, tile - 16 * k, 5 * k);
         context.lineWidth = 2 * k;
@@ -120,7 +118,7 @@ export function createTileBoard(input: { cols: number; rows: number; cellSize: n
   return { texture, uv: (x, z) => [(x - left) / width, 1 - (z - top) / height] };
 }
 
-/** Tohumlu, tekrarlanabilir rastgelelik (her bolumde ayni kaya dizilimi). */
+/** Tohumlu, tekrarlanabilir rastgelelik (her acilista ayni yildiz dizilimi). */
 function seeded(seed: number) {
   let state = seed >>> 0 || 1;
   return () => {
@@ -133,63 +131,76 @@ function seeded(seed: number) {
 }
 
 /**
- * Arenanin sag ve solunda koseli kayalar (dusuk poligon, duz golge). Ust ve
- * alt kenarda dusmanlarin giris-cikisi acik: orada yalnizca uzakta, puslu kayalar.
- * `ground` yamacin yuksekligi; kayalar ona gomulu oturuyor.
+ * Uzay: tahtanin cevresi bos, yildizli karanlik. Yildizlar kameranin hedefi
+ * cevresinde buyuk bir kurede (her yonde, tahtanin altinda da), sabit piksel
+ * boyunda, parlama esiginin altinda. Parlakligi ve rengi tekrarlanabilir.
  */
-export function createRockFrame(input: { left: number; right: number; top: number; bottom: number; cellSize: number; seed: number; ground: (x: number, z: number) => number }) {
-  const { left, right, top, bottom, cellSize: cell } = input;
-  const random = seeded(input.seed * 7919 + 17);
+export function createStarfield(radius = 6000) {
+  const random = seeded(7);
   const group = new THREE.Group();
-  const shapes = [0, 1, 2, 3].map((variant) => {
-    const geometry = new THREE.IcosahedronGeometry(1, variant === 3 ? 1 : 0);
-    const position = geometry.getAttribute("position");
-    const shake = seeded(variant * 131 + 7);
-    // Koseleri birlikte oynat (ayni konumdaki koseler ayni kayiyor): kirik ama kapali kaya.
-    const moved = new Map<string, [number, number, number]>();
-    for (let i = 0; i < position.count; i += 1) {
-      const key = `${position.getX(i).toFixed(3)},${position.getY(i).toFixed(3)},${position.getZ(i).toFixed(3)}`;
-      let offset = moved.get(key);
-      if (!offset) {
-        offset = [(shake() - 0.5) * 0.35, (shake() - 0.5) * 0.3, (shake() - 0.5) * 0.35];
-        moved.set(key, offset);
-      }
-      position.setXYZ(i, position.getX(i) + offset[0], position.getY(i) * 0.78 + offset[1], position.getZ(i) + offset[2]);
+  const geometries: THREE.BufferGeometry[] = [];
+  const materials: THREE.Material[] = [];
+  // Cok sayida soluk kucuk yildiz, az sayida parlak iri yildiz.
+  for (const [count, size, dim] of [[1400, 1.4, 0.55], [140, 2.4, 1]] as const) {
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let index = 0; index < count; index += 1) {
+      const u = random() * 2 - 1;
+      const theta = random() * Math.PI * 2;
+      const ring = Math.sqrt(1 - u * u);
+      positions.set([Math.cos(theta) * ring * radius, u * radius, Math.sin(theta) * ring * radius], index * 3);
+      const light = dim * (0.35 + random() * 0.6);
+      const blue = random() < 0.35 ? 1 : 0.86;
+      colors.set([light * (blue < 1 ? 1 : 0.8), light * (blue < 1 ? 0.96 : 0.88), light], index * 3);
     }
-    geometry.computeVertexNormals();
-    return geometry;
-  });
-  const materials = [0x56606e, 0x4b5462, 0x636d7b].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, flatShading: true }));
-  const place = (x: number, z: number, size: number) => {
-    const rock = new THREE.Mesh(shapes[Math.floor(random() * shapes.length)], materials[Math.floor(random() * materials.length)]);
-    rock.scale.set(size * (0.8 + random() * 0.5), size * (0.55 + random() * 0.6), size * (0.8 + random() * 0.5));
-    rock.rotation.set((random() - 0.5) * 0.5, random() * Math.PI * 2, (random() - 0.5) * 0.5);
-    rock.position.set(x, input.ground(x, z) + size * 0.15, z);
-    rock.castShadow = rock.receiveShadow = true;
-    group.add(rock);
-  };
-  // Yan kayaliklar: kenara yakin kucuk, disariya dogru buyuk ve yuksek.
-  for (const side of [-1, 1]) {
-    const edge = side < 0 ? left : right;
-    for (let z = top - cell * 10; z < bottom + cell * 10; z += cell * (1.2 + random() * 0.8)) {
-      const near = cell * (1.1 + random() * 1.2);
-      if (random() < 0.7) place(edge + side * near, z + (random() - 0.5) * cell, cell * (0.3 + random() * 0.4));
-      const far = cell * (3 + random() * 3);
-      place(edge + side * far, z + (random() - 0.5) * cell * 1.5, cell * (0.7 + random() * 0.9));
-      if (random() < 0.35) place(edge + side * cell * (6.5 + random() * 3), z, cell * (1.2 + random() * 1.1));
-    }
-  }
-  // Ust ve alt: yalnizca acik yolun otesinde, pusa karisan buyuk kayalar.
-  for (const end of [top - cell * 6, bottom + cell * 6]) {
-    for (let x = left - cell * 6; x < right + cell * 6; x += cell * (1.6 + random() * 1.2)) {
-      place(x, end + (random() - 0.5) * cell * 4, cell * (0.9 + random() * 1.1));
-    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    const material = new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, depthWrite: false, fog: false });
+    const points = new THREE.Points(geometry, material);
+    points.frustumCulled = false;
+    group.add(points);
+    geometries.push(geometry);
+    materials.push(material);
   }
   return {
     group,
     dispose() {
-      shapes.forEach((geometry) => geometry.dispose());
+      geometries.forEach((geometry) => geometry.dispose());
       materials.forEach((material) => material.dispose());
+    }
+  };
+}
+
+/**
+ * Tahtanin kalin govdesi: karolarin altinda koyu, ince acik kenarli bir levha;
+ * uzayda suzulen bir satranc tahtasi gibi okunuyor. Olcu dunya biriminde.
+ */
+export function createBoardSlab(input: { left: number; top: number; width: number; depth: number; cellSize: number }) {
+  const { left, top, width, depth, cellSize } = input;
+  const thickness = cellSize * 0.45;
+  const lip = cellSize * 0.06;
+  const group = new THREE.Group();
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x151a23, roughness: 0.6, metalness: 0.35 });
+  const lipMaterial = new THREE.MeshStandardMaterial({ color: 0x2b3444, roughness: 0.5, metalness: 0.3 });
+  const body = new THREE.BoxGeometry(width, thickness, depth);
+  const edge = new THREE.BoxGeometry(width + lip, lip, depth + lip);
+  const centerX = left + width / 2;
+  const centerZ = top + depth / 2;
+  // Ust yuzu karolarin hemen altinda (zemin -0,4'te).
+  const slab = new THREE.Mesh(body, bodyMaterial);
+  slab.position.set(centerX, -0.6 - lip - thickness / 2, centerZ);
+  const trim = new THREE.Mesh(edge, lipMaterial);
+  trim.position.set(centerX, -0.6 - lip / 2, centerZ);
+  slab.receiveShadow = trim.receiveShadow = true;
+  group.add(slab, trim);
+  return {
+    group,
+    dispose() {
+      body.dispose();
+      edge.dispose();
+      bodyMaterial.dispose();
+      lipMaterial.dispose();
     }
   };
 }

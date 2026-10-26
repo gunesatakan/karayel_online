@@ -37,7 +37,7 @@ import {
   upgradePopFactor,
   yawFromFacing
 } from "../src/render3d/tower-math.ts";
-import { EDGE_SLOPE, ZONE_BLOCK_CELLS, createZoneHeight, edgeSlopeHeight, getZoneLayout } from "../src/render3d/terrain.ts";
+import { ZONE_BLOCK_CELLS, createZoneHeight, getZoneLayout } from "../src/render3d/terrain.ts";
 import { getBuildZoneReliefs } from "@karayel/shared";
 import { SHOT_TOWER_IDS, getShotRecipe, shotTowerId } from "../src/render3d/shot-recipes.ts";
 import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START, createQualityGovernor, stepQualityGovernor } from "../src/render3d/resolution.ts";
@@ -297,17 +297,6 @@ test("arazi: tepe kareleri ayri yukselmis bloklar, cukurlar duz; bolge disi dumd
   const near = height(left - 34 * 0.03, z);
   assert.ok(near > 0 && near < hill.height, `${near}`);
   if (!input.zoneCells.includes(hill.index - 1)) assert.equal(height(left - 34 * 0.3, z), 0);
-});
-
-test("arazi: yamac yalnizca arenanin sag ve solunda, egimi sinirli", () => {
-  const arena = { left: 0, right: 408 };
-  assert.equal(edgeSlopeHeight(200, 300, arena, 34), 0);
-  assert.equal(edgeSlopeHeight(0, -500, arena, 34), 0);
-  for (const out of [10, 40, 80, 150, 300]) {
-    const h = edgeSlopeHeight(-out, 300, arena, 34);
-    assert.ok(h > 0 && h <= out * EDGE_SLOPE * 1.25 + 1e-9, `${out}: ${h}`);
-    assert.ok(edgeSlopeHeight(408 + out, 300, arena, 34) > 0);
-  }
 });
 
 test("modeli olan her kulenin uc kademesi de var; rig dugumleri ve kademe bilgisi tasiniyor", () => {
