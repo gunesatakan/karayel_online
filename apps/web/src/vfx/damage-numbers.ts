@@ -255,6 +255,11 @@ export class DamageNumberPool {
   }
 
   /** Her kare: yukselme, kayma, sonme ve kritik popu. */
+  /** Ekrandaki sayilar: yazi ve dogdugu nokta (egik 3D gorunum onlari dik tabela olarak ciziyor). */
+  forEachActive(visit: (text: Phaser.GameObjects.Text, bornX: number, bornY: number) => void) {
+    for (const slot of this.slots) if (slot.active) visit(slot.text, slot.x, slot.y);
+  }
+
   update(now: number) {
     for (const slot of this.slots) {
       if (!slot.active) {

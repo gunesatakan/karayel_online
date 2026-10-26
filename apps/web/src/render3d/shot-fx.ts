@@ -1012,10 +1012,10 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
       const heat = recipe.heat;
       const slim = recipe.shape === "tracer" || recipe.shape === "lance";
       const eye = recipe.shape === "gaze";
-      const halo = c * (slim ? 0.26 : eye ? 0.36 : 0.4 + recipe.tier * 0.06) * pulse;
-      light.spawn({ x: flight.x, y: flight.y, z: flight.z, vx: TMP_DIR.x, vy: TMP_DIR.y, vz: TMP_DIR.z, color: recipe.color, heat: eye ? heat.halo * 1.3 : heat.halo, size: halo, lifeMs: 0, shape: eye ? SHAPE.ring : SHAPE.glow, stretch: slim ? 1.8 : 0, alpha: 0.8 });
-      if (!eye) light.spawn({ x: flight.x, y: flight.y, z: flight.z, vx: TMP_DIR.x, vy: TMP_DIR.y, vz: TMP_DIR.z, color: recipe.core, heat: heat.core * 0.8, size: c * (slim ? 0.12 : 0.15 + recipe.tier * 0.02) * pulse, lifeMs: 0, shape: SHAPE.glow, stretch: slim ? 1.6 : 0, alpha: 0.95 });
-      if (recipe.tier >= 3) light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.accent, heat: heat.halo, size: c * (eye ? 0.5 : 0.62), lifeMs: 0, shape: eye ? SHAPE.ring : SHAPE.glow, alpha: eye ? 0.6 : 0.3 });
+      const halo = c * (slim ? 0.15 : eye ? 0.24 : 0.24 + recipe.tier * 0.03) * pulse;
+      light.spawn({ x: flight.x, y: flight.y, z: flight.z, vx: TMP_DIR.x, vy: TMP_DIR.y, vz: TMP_DIR.z, color: recipe.color, heat: eye ? heat.halo * 1.3 : heat.halo, size: halo, lifeMs: 0, shape: eye ? SHAPE.ring : SHAPE.glow, stretch: slim ? 1.3 : 0, alpha: 0.8 });
+      if (!eye) light.spawn({ x: flight.x, y: flight.y, z: flight.z, vx: TMP_DIR.x, vy: TMP_DIR.y, vz: TMP_DIR.z, color: recipe.core, heat: heat.core * 0.8, size: c * (slim ? 0.08 : 0.1 + recipe.tier * 0.015) * pulse, lifeMs: 0, shape: SHAPE.glow, stretch: slim ? 1.2 : 0, alpha: 0.95 });
+      if (recipe.tier >= 3) light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.accent, heat: heat.halo, size: c * (eye ? 0.32 : 0.36), lifeMs: 0, shape: eye ? SHAPE.ring : SHAPE.glow, alpha: eye ? 0.6 : 0.3 });
       // Ucube: govdeden firlayan kisa, kirik elektrik dilleri (her kare degil).
       if (recipe.shape === "arc" && rand() < 0.25 + recipe.tier * 0.1) {
         const a = rand() * Math.PI * 2;

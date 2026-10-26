@@ -18,6 +18,9 @@ import {
   angledGroundToScreen,
   angledScreenToGround,
   EDGE_MODEL_IDS,
+  ENEMY_MODEL_KEYS,
+  enemyModelPath,
+  enemyModelYaw,
   BUILDING_MODEL_KINDS,
   MINE_KINDS,
   OPERATOR_MODEL_PATHS,
@@ -372,7 +375,7 @@ test("ikmal binalarinin iki kademesi ve duvar modeli var; arazi dokulari 2048 px
   }
 });
 
-test("operator bedenleri: iki karakterin modeli var, kollari donus 0'da kuzeye bakiyor", () => {
+test("operator bedenleri: iki karakterin modeli var, yuzu donus 0'da kuzeye bakiyor", () => {
   assert.deepEqual(Object.keys(OPERATOR_MODEL_PATHS).sort(), ["warrior", "zeynep"]);
   for (const [character, path] of Object.entries(OPERATOR_MODEL_PATHS)) {
     assert.ok(path.startsWith(TOWER_MODELS_DIR), path);
@@ -384,10 +387,37 @@ test("operator bedenleri: iki karakterin modeli var, kollari donus 0'da kuzeye b
     assert.ok(json.images.every((image) => image.mimeType === "image/jpeg"), `${path}: JPEG`);
     assert.ok(bytes.length < 800 * 1024, `${path}: ${bytes.length} bayt`);
   }
-  // Kollar modelde -X'te; donus 0'da (pi + kayma) Y donusu -X'i kuzeye (-z) cevirmeli.
+  // Yuz (vizor, goz) modelde +X'te; donus 0'da (pi + kayma) Y donusu +X'i kuzeye (-z) cevirmeli.
   const yaw = Math.PI + OPERATOR_MODEL_YAW_OFFSET;
-  const forward = [-Math.cos(yaw), Math.sin(yaw)]; // (x cos + z sin, -x sin + z cos), x = -1
+  const forward = [Math.cos(yaw), -Math.sin(yaw)]; // (x cos + z sin, -x sin + z cos), x = 1
   assert.ok(Math.abs(forward[0]) < 1e-9 && Math.abs(forward[1] + 1) < 1e-9, `${forward}`);
+});
+
+test("dusman modelleri: her irkin her turu icin oyun dokusuyla ayni adda model, yuzu yurudugu yone bakiyor", () => {
+  assert.equal(ENEMY_MODEL_KEYS.size, 36);
+  for (const key of ENEMY_MODEL_KEYS) {
+    // Anahtar Phaser'in doku anahtari: ayni adda 2D resim var.
+    assert.ok(existsSync(new URL(`images/enemies/${key}.png`, publicDir)), `${key}: 2D resim yok`);
+    const path = enemyModelPath(key);
+    assert.ok(path.startsWith(TOWER_MODELS_DIR), path);
+    const url = new URL(path, publicDir);
+    assert.ok(existsSync(url), `${path} eksik`);
+    const bytes = readFileSync(url);
+    const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString("utf8"));
+    assert.ok(json.nodes.some((node) => node.name === key && node.extras?.kind === "enemy"), `${path}: kok dugum`);
+    assert.ok(json.images.every((image) => image.mimeType === "image/jpeg"), `${path}: JPEG`);
+    assert.ok(bytes.length < 400 * 1024, `${path}: ${bytes.length} bayt`);
+  }
+  assert.equal(enemyModelPath("melis-creepy"), undefined);
+  // Yuz modelde +X'te. Doguya yuruyen (yon (1, 0), resim donusu -90 derece) +X'e, guneye yuruyen +Z'ye bakiyor.
+  const forward = (rotation) => {
+    const yaw = enemyModelYaw(rotation);
+    return [Math.cos(yaw), -Math.sin(yaw)];
+  };
+  const east = forward(Math.atan2(0, 1) - Math.PI / 2);
+  const south = forward(Math.atan2(1, 0) - Math.PI / 2);
+  assert.ok(Math.abs(east[0] - 1) < 1e-9 && Math.abs(east[1]) < 1e-9, `${east}`);
+  assert.ok(Math.abs(south[0]) < 1e-9 && Math.abs(south[1] - 1) < 1e-9, `${south}`);
 });
 
 test("3D vuruslar: modeli olan her saldiri kulesinin kendi tarifi var; kademe yeni katman ekliyor", () => {

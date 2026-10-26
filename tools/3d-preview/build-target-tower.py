@@ -38,15 +38,17 @@ parser.add_argument('--tris', type=int, default=6000)
 parser.add_argument('--bake', type=int, default=1024)
 parser.add_argument('--size', type=int, default=512)
 parser.add_argument('--clusters', type=int, default=7)
+parser.add_argument('--palette', choices=['shared', 'native'], default='shared', help='shared: snap to the tower palette; native: keep the concept colours as flat blocks (enemies)')
+parser.add_argument('--glow-min', type=float, default=.45, help='glow mask: minimum sRGB brightness of a saturated pixel (raise it for bright-bodied factions, e.g. gold)')
 parser.add_argument('--front', type=float, default=None, help='override the measured barrel direction (Blender XY degrees)')
 parser.add_argument('--split', type=float, default=None, help='override the measured neck height (0-1 of the model height)')
-parser.add_argument('--structure', choices=['building', 'wall'], default=None, help='supply building or wall: no turret rig, old structure contract')
+parser.add_argument('--structure', choices=['building', 'wall', 'unit'], default=None, help='supply building, wall or unit (operator body, worker drone): no turret rig, old structure contract')
 args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
 
 base = Path(__file__).resolve().parent
 tower_id = '-'.join(args.key.split('-')[:2])
 tier = int(args.key[-1]) if args.key[-1].isdigit() else 1
-zentax = tower_id.startswith('zeynep-')
+zentax = tower_id.startswith('zeynep-') or args.key == 'operator-zeynep'
 span = 2 if tower_id in ('warrior-6', 'zeynep-7') else 1
 edge = tower_id == 'zeynep-8'
 static = tower_id in ('warrior-2', 'warrior-3', 'zeynep-2', 'zeynep-3', 'zeynep-7', 'zeynep-8')
@@ -165,7 +167,9 @@ accent = from_hex(args.accent)
 srgb = to_srgb(albedo)
 top, bottom = srgb.max(-1), srgb.min(-1)
 saturation = (top - bottom) / np.maximum(top, 1e-4)
-glow = mask & (saturation > .45) & (top > .45)
+glow = mask & (saturation > .45) & (top > args.glow_min)
+lit = mask & (saturation > .45)
+report['saturatedTop'] = [round(float(v), 3) for v in np.percentile(top[lit], [50, 75, 90, 97])] if lit.any() else []
 body = mask & ~glow
 lum = albedo @ np.array([.2126, .7152, .0722], dtype=np.float32)
 occlusion = np.clip(1 - .7 * (1 - ao), .3, 1)
@@ -182,20 +186,51 @@ label_map = np.argmin(np.abs(feature[..., 0][..., None] - centres[:, 0][None, No
 palette_lum = {role: float(colour @ np.array([.2126, .7152, .0722])) for role, colour in palette.items()}
 new_albedo = albedo.copy(); rough2 = np.full((S, S), .6, np.float32); metal2 = np.full((S, S), .2, np.float32)
 roles = []
-for k in range(args.clusters):
-    region = body & (label_map == k)
-    if not region.any(): continue
-    median = float(np.median(lum1[region]))
-    # Nearest palette tone in log luminance: the concepts were painted in this palette.
-    role = min(palette_lum, key=lambda r: abs(math.log(palette_lum[r] + .01) - math.log(median + .01)))
-    shade = np.power(np.clip(lum1[region] / median, .25, 4), .12)
-    new_albedo[region] = palette[role] * shade[:, None]
-    rough2[region], metal2[region] = finish[role]
-    roles.append(dict(share=round(float(region.sum() / body.sum()), 3), median=round(median, 3), role=role))
+if args.palette == 'native':
+    # Kendi renkleri (dusmanlar): renk uzayinda k-means, her kume kendi ortalama renginde duz blok.
+    colour = np.log(albedo / occlusion[..., None] + .01)
+    samples_c = colour[body]
+    pick_c = samples_c[rng.choice(len(samples_c), min(len(samples_c), 120000), replace=False)]
+    centres_c = pick_c[rng.choice(len(pick_c), args.clusters, replace=False)]
+    for _ in range(25):
+        labels_c = np.argmin(((pick_c[:, None, :] - centres_c[None]) ** 2).sum(-1), 1)
+        centres_c = np.array([pick_c[labels_c == k].mean(0) if np.any(labels_c == k) else centres_c[k] for k in range(args.clusters)])
+    flat = colour.reshape(-1, 3)
+    label_c = np.empty(flat.shape[0], np.int32)
+    for start in range(0, flat.shape[0], 262144):
+        chunk = flat[start:start + 262144]
+        label_c[start:start + 262144] = np.argmin(((chunk[:, None, :] - centres_c[None]) ** 2).sum(-1), 1)
+    label_c = label_c.reshape(S, S)
+    for k in range(args.clusters):
+        region = body & (label_c == k)
+        if not region.any(): continue
+        tone = np.exp(centres_c[k]) - .01
+        lum_k = float(tone @ np.array([.2126, .7152, .0722]))
+        shade = np.power(np.clip(lum1[region] / max(lum_k, 1e-4), .25, 4), .12)
+        new_albedo[region] = np.clip(tone, 0, 1) * shade[:, None]
+        rough2[region], metal2[region] = (.62, .22) if lum_k < .12 else (.5, .28)
+        roles.append(dict(share=round(float(region.sum() / body.sum()), 3), tone=[round(float(v), 3) for v in to_srgb(tone)]))
+else:
+    for k in range(args.clusters):
+        region = body & (label_map == k)
+        if not region.any(): continue
+        median = float(np.median(lum1[region]))
+        # Nearest palette tone in log luminance: the concepts were painted in this palette.
+        role = min(palette_lum, key=lambda r: abs(math.log(palette_lum[r] + .01) - math.log(median + .01)))
+        shade = np.power(np.clip(lum1[region] / median, .25, 4), .12)
+        new_albedo[region] = palette[role] * shade[:, None]
+        rough2[region], metal2[region] = finish[role]
+        roles.append(dict(share=round(float(region.sum() / body.sum()), 3), median=round(median, 3), role=role))
 report['roles'] = roles
 new_albedo = np.where(body[..., None], new_albedo * (.72 + .28 * np.clip(ao, 0, 1))[..., None], new_albedo)
-new_albedo[glow] = accent * .6
-emissive = np.where(glow[..., None], accent / accent.max(), 0).astype(np.float32)
+if args.palette == 'native':
+    # Isiyan yerler kendi renginde (bombacinin turuncu cekirdegi, grubun vurgu rengi).
+    glow_tone = albedo / np.maximum(albedo.max(-1, keepdims=True), 1e-4)
+    new_albedo[glow] = albedo[glow] * .6
+    emissive = np.where(glow[..., None], glow_tone, 0).astype(np.float32)
+else:
+    new_albedo[glow] = accent * .6
+    emissive = np.where(glow[..., None], accent / accent.max(), 0).astype(np.float32)
 for axis in (0, 1):
     emissive = (emissive + np.roll(emissive, 1, axis) + np.roll(emissive, -1, axis)) / 3
 emissive = np.clip(emissive * 1.6, 0, 1)
@@ -262,6 +297,9 @@ if args.structure:
     zmin = points[:, 2].min()
     foot = points[points[:, 2] < zmin + .12 * (points[:, 2].max() - zmin)]
     centre_xy = foot[:, :2].mean(0) if len(foot) > 20 else points[:, :2].mean(0)
+    if args.structure == 'unit':
+        # Suzulen birimin tabani yok: kutunun ortasi.
+        centre_xy = (points[:, :2].min(0) + points[:, :2].max(0)) / 2
     low.data.transform(Matrix.Translation((-centre_xy[0], -centre_xy[1], -zmin)))
     if args.structure == 'wall':
         points = np.array([v.co[:] for v in low.data.vertices])
@@ -280,6 +318,16 @@ if args.structure:
     root['accent'] = '#' + args.accent.lstrip('#')
     if args.structure == 'wall':
         root['kind'] = 'wall'; root['edgeCells'] = 1; root['footprintCells'] = 0
+    elif args.structure == 'unit':
+        # Ana karakter bedeni ya da isci dronu (build-structure-lods.py ile ayni ekstralar).
+        if args.key.startswith('operator-'):
+            root['kind'] = 'operator'; root['character'] = args.key.split('-', 1)[1]
+        elif args.key.startswith('enemy-'):
+            root['kind'] = 'enemy'
+        else:
+            root['kind'] = 'worker'
+        points = np.array([v.co[:] for v in low.data.vertices])
+        root['height'] = round(float(np.ptp(points[:, 2])), 4)
     else:
         root['kind'] = args.key.split('-')[1]; root['tier'] = tier; root['footprintCells'] = 1
     output.parent.mkdir(parents=True, exist_ok=True)

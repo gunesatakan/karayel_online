@@ -1,27 +1,27 @@
 {
-  "note": "Game copies of the Tripo operators models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
+  "note": "Game copies of the Tripo operators models (target style: tools/3d-preview/build-target-tower.py --structure unit). Not included in the itch.io package.",
   "targetTriangles": 8000,
   "textureSize": 512,
   "models": [
     {
       "key": "operator-zeynep",
-      "bytes": 548636,
-      "triangles": 7999,
-      "height": 0.5705,
+      "bytes": 391972,
+      "triangles": 6000,
+      "height": 0.7444,
+      "sha256": "4df60dc93d208db6e91989490867d6ee5bf38ffd11cf8a0cade6a0cac8bafe90",
       "leveledDegrees": 0,
       "turnedDegrees": 0,
-      "sha256": "9a2bb150c150b230ed6d656f96b4976278638f9df386979ba6ab1c97e11159ea",
-      "source": "Tripo H3.1 / art-direction/operators/zeynep.png"
+      "source": "Tripo H3.0 / asset-work/target-style/units/operator-zeynep-concept.png (target style, build-target-tower.py --structure unit)"
     },
     {
       "key": "operator-warrior",
-      "bytes": 564992,
-      "triangles": 7999,
-      "height": 0.5433,
+      "bytes": 366924,
+      "triangles": 5999,
+      "height": 0.5467,
+      "sha256": "a405c19a6129f98db2af565546628b94b77e35a7fbf4d2e31d28f67672ff02ea",
       "leveledDegrees": 0,
       "turnedDegrees": 0,
-      "sha256": "7ca64a019de26ed8c9faa8eeae05a5898c30f34b2d69ef01a36daf1df110eb43",
-      "source": "Tripo H3.1 / art-direction/operators/warrior.png"
+      "source": "Tripo H3.0 / asset-work/target-style/units/operator-warrior-concept.png (target style, build-target-tower.py --structure unit)"
     }
   ]
 }

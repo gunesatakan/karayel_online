@@ -18,6 +18,8 @@ const game = new Phaser.Game({
   parent: "game",
   width: initialCanvas.width,
   height: initialCanvas.height,
+  // Saydam tuval: egik 3D gorunumde Phaser yalnizca ekran panellerini 3D'nin ustune ciziyor.
+  transparent: true,
   render: {
     antialias: true,
     antialiasGL: true,

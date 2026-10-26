@@ -473,8 +473,8 @@ import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../teleme
 import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
-import { EDGE_MODEL_IDS, MINE_KINDS, STANDEE_SIZE_SCALE, WORKER_SIZE_SCALE, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
-import type { Enemy3dInput, EnemyBar, Mine3dInput, Operator3dInput, Tower3dInput, TowerLayer, Worker3dInput } from "../render3d/tower-layer";
+import { EDGE_MODEL_IDS, ENEMY_MODEL_SIZE_SCALE, MINE_KINDS, OPERATOR_SIZE_SCALE, STANDEE_SIZE_SCALE, WORKER_SIZE_SCALE, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
+import type { Enemy3dInput, EnemyBar, Mine3dInput, Operator3dInput, Tower3dInput, TowerLayer, Upright3dInput, Worker3dInput } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getWaveMusicLevel, getWaveMusicTrackForState, WAVE_MUSIC_TRACKS, WaveMusicPlayer } from "../wave-music";
@@ -874,6 +874,13 @@ const ENEMY_KNOCK_MS = 90;
 const ANGLED_AIR_DEPTH_BANDS: readonly (readonly [number, number])[] = [[10, 11.8], [12.45, 12.55], [13.2, 13.31], [30, 30.5]];
 /** Ucan dusmanin panosu yerdekinden bu kadar hucre yukarida. */
 const ANGLED_AIR_ENEMY_LIFT_CELLS = 0.45;
+/**
+ * Egik 3D gorunumde ekranda dik kalan paneller: bu derinlik ve ustu (performans
+ * dugmesi, ses ayarlari, secili kulenin kaynak paneli, seri afisi) tahtaya
+ * yatirilmiyor; ucuncu kamera onlari saydam Phaser tuvaline, 3D'nin ustune,
+ * 2D'deki yerlerine ciziyor. Tiklama da onlara egimden gecmeden gidiyor.
+ */
+const ANGLED_SCREEN_DEPTH = 60;
 
 /** Cizilecek bir sey tasiyor mu: gorunur ve saydam degil; Graphics'te bos olmayan komut listesi. */
 function hasVisibleContent(object: Phaser.GameObjects.GameObject) {
@@ -1343,6 +1350,10 @@ export class GameScene extends Phaser.Scene {
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   /** Son karedeki isciler (egik 3D gorunum onlari dron modeliyle ciziyor). */
   private droneSnapshots3d: readonly DroneSnapshot[] = [];
+  /** Egik gorunumde 3D modeliyle cizilen isciler (2D besgen ve can cubugu cizilmiyor). */
+  private workers3dShown: ReadonlySet<string> = new Set();
+  /** Dik tabela can cubuklarinin tuvalleri (isci ve operator basina). */
+  private readonly barCanvases = new Map<string, { canvas: HTMLCanvasElement; key: string }>();
   /** Iscinin nabizsiz govde genisligi: 3D dron 2D'deki buyuyup kuculmeyi almiyor. */
   private readonly droneBodyWidths3d = new Map<string, number>();
   /**
@@ -2235,7 +2246,8 @@ export class GameScene extends Phaser.Scene {
       onLowHp: (body) => {
         // Uyari gorsel: kendi bedeninde bir not, takim arkadasinda yalnizca halka.
         if (body.id === this.localSessionId && !this.matchResultShown) this.showNotice(t("scene.body.lowHp"));
-      }
+      },
+      barsIn3d: () => this.towerLayer3d?.getView() === "angled"
     });
     this.shieldDrawn = false;
     this.shieldGesture = undefined;
@@ -10465,7 +10477,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       rendered.base.setVisible(!edgePlaced && !this.towers3dShown.has(tower.id));
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha((tower.status === "Tukenmis" || tower.disabled ? 0.42 : tower.ownerId === this.localSessionId ? 1 : 0.78) * this.getTowerEquipAlpha(tower));
-      rendered.halo.setVisible(!edgePlaced && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled);
+      // Egik 3D gorunumde kule 3D ise seviye kaidenin noktalarinda; 2D kadran yatik kaliyordu.
+      rendered.halo.setVisible(!edgePlaced && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled && !this.isTowerAngled3d(tower.id));
       this.drawTowerHealthBar(rendered.healthBar, tower, bodySize);
       if (tower.id === this.selectedPlacedTowerId) {
         this.drawSelectedTowerResources(tower, discSize);
@@ -10778,6 +10791,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private restorePointerTransform?: () => void;
   /** Egik gorunumun efekt kamerasi: zemin alindiktan sonra mermi ve isinlari ayni tuvale yeniden ciziyor. */
   private airCamera3d?: Phaser.Cameras.Scene2D.Camera;
+  /** Egik gorunumde ekran panellerini (`ANGLED_SCREEN_DEPTH`) en son ciziyor. */
+  private hudCamera3d?: Phaser.Cameras.Scene2D.Camera;
+  /** Dik tabela olan yazilar (cozunurlugu bir kez artiriliyor) ve nesnelerin tabela kimlikleri. */
+  private readonly uprightTexts = new WeakSet<Phaser.GameObjects.Text>();
+  private readonly uprightIds = new WeakMap<Phaser.GameObjects.GameObject, string>();
+  private uprightCount = 0;
   /** Bu karede efekt kamerasinin cizecegi gorunur bir nesne var mi (`prepareAngledFrame`). */
   private angledAirContent = false;
   /** Egik gorunumun iki parmak / fare jestleri (render3d/camera-gestures). */
@@ -10864,18 +10883,25 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
-   * Egik gorunumde Phaser tuvali gorunmez (karesi egik tahtaya doku) ama girdiyi
-   * almaya devam ediyor; Phaser'in kendi isaretci donusumu de egimden geciyor.
-   * Tepeden gorunume ya da 2D'ye donunce ikisi de eski haline.
+   * Egik gorunumde Phaser tuvali saydam ve 3D'nin ustunde: zemin ve efektler
+   * karede 3D'ye doku olarak alinip tuvalden siliniyor, tuvalde yalnizca ekran
+   * panelleri kaliyor. Girdiyi almaya devam ediyor; isaretci donusumu egimden
+   * geciyor (panelin ustundeki nokta haric). Tepeden gorunume ya da 2D'ye donunce eski haline.
    */
   private applyTowerLayerView(view: "top" | "angled") {
     this.towerLayer3d?.setView(view);
-    this.game.canvas.style.opacity = view === "angled" ? "0" : "";
+    this.game.canvas.style.opacity = "";
+    this.game.canvas.style.position = view === "angled" ? "relative" : "";
+    this.game.canvas.style.zIndex = view === "angled" ? "1" : "";
     this.syncBuildZoneReliefVisibility();
     if (view === "angled" && this.towerLayer3d && !this.airCamera3d) {
-      // Ana kameradan sonra cizen ikinci kamera; girdi almiyor (isabet testi ana kamerada).
+      // Ana kameradan sonra cizen ikinci (efektler) ve ucuncu (ekran panelleri) kamera;
+      // girdi almiyorlar (isabet testi ana kamerada).
       this.airCamera3d = this.cameras.add(0, 0, this.cameras.main.width, this.cameras.main.height, false, "air3d");
       this.airCamera3d.inputEnabled = false;
+      this.airCamera3d.on(Phaser.Cameras.Scene2D.Events.POST_RENDER, this.captureAngledAir, this);
+      this.hudCamera3d = this.cameras.add(0, 0, this.cameras.main.width, this.cameras.main.height, false, "hud3d");
+      this.hudCamera3d.inputEnabled = false;
     } else if (view !== "angled" && this.airCamera3d) {
       this.resetAngledFrame();
     }
@@ -10883,6 +10909,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const input = this.game.input as unknown as { transformPointer: (pointer: Phaser.Input.Pointer, pageX: number, pageY: number, wasMove: boolean) => void };
       const original = input.transformPointer;
       input.transformPointer = (pointer, pageX, pageY, wasMove) => {
+        // Ekran panelleri 2D'deki yerinde: ham nokta birinin ustundeyse egimden gecmiyor.
+        original.call(input, pointer, pageX, pageY, wasMove);
+        if (this.isOverAngledScreenPanel(pointer)) return;
         const flat = this.untiltClient(pageX - window.scrollX, pageY - window.scrollY);
         original.call(input, pointer, flat.x + window.scrollX, flat.y + window.scrollY, wasMove);
       };
@@ -10891,6 +10920,17 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.restorePointerTransform();
       this.restorePointerTransform = undefined;
     }
+  }
+
+  /** Ham isaretci egik gorunumdeki bir ekran panelinin (tiklanabilir) ustunde mi. */
+  private isOverAngledScreenPanel(pointer: Phaser.Input.Pointer) {
+    const point = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    for (const child of this.children.list) {
+      const view = child as unknown as { depth?: number; visible?: boolean; input?: { enabled?: boolean }; getBounds?: () => Phaser.Geom.Rectangle };
+      if ((view.depth ?? 0) < ANGLED_SCREEN_DEPTH || view.visible === false || !view.input?.enabled || !view.getBounds) continue;
+      if (view.getBounds().contains(point.x, point.y)) return true;
+    }
+    return false;
   }
 
   /**
@@ -10925,20 +10965,27 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const air = this.airCamera3d;
     if (!layer || !air || layer.getView() !== "angled") return;
     const main = this.cameras.main;
-    air.setViewport(main.x, main.y, main.width, main.height);
-    air.setZoom(main.zoom);
-    air.setOrigin(main.originX, main.originY);
-    air.setRoundPixels(main.roundPixels);
-    air.setScroll(main.scrollX, main.scrollY);
+    const hud = this.hudCamera3d;
+    for (const follower of hud ? [air, hud] : [air]) {
+      follower.setViewport(main.x, main.y, main.width, main.height);
+      follower.setZoom(main.zoom);
+      follower.setOrigin(main.originX, main.originY);
+      follower.setRoundPixels(main.roundPixels);
+      follower.setScroll(main.scrollX, main.scrollY);
+    }
     const mainBit = main.id;
     const airBit = air.id;
-    const both = mainBit | airBit;
+    const hudBit = hud?.id ?? 0;
+    // Uc kameranin her birinden gizli (`cameraFilter` kamerayi disliyor).
+    const both = mainBit | airBit | hudBit;
     // Efekt kamerasinin bu karede cizecegi bir sey var mi: yoksa ikinci kopya hic yapilmiyor.
     let airContent = false;
     for (const child of this.children.list) {
       const depth = (child as unknown as { depth?: number }).depth ?? 0;
-      const isAir = isAngledAirDepth(depth);
-      child.cameraFilter = (child.cameraFilter & ~both) | (isAir ? mainBit : airBit);
+      const screen = depth >= ANGLED_SCREEN_DEPTH;
+      const isAir = !screen && isAngledAirDepth(depth);
+      const drawnBy = screen ? hudBit : isAir ? airBit : mainBit;
+      child.cameraFilter = (child.cameraFilter & ~both) | (both & ~drawnBy);
       if (isAir && !airContent) airContent = hasVisibleContent(child);
     }
     // 3D zemin hazirsa Phaser'in zemin resmi tahtaya girmiyor: tahta yalnizca isik olarak 3D zeminin ustunde.
@@ -10952,7 +10999,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Can cubugu 3D'de panonun ustunde (kameraya donuk); Phaser'daki kopyasi cizilmiyor.
       if (mover.healthBar) mover.healthBar.cameraFilter |= both;
       for (const overhead of [mover.marker, mover.curseMarker, mover.doubtMarker, mover.armorBreakIcon, mover.crown]) {
-        if (overhead) overhead.cameraFilter = (overhead.cameraFilter & ~both) | mainBit;
+        if (overhead) overhead.cameraFilter = (overhead.cameraFilter & ~both) | (both & ~airBit);
       }
       if (!sprite.active || !sprite.visible || sprite.alpha <= 0) continue;
       const frame = sprite.frame;
@@ -10973,6 +11020,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         fill: sprite.tintFill,
         size,
         extraLift: mover.air ? cellSize * ANGLED_AIR_ENEMY_LIFT_CELLS : 0,
+        modelSize: (size / STANDEE_SIZE_SCALE) * ENEMY_MODEL_SIZE_SCALE,
         bar: mover.bar,
         shadowRadius: size * (mover.air ? 0.26 : 0.34),
         shadowAlpha: mover.air ? 0.22 : 0.38
@@ -10985,6 +11033,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
     }
     this.angledAirContent = airContent;
+    // Efekt yoksa ikinci kamera hic cizmiyor (kopya da yok).
+    air.setVisible(airContent);
     layer.syncEnemies(enemies);
     // Madenler: modeli olan ikon 3D'de, ikonu iki kamerada da gizli; kalan miktar yazisi zeminde.
     const mines: Mine3dInput[] = [];
@@ -11012,6 +11062,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       });
     }
     const workersShown = layer.syncWorkers(workers);
+    this.workers3dShown = workersShown;
     // Operator bedenleri: 3D model; golge, iz, is isini ve can cubugu zeminde kaliyor.
     const operatorInputs: Operator3dInput[] = [];
     const operatorImages = new Map<string, Phaser.GameObjects.Image>();
@@ -11033,15 +11084,133 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const label = this.resourceAmountLabels.get(id);
       if (label) label.cameraFilter |= both;
     }
+    layer.syncUprights(this.collectAngledUprights(both));
   }
 
   /**
-   * Ana kamera zemini cizdi: tuval tahtanin dokusuna aliniyor ve efekt kamerasi
-   * bos tuvale cizsin diye temizleniyor (tuval egik gorunumde zaten gorunmez).
+   * Egik gorunumde dik tabelalar: tahtaya yatik cizilen yazilar ve simgeler
+   * (dusman isaretleri, hasar sayilari, kalan dunya yazilari) 3D'de kameraya
+   * donuk; Phaser kopyalari cizilmiyor. Ekran panelleri (`ANGLED_SCREEN_DEPTH`)
+   * ve 3D'si olan yazilar (maden miktari) haric.
+   */
+  private collectAngledUprights(hidden: number) {
+    const items: Upright3dInput[] = [];
+    const taken = new Set<Phaser.GameObjects.GameObject>();
+    const add = (object: Phaser.GameObjects.Text | Phaser.GameObjects.Image, item: Omit<Upright3dInput, "id" | "source" | "version" | "width" | "height" | "alpha" | "frame">) => {
+      if (!object.active || !object.visible || object.alpha <= 0) return;
+      taken.add(object);
+      object.cameraFilter |= hidden;
+      const text = object instanceof Phaser.GameObjects.Text ? object : undefined;
+      if (text && !this.uprightTexts.has(text)) {
+        // Yatik 8 px yazi buyutulunce bulaniyordu: tuvali 3 kat cozunurlukte.
+        text.setResolution(3);
+        this.uprightTexts.add(text);
+      }
+      const frame = object.frame;
+      items.push({
+        ...item,
+        id: this.uprightId(object),
+        source: text ? text.canvas : (frame.source.image as HTMLImageElement | HTMLCanvasElement),
+        version: text ? `${text.text}|${text.style.color}|${text.canvas.width}x${text.canvas.height}` : frame.name,
+        frame: text ? undefined : { x: frame.cutX, y: frame.cutY, width: frame.cutWidth, height: frame.cutHeight, sourceWidth: frame.source.width, sourceHeight: frame.source.height },
+        width: Math.abs(object.displayWidth),
+        height: Math.abs(object.displayHeight),
+        alpha: object.alpha
+      });
+    };
+    for (const [id, mover] of this.enemies) {
+      const foot = mover.sprite;
+      for (const overhead of [mover.marker, mover.curseMarker, mover.doubtMarker, mover.armorBreakIcon, mover.crown]) {
+        if (overhead) add(overhead, { x: overhead.x, z: foot.y, anchor: { enemy: id }, rise: Math.max(0, foot.y - overhead.y - 18) });
+      }
+    }
+    // Isci ve operator can cubuklari (yaralida): modelin ustunde dik tabela.
+    const cellSize = this.getMapCellSize();
+    const liveBars = new Set<string>();
+    const bar = (id: string, ratio: number, x: number, y: number, width: number, rise: number) => {
+      liveBars.add(id);
+      const { canvas, key } = this.drawBarCanvas(id, ratio);
+      items.push({ id: `bar-${id}`, source: canvas, version: key, x, z: y, rise, width, height: Math.max(2.5, width * 0.16), alpha: 1 });
+    };
+    for (const drone of this.droneSnapshots3d) {
+      const maxHp = drone.maxHp ?? 0;
+      const hp = drone.hp ?? maxHp;
+      const sprite = this.drones.get(drone.id);
+      if (!sprite?.active || !this.workers3dShown.has(drone.id) || maxHp <= 0 || hp >= maxHp) continue;
+      const body = Math.max(cellSize * 0.34, this.droneBodyWidths3d.get(drone.id) ?? Math.abs(sprite.displayWidth)) * WORKER_SIZE_SCALE;
+      bar(`w${drone.id}`, hp / maxHp, sprite.x, sprite.y, Math.max(12, body * 1.4), body * 1.25 + 3);
+    }
+    for (const body of this.operatorBodyView?.bodies() ?? []) {
+      if (!body.image.active || body.down || body.hp >= 0.999) continue;
+      const size = (body.width || Math.abs(body.image.displayWidth)) * OPERATOR_SIZE_SCALE;
+      bar(`o${body.id}`, body.hp, body.x, body.y, Math.max(14, size * 1.4), size * 1.1 + 4);
+    }
+    // Yarali kulenin can cubugu: 3D modelin ustunde (2D cubuk tahtaya yatik kaliyordu).
+    for (const [id, rendered] of this.towers) {
+      const tower = this.towerSnapshots.get(id);
+      if (!tower || !this.isTowerAngled3d(id)) continue;
+      rendered.healthBar.cameraFilter |= hidden;
+      const maxHp = tower.maxHp ?? 0;
+      if (maxHp <= 0 || (tower.hp ?? maxHp) >= maxHp) continue;
+      const span = getTowerGridSpan(tower.definitionId);
+      bar(`t${id}`, (tower.hp ?? 0) / maxHp, tower.x, tower.y, Math.max(22, cellSize * span * 0.88), cellSize * span * 1.15);
+    }
+    for (const id of [...this.barCanvases.keys()]) if (!liveBars.has(id)) this.barCanvases.delete(id);
+    // Hasar sayilari: dogdugu yerde govde yuksekliginde, yukari kayisi yukseklige.
+    this.damageNumbers?.forEachActive((text, bornX, bornY) => add(text, { x: text.x, z: bornY, anchor: "body", rise: Math.max(0, bornY - text.y) }));
+    for (const child of this.children.list) {
+      if (child.type !== "Text" || taken.has(child)) continue;
+      const text = child as Phaser.GameObjects.Text;
+      if (text.depth >= ANGLED_SCREEN_DEPTH || text.scrollFactorX === 0 || (text.cameraFilter & hidden) === hidden) continue;
+      add(text, { x: text.x, z: text.y, rise: this.getMapCellSize() * 0.35 });
+    }
+    return items;
+  }
+
+  /** Can cubugu tuvali (koyu zemin, oranda yesil-turuncu-kirmizi); oran 1/40 adimla yeniden ciziliyor. */
+  private drawBarCanvas(id: string, ratio: number) {
+    const clamped = Math.max(0, Math.min(1, ratio));
+    const key = String(Math.round(clamped * 40));
+    let entry = this.barCanvases.get(id);
+    if (!entry) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 96;
+      canvas.height = 16;
+      entry = { canvas, key: "" };
+      this.barCanvases.set(id, entry);
+    }
+    if (entry.key !== key) {
+      entry.key = key;
+      const context = entry.canvas.getContext("2d");
+      if (context) {
+        context.clearRect(0, 0, 96, 16);
+        context.fillStyle = "rgba(2, 6, 23, 0.92)";
+        context.fillRect(0, 0, 96, 16);
+        context.fillStyle = clamped > 0.5 ? "#22c55e" : clamped > 0.25 ? "#f59e0b" : "#ef4444";
+        context.fillRect(3, 3, 90 * clamped, 10);
+      }
+    }
+    return entry;
+  }
+
+  /** Phaser nesnesine kalici kimlik (dik tabelanin anahtari). */
+  private uprightId(object: Phaser.GameObjects.GameObject) {
+    let id = this.uprightIds.get(object);
+    if (!id) {
+      this.uprightCount += 1;
+      id = `u${this.uprightCount}`;
+      this.uprightIds.set(object, id);
+    }
+    return id;
+  }
+
+  /**
+   * Ana kamera zemini cizdi: tuval tahtanin dokusuna aliniyor ve sonraki
+   * kameralar (efektler, ekran panelleri) bos tuvale cizsin diye temizleniyor.
    */
   private captureAngledBoard() {
     const layer = this.towerLayer3d;
-    if (!layer || !this.airCamera3d || layer.getView() !== "angled" || !this.angledAirContent) return;
+    if (!layer || !this.airCamera3d || layer.getView() !== "angled") return;
     const renderer = this.game.renderer;
     if (!(renderer instanceof Phaser.Renderer.WebGL.WebGLRenderer)) return;
     renderer.flush();
@@ -11051,14 +11220,32 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     gl.clear(gl.COLOR_BUFFER_BIT);
   }
 
+  /** Efekt kamerasi cizdi: tuval efekt duzleminin dokusuna aliniyor, ekran panelleri icin temizleniyor. */
+  private captureAngledAir() {
+    const layer = this.towerLayer3d;
+    if (!layer || layer.getView() !== "angled" || !this.angledAirContent) return;
+    const renderer = this.game.renderer;
+    if (!(renderer instanceof Phaser.Renderer.WebGL.WebGLRenderer)) return;
+    renderer.flush();
+    layer.captureAir();
+    const gl = renderer.gl;
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
   /** Egik gorunumden cikis: efekt kamerasi kalkiyor, kamera ayrimi ve cubuk kaymasi sifirlaniyor. */
   private resetAngledFrame() {
-    const both = this.cameras.main.id | (this.airCamera3d?.id ?? 0);
+    const both = this.cameras.main.id | (this.airCamera3d?.id ?? 0) | (this.hudCamera3d?.id ?? 0);
     for (const child of this.children.list) child.cameraFilter &= ~both;
     for (const mover of this.enemies.values()) mover.sprite.cameraFilter &= ~both;
     if (this.airCamera3d) {
+      this.airCamera3d.off(Phaser.Cameras.Scene2D.Events.POST_RENDER, this.captureAngledAir, this);
       this.cameras.remove(this.airCamera3d, true);
       this.airCamera3d = undefined;
+    }
+    if (this.hudCamera3d) {
+      this.cameras.remove(this.hudCamera3d, true);
+      this.hudCamera3d = undefined;
     }
     this.towerLayer3d?.syncEnemies([]);
   }
@@ -11070,10 +11257,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.applyTowers3dVisibility();
   }
 
+  /** Kule egik 3D gorunumde modeliyle ciziliyor mu (2D kadrani ve govdesi gizli). */
+  private isTowerAngled3d(id: string) {
+    return this.towerLayer3d?.getView() === "angled" && this.towers3dShown.has(id);
+  }
+
   private applyTowers3dVisibility() {
     for (const [id, rendered] of this.towers) {
       const tower = this.towerSnapshots.get(id);
       if (tower) rendered.base.setVisible(!this.isEdgePlacedDefinition(tower.definitionId) && !this.towers3dShown.has(id));
+      if (tower && this.isTowerAngled3d(id)) rendered.halo.setVisible(false);
     }
   }
 
@@ -12044,7 +12237,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // yerine besgen. Ayirt edici olan olcu degil siluet oldugu icin yuk
       // tasirken buyuyup kuculmesi kademeyi bulanistirmiyor.
       sprite.setVisible(!drone.advanced);
-      if (drone.advanced) {
+      // Egik 3D gorunumde isci modeliyle ciziliyor: besgen govde ve can cubugu (3D'de dik tabela) yok.
+      const in3d = this.towerLayer3d?.getView() === "angled" && this.workers3dShown.has(drone.id);
+      if (drone.advanced && !in3d) {
         this.drawAdvancedWorkerBody(govdeler, drone, tint, sprite.displayWidth * ADVANCED_WORKER_BODY_RADIUS_RATIO, sprite.rotation, look?.shape);
       }
       // Can cubugu yalnizca yaralida: her iscinin ustunde duran dolu bir
@@ -12053,7 +12248,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const hp = drone.hp ?? maxHp;
       if (maxHp > 0 && hp < maxHp) {
         this.hasarliIsciler.add(drone.id);
-        this.drawWorkerHealthBar(govdeler, drone, hp / maxHp, sprite.displayWidth);
+        if (!in3d) this.drawWorkerHealthBar(govdeler, drone, hp / maxHp, sprite.displayWidth);
       } else {
         this.hasarliIsciler.delete(drone.id);
       }

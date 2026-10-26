@@ -186,26 +186,26 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
     // Kademe yukseldikce daha sicak: cekirdek 2,4 -> 3,2 (parliyor, beyazlaniyor);
     // hale ~1 (doygun renk; ACES 1'in cok ustunu beyaza kaciriyor).
     heat: { core: [2.4, 2.8, 3.2][index], halo: [0.95, 1.05, 1.15][index] },
-    // Iri, okunur govde (kule ~1 hucre): mermi 0,15-0,45 hucre, ortasi beyaz-sicak.
+    // Kucuk, okunur govde (dusmandan belirgin kucuk): mermi 0,1-0,25 hucre, ortasi beyaz-sicak.
     body: {
-      length: { tracer: 0.34, packet: 0.26, cell: 0.22, gaze: 0.2, arc: 0.22, lance: 0.44, orb: 0.18 }[seed.shape] * (1 + index * 0.1),
-      width: { tracer: 0.075, packet: 0.2, cell: 0.2, gaze: 0.19, arc: 0.2, lance: 0.09, orb: 0.17 }[seed.shape] * (1 + index * 0.1) * (seed.heavy ? 1.1 : 1),
+      length: { tracer: 0.19, packet: 0.15, cell: 0.13, gaze: 0.12, arc: 0.13, lance: 0.24, orb: 0.11 }[seed.shape] * (1 + index * 0.1),
+      width: { tracer: 0.05, packet: 0.14, cell: 0.14, gaze: 0.13, arc: 0.14, lance: 0.06, orb: 0.12 }[seed.shape] * (1 + index * 0.1) * (seed.heavy ? 1.1 : 1),
       spin: { tracer: 0, packet: 2.2, cell: 1.6, gaze: 0.4, arc: 3, lance: 0, orb: 0.8 }[seed.shape]
     },
-    // Iz once serit (tek parca, kisa ve parlak); parcaciklar seyrek ama iri.
+    // Iz once serit (tek parca, kisa ve ince; mermiden en cok ~2 kat uzun); parcaciklar seyrek ve kucuk.
     trail: {
       density: (seed.shape === "tracer" || seed.shape === "lance" ? 0.2 : 0.16) * power,
-      lifeMs: 170 + index * 90,
-      size: 0.09 * (1 + index * 0.2) * (seed.heavy ? 1.1 : 1),
+      lifeMs: 140 + index * 60,
+      size: 0.06 * (1 + index * 0.2) * (seed.heavy ? 1.1 : 1),
       sparkle: [0.08, 0.2, 0.35][index],
-      length: { tracer: 1, packet: 0.7, cell: 0.6, gaze: 0.65, arc: 0.6, lance: 1.2, orb: 0.6 }[seed.shape] * (1 + index * 0.25),
-      width: { tracer: 0.12, packet: 0.17, cell: 0.16, gaze: 0.16, arc: 0.18, lance: 0.13, orb: 0.15 }[seed.shape] * (1 + index * 0.12)
+      length: { tracer: 0.38, packet: 0.28, cell: 0.24, gaze: 0.26, arc: 0.24, lance: 0.45, orb: 0.24 }[seed.shape] * (1 + index * 0.15),
+      width: { tracer: 0.07, packet: 0.1, cell: 0.1, gaze: 0.1, arc: 0.11, lance: 0.08, orb: 0.09 }[seed.shape] * (1 + index * 0.1)
     },
     arc: seed.arc ?? 0,
     // Namlu: sert parlama ve az ama iri kivilcim; duman yok.
-    muzzle: { flash: 0.32 * power * heavy, sparks: Math.round(3 * power), smoke: 0, ring: index >= 1 },
+    muzzle: { flash: 0.22 * power * heavy, sparks: Math.round(3 * power), smoke: 0, ring: index >= 1 },
     hit: {
-      flash: 0.6 * power * heavy,
+      flash: 0.42 * power * heavy,
       sparks: Math.round(6 * power * heavy),
       speed: 3.6 + index,
       debris: seed.impact === "burst" || seed.impact === "uplink" || seed.impact === "lock" ? Math.round(3 * power) : Math.round(1.5 * power),
@@ -218,12 +218,12 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
       scorch: index >= 1 || Boolean(seed.heavy),
       groundGlow: (1 + index * 0.5) * heavy
     },
-    // Lazer: cekirdek 0,06/0,075/0,09, hale 0,28/0,32/0,38 hucre (en azi); titreme az.
+    // Lazer: cekirdek 0,045/0,055/0,065, hale 0,16/0,19/0,22 hucre (en azi); titreme az.
     beamLook: {
-      core: [0.4, 0.44, 0.48][index],
-      glow: [2, 2.4, 2.9][index],
-      coreMin: [0.06, 0.075, 0.09][index],
-      glowMin: [0.28, 0.32, 0.38][index],
+      core: [0.32, 0.35, 0.38][index],
+      glow: [1.4, 1.7, 2][index],
+      coreMin: [0.045, 0.055, 0.065][index],
+      glowMin: [0.16, 0.19, 0.22][index],
       flicker: [0.05, 0.07, 0.09][index],
       pulses: index
     }

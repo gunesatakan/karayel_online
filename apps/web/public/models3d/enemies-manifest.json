@@ -1,0 +1,295 @@
+{
+  "note": "Game copies of the Tripo enemy models (target style: tools/3d-preview/build-target-tower.py --structure unit --palette native). Key = the Phaser texture key. Not included in the itch.io package.",
+  "targetTriangles": 3000,
+  "textureSize": 256,
+  "models": [
+    {
+      "key": "enemy-brute",
+      "bytes": 210416,
+      "triangles": 3000,
+      "height": 0.5047,
+      "sha256": "cab7749f010f432a3af59a4656ead6fdf335c1fa0ec4fd75efcbd31917379e42",
+      "source": "asset-work/target-style/enemies/enemy-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fallen-bomber",
+      "bytes": 207560,
+      "triangles": 3000,
+      "height": 0.9475,
+      "sha256": "60ee727f90207c3d5b975555e618adbbd8743bd12ad20cecea9656856117ac28",
+      "source": "asset-work/target-style/enemies/enemy-fallen-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fallen-brute",
+      "bytes": 206112,
+      "triangles": 2999,
+      "height": 0.9207,
+      "sha256": "29d850f978b3d5bf6d98c28a15b63f7805efbdaf98c488da28583a55f6124715",
+      "source": "asset-work/target-style/enemies/enemy-fallen-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fallen-grunt",
+      "bytes": 203300,
+      "triangles": 3000,
+      "height": 0.9668,
+      "sha256": "98abb7979b8f31001b5883ac90a2c94e5fb87433c12018cc4d57f98949c7af08",
+      "source": "asset-work/target-style/enemies/enemy-fallen-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fallen-harvester",
+      "bytes": 229308,
+      "triangles": 3000,
+      "height": 0.7551,
+      "sha256": "9349af9ddcc13b27aaf65555aa4290c300d79d6e1afa8f388db1c8fb92ff26be",
+      "source": "asset-work/target-style/enemies/enemy-fallen-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fallen-runner",
+      "bytes": 225716,
+      "triangles": 3000,
+      "height": 0.5859,
+      "sha256": "d219fc0d5e39d06e165180bb88471161a485207cbf0a8e363dd9f35d16fce372",
+      "source": "asset-work/target-style/enemies/enemy-fallen-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fallen-shooter",
+      "bytes": 217276,
+      "triangles": 3000,
+      "height": 0.6372,
+      "sha256": "e428d24d649a8650cd4cda4a86dc2eea1633a1f543429b05bbb282fc7fecb94f",
+      "source": "asset-work/target-style/enemies/enemy-fallen-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fourthDimensional-bomber",
+      "bytes": 203068,
+      "triangles": 2999,
+      "height": 0.9046,
+      "sha256": "8ba1def349b786e8395422e8d9a5a3c77f3ec66a6990859469d101a69627bf8d",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fourthDimensional-brute",
+      "bytes": 230944,
+      "triangles": 3000,
+      "height": 0.9327,
+      "sha256": "e53422ac4dfb9e30694efa1d5f17e91478b1fe85ea8c85f5f30441bc423c9f1d",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fourthDimensional-grunt",
+      "bytes": 196908,
+      "triangles": 3000,
+      "height": 0.971,
+      "sha256": "57265f880290e134c1641ddd7da21c04ec79d54e78b163e9370dfd7356228d62",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fourthDimensional-harvester",
+      "bytes": 186600,
+      "triangles": 3000,
+      "height": 0.7804,
+      "sha256": "cf3f1bc571044c23cdc9601786547fc5f104ba8095ee0f4662cc0b68be26809b",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fourthDimensional-runner",
+      "bytes": 152036,
+      "triangles": 3000,
+      "height": 1.2319,
+      "sha256": "9df07d2d5e4f1078716eb44876db1345f6e56ef5c42f92e9385b3194b4360341",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-fourthDimensional-shooter",
+      "bytes": 182668,
+      "triangles": 3000,
+      "height": 1.0201,
+      "sha256": "cf55102deb528cab8d67c43bee2947ad55445d1746e543f374623083a248114f",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-golem-bomber",
+      "bytes": 216124,
+      "triangles": 3000,
+      "height": 0.879,
+      "sha256": "b5b4f97c958cf59294d4826488e614ffc9e5c995f0d64267dd03d64a77ec046f",
+      "source": "asset-work/target-style/enemies/enemy-golem-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-golem-brute",
+      "bytes": 220000,
+      "triangles": 2999,
+      "height": 0.8922,
+      "sha256": "e1cf69f7b5dffeba81ca8d5f2dd00c5439c320aee5d739dfca287e85b31657e3",
+      "source": "asset-work/target-style/enemies/enemy-golem-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-golem-grunt",
+      "bytes": 198916,
+      "triangles": 3000,
+      "height": 0.7857,
+      "sha256": "5569d94d1bc00a57fb5b7067e062acd7075be0dee9387718d6185bdd7e2cabe5",
+      "source": "asset-work/target-style/enemies/enemy-golem-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-golem-harvester",
+      "bytes": 209716,
+      "triangles": 3000,
+      "height": 0.6935,
+      "sha256": "6bea42ef9228b76513aea99b23a2d90012592920562f90c6d011f1a6dd5eb82f",
+      "source": "asset-work/target-style/enemies/enemy-golem-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-golem-runner",
+      "bytes": 202784,
+      "triangles": 3000,
+      "height": 1.1739,
+      "sha256": "47f950f5205e6e0c7444eff1f98a94316ae888eeb0d0e5df133d4582fbe83948",
+      "source": "asset-work/target-style/enemies/enemy-golem-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-golem-shooter",
+      "bytes": 207312,
+      "triangles": 3000,
+      "height": 1.1069,
+      "sha256": "71b80b9459c2bbe91e80f5def4db6f2a57ac8924990cb93613dd74ad943a0ff3",
+      "source": "asset-work/target-style/enemies/enemy-golem-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-grunt",
+      "bytes": 206864,
+      "triangles": 3000,
+      "height": 0.8806,
+      "sha256": "e7a8a43f88443fc9d018316af7a7f29bf2da99b0a1120a1bc4772c6a185e9f1d",
+      "source": "asset-work/target-style/enemies/enemy-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-holyGuardian-bomber",
+      "bytes": 230012,
+      "triangles": 2999,
+      "height": 1.0481,
+      "sha256": "808a7cddc3ef1aa5dbdbc459944d4fd9befae800c4ba3633f308d3120bc933e3",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-holyGuardian-brute",
+      "bytes": 232384,
+      "triangles": 2997,
+      "height": 0.9797,
+      "sha256": "e82ffb088df79486c08ee664b341fb460460813bdb57bc2ff676055f6a0cfabe",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-holyGuardian-grunt",
+      "bytes": 219640,
+      "triangles": 3000,
+      "height": 1.0585,
+      "sha256": "0b1a28f297184fc4443e5c77c475b10fbf7edd43a5223265057ee71019a6af84",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-holyGuardian-harvester",
+      "bytes": 229168,
+      "triangles": 3000,
+      "height": 0.9604,
+      "sha256": "3033e367f3c6fff9602740b9bdea596febe4d8abc6dd83316b6f96658d4ac4d5",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-holyGuardian-runner",
+      "bytes": 222872,
+      "triangles": 3000,
+      "height": 1.2213,
+      "sha256": "5353f22b428dbf0d7a3eb1fa8286d67fccce8bf31781a42ff84279b882ef626a",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-holyGuardian-shooter",
+      "bytes": 210544,
+      "triangles": 3000,
+      "height": 1.0362,
+      "sha256": "e63f98f8ebc86c0ac37d8639ee0aecf5bd88e142d38a330c2896b9648df9437b",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-meka-bomber",
+      "bytes": 216960,
+      "triangles": 3000,
+      "height": 0.9866,
+      "sha256": "25d6509c98105f7f3c1b82ad2d3d87b2680850f45c432bc6d76df37bd2458ee4",
+      "source": "asset-work/target-style/enemies/enemy-meka-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-meka-harvester",
+      "bytes": 196576,
+      "triangles": 3000,
+      "height": 0.5986,
+      "sha256": "384235809a6c2eec76ede4e41bda25f2cf7bcd9ce9446c07c983a1002fb741ca",
+      "source": "asset-work/target-style/enemies/enemy-meka-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-runner",
+      "bytes": 183984,
+      "triangles": 2999,
+      "height": 0.572,
+      "sha256": "5d9d29e79f3a65a493cc75d32c5d9b17cd74e28eb7770cc5a193ae5812c33e92",
+      "source": "asset-work/target-style/enemies/enemy-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-shooter",
+      "bytes": 215740,
+      "triangles": 3000,
+      "height": 0.8471,
+      "sha256": "b2d51fcdc8e606133e3a979050368abbf1a09f1b279b87f4c6706697ad12c0c7",
+      "source": "asset-work/target-style/enemies/enemy-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-spaceBug-bomber",
+      "bytes": 202392,
+      "triangles": 2999,
+      "height": 0.8363,
+      "sha256": "b9cb97cbaf07e9dc2b3ecc04935236a6bdc4f241699a77a89d00983ea9e7ffda",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-spaceBug-brute",
+      "bytes": 220020,
+      "triangles": 2999,
+      "height": 0.6713,
+      "sha256": "b33633818bd7d88eca60fcb1efcef030e6f967b9ea6e317b7883e8f8dbbfc2bb",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-spaceBug-grunt",
+      "bytes": 195560,
+      "triangles": 3000,
+      "height": 0.7033,
+      "sha256": "92ca73ff7fad190e970fe239b1e1a1f3f86c6ddf59044dfc0eb6c58e4ff0c4ba",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-spaceBug-harvester",
+      "bytes": 217096,
+      "triangles": 3000,
+      "height": 0.6622,
+      "sha256": "39825152831522269fa1dc5dc789699e3a6731a2fdb6407ec4f34d50be8c85fe",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-spaceBug-runner",
+      "bytes": 219088,
+      "triangles": 3000,
+      "height": 1.0363,
+      "sha256": "f6ae7a72c9827ce74ff718fb63a3c8669f4b58237501f92fd126975e6d1f8663",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    },
+    {
+      "key": "enemy-spaceBug-shooter",
+      "bytes": 209648,
+      "triangles": 3000,
+      "height": 1.039,
+      "sha256": "e4c5a68748594c12469c2b1e3cc16e83d87883d55ac9da75e61fe703a7524a72",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+    }
+  ]
+}

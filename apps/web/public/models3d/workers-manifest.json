@@ -1,17 +1,17 @@
 {
-  "note": "Game copies of the Tripo workers models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
+  "note": "Game copies of the Tripo workers models (target style: tools/3d-preview/build-target-tower.py --structure unit). Not included in the itch.io package.",
   "targetTriangles": 8000,
   "textureSize": 512,
   "models": [
     {
       "key": "worker-drone",
-      "bytes": 538636,
-      "triangles": 8000,
-      "height": 0.5296,
+      "bytes": 372748,
+      "triangles": 6000,
+      "height": 0.9976,
+      "sha256": "3fb80124c5a1b3be6d4e8c8d8dac865ddc0a1474b27cd2ff581a9d5f873672f2",
       "leveledDegrees": 0,
       "turnedDegrees": 0,
-      "sha256": "1f9ac48707af1d6ac26564d840e8c1827cddd7bd3a0bd13759a548030bc968d8",
-      "source": "Tripo H3.1 / art-direction/workers/worker.png"
+      "source": "Tripo H3.0 / asset-work/target-style/units/worker-drone-concept.png (target style, build-target-tower.py --structure unit)"
     }
   ]
 }

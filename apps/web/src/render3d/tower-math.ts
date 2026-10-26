@@ -76,8 +76,37 @@ export const OPERATOR_MODEL_PATHS: Readonly<Record<string, string>> = {
   zeynep: "models3d/operator-zeynep.glb",
   warrior: "models3d/operator-warrior.glb"
 };
-/** Modelin yuzu: Phaser resmi yukari bakiyor (donus 0'da yuz kuzeyde); Tripo bedenlerinin kollari -X yonunde. */
-export const OPERATOR_MODEL_YAW_OFFSET = Math.PI / 2;
+/** Modelin yuzu: Phaser resmi yukari bakiyor (donus 0'da yuz kuzeyde); hedef stil bedenlerin yuzu (vizor, goz) +X yonunde. */
+export const OPERATOR_MODEL_YAW_OFFSET = -Math.PI / 2;
+
+/**
+ * Dusman modelleri (Tripo; build-target-tower.py --structure unit --palette native):
+ * Phaser doku anahtari -> model. Mekanin dort temel turunun dokusu irksiz
+ * ("enemy-grunt"), gerisi "enemy-<irk>-<tur>". Modeli olmayan doku (ozel
+ * dusmanlar) egik gorunumde ayakta pano kaliyor.
+ */
+export const ENEMY_MODEL_RACES = ["meka", "fallen", "fourthDimensional", "golem", "holyGuardian", "spaceBug"] as const;
+export const ENEMY_MODEL_TYPES = ["grunt", "runner", "brute", "shooter", "harvester", "bomber"] as const;
+
+export function enemyModelKey(race: string, type: string) {
+  return race === "meka" && type !== "harvester" && type !== "bomber" ? `enemy-${type}` : `enemy-${race}-${type}`;
+}
+
+export const ENEMY_MODEL_KEYS: ReadonlySet<string> = new Set(ENEMY_MODEL_RACES.flatMap((race) => ENEMY_MODEL_TYPES.map((type) => enemyModelKey(race, type))));
+
+export function enemyModelPath(textureKey: string) {
+  return ENEMY_MODEL_KEYS.has(textureKey) ? `models3d/enemies/${textureKey}.glb` : undefined;
+}
+
+/** Modelin en genis yeri 2D resmin bu kadari (resim tepeden govdenin tamami). */
+export const ENEMY_MODEL_SIZE_SCALE = 0.62;
+/** Modelin yuzu +X yonunde (hedef stil birimleri gibi). */
+export const ENEMY_MODEL_YAW_OFFSET = 0;
+
+/** Dusman resminin donusunden (yuz +y yonunde, `getBodyHeadingRotation`) modelin Y donusu. */
+export function enemyModelYaw(rotation: number) {
+  return -(rotation + Math.PI / 2) + ENEMY_MODEL_YAW_OFFSET;
+}
 
 export function mineModelPath(kind: string) {
   return `models3d/mine-${kind}.glb`;
@@ -176,8 +205,8 @@ export type OrbitView = {
  */
 export const STANDEE_SIZE_SCALE = 0.5;
 export const WORKER_SIZE_SCALE = 0.5;
-/** Operator bedeni 2D resminin yarisi boyunda, yerde duruyor. */
-export const OPERATOR_SIZE_SCALE = 0.5;
+/** Operator bedeni 2D resminin dortte ucu boyunda (yarisinda hedef stil modeli secilmiyordu), yerde duruyor. */
+export const OPERATOR_SIZE_SCALE = 0.75;
 
 /**
  * Donus haritanin merkezi cevresinde: kamera `yaw`u `radians` kadar donerken

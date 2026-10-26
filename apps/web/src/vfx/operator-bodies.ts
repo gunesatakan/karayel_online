@@ -134,6 +134,8 @@ type BodyView = {
   seed: number;
   /** Nefessiz resim genisligi (3D beden bundan olculuyor, buyuyup kuculmuyor). */
   width: number;
+  /** Son can orani (0-1). */
+  hp: number;
 };
 
 export type OperatorBodyViewDeps = {
@@ -146,6 +148,8 @@ export type OperatorBodyViewDeps = {
   onLowHp?: (body: OperatorBodySnapshot) => void;
   /** Beden dustu (bir kez). */
   onDown?: (body: OperatorBodySnapshot) => void;
+  /** Can cubugu 3D'de dik tabela (egik gorunum): burada cizilmiyor. */
+  barsIn3d?: () => boolean;
 };
 
 export type OperatorBodyFrame = {
@@ -173,7 +177,7 @@ export class OperatorBodyView {
 
   /** Cizilen bedenler (egik 3D gorunum onlari 3D modelle ciziyor, resimlerini gizliyor). */
   bodies() {
-    return [...this.views.entries()].map(([id, view]) => ({ id, characterId: view.characterId, image: view.image, x: view.x, y: view.y, rotation: view.rotation, down: view.down, width: view.width }));
+    return [...this.views.entries()].map(([id, view]) => ({ id, characterId: view.characterId, image: view.image, x: view.x, y: view.y, rotation: view.rotation, down: view.down, width: view.width, hp: view.hp }));
   }
 
   /** Son cizilen yer (yenilgi sahnesi bedenin patlamasini oraya koyuyor). */
@@ -237,7 +241,8 @@ export class OperatorBodyView {
       workStartedAt: 0,
       wasWorking: false,
       seed: [...body.id].reduce((sum, char) => sum + char.charCodeAt(0), 0),
-      width: 0
+      width: 0,
+      hp: 1
     };
     this.views.set(body.id, view);
     return view;
@@ -399,6 +404,7 @@ export class OperatorBodyView {
   /** Can cubugu yaralida; dusuk canda kirmizi, nabiz atan bir halka. */
   private drawHealth(view: BodyView, body: OperatorBodySnapshot, size: number, now: number, still: boolean) {
     const ratio = Math.max(0, Math.min(1, body.hp / Math.max(1, body.mhp)));
+    view.hp = ratio;
     const low = isOperatorBodyLowHp(body);
     if (low && !view.lowHp) this.deps.onLowHp?.(body);
     view.lowHp = low;
@@ -407,7 +413,7 @@ export class OperatorBodyView {
       this.overlay.lineStyle(Math.max(1, size * 0.07), 0xc8473a, pulse);
       this.overlay.strokeCircle(body.x, body.y, size * 0.7);
     }
-    if (ratio >= 0.999) return;
+    if (ratio >= 0.999 || this.deps.barsIn3d?.()) return;
     const width = Math.max(14, size * 1.05);
     const height = Math.max(2, size * 0.11);
     const x = body.x - width / 2;

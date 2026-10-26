@@ -40,6 +40,8 @@ import {
   recenterWhileRotating,
   rotateTargetAround,
   standeeCenterHeight,
+  enemyModelPath,
+  enemyModelYaw,
   MINE_CELL_SCALE,
   OPERATOR_MODEL_PATHS,
   OPERATOR_MODEL_YAW_OFFSET,
@@ -82,6 +84,31 @@ export type Tower3dInput = {
   heightScale?: number;
 };
 
+/**
+ * Dik tabela (egik gorunum): Phaser'in tahtaya yatik cizdigi yazi ya da simge
+ * (hasar sayisi, dusman isareti, etiket) kameraya donuk, keskin. Doku Phaser
+ * nesnesinin kendi tuvali ya da resmi; `version` degisince yeniden yukleniyor.
+ */
+export type Upright3dInput = {
+  id: string;
+  source: HTMLCanvasElement | HTMLImageElement;
+  version: string;
+  /** Resim bir atlasin parcasiysa karenin dikdortgeni (piksel). */
+  frame?: { x: number; y: number; width: number; height: number; sourceWidth: number; sourceHeight: number };
+  x: number;
+  z: number;
+  /**
+   * Yerlesim: `enemy` o dusmanin panosunun basinin ustunde (`rise` ekrandaki ek
+   * yukseklik, dunya birimi), `body` piyade govdesi yuksekliginde + `rise`
+   * (hasar sayilari), yoksa zeminden `rise` yukarida.
+   */
+  anchor?: { enemy: string } | "body";
+  rise: number;
+  width: number;
+  height: number;
+  alpha: number;
+};
+
 /** Phaser'daki dusman sprite'inin son hali: pano onu birebir kopyaliyor. */
 export type Enemy3dInput = {
   id: string;
@@ -106,6 +133,8 @@ export type Enemy3dInput = {
   size: number;
   /** Ucan dusmanin ek yuksekligi. */
   extraLift: number;
+  /** 3D modelin en genis yeri (dunya birimi, ezilmesiz; modeli olan dokuda). */
+  modelSize: number;
   /** Can cubugu (2D'deki `drawEnemyHealthBar`in aynisi, panonun basinin ustunde). */
   bar?: EnemyBar;
   /** Ayaktaki golgenin yaricapi ve opakligi. */
@@ -174,6 +203,9 @@ type Instance = {
   recoil: { node: THREE.Object3D; baseZ: number; at: number; strength: number } | undefined;
   /** Hedef stil kulenin kaidesi (egik gorunumde; model onun ustune kalkiyor). */
   plinth?: THREE.Object3D;
+  /** Kaidenin on kenarindaki seviye noktalari (2D'deki seviye kadraninin yerine) ve son seviye. */
+  pips?: THREE.Object3D[];
+  pipLevel?: number;
   /** Namlunun dikey nisani (`addPitchPivot`): dugum, su anki aci, golgenin cizildigi aci. */
   pitch: THREE.Object3D | undefined;
   pitchAngle: number;
@@ -191,9 +223,20 @@ type Instance = {
   lock?: { x: number; y: number; z: number; until: number };
 };
 
+const TMP_COLOR = new THREE.Color();
 /** Kademeye gore isima: kademe 1 sade (parlama esiginin altinda), 3 parlak ve nabiz atiyor. */
 const TIER_GLOW = { 1: 0.55, 2: 1, 3: 1.05 } as const;
-type Standee = { mesh: THREE.Mesh; material: THREE.ShaderMaterial; shadow: THREE.Mesh; bar: THREE.Mesh; barMaterial: THREE.ShaderMaterial; textureKey: string };
+/**
+ * Dusmanin 3D modeli: kopya malzemeler (ton ve saydamlik dusman basina), vurus
+ * flasi icin ayni geometride duz renk ortu. `stride` yurunen yol (adim sallantisi).
+ */
+type EnemyModel = { key: string; root: THREE.Object3D; body: THREE.Object3D; materials: THREE.MeshStandardMaterial[]; flash: THREE.Mesh[]; flashMaterial: THREE.MeshBasicMaterial; height: number; yaw: number; stride: number; x: number; z: number; at: number };
+/**
+ * Dusman: modeli yuklenmisse 3D model (pano gizli), yoksa kameraya donuk pano.
+ * `mesh.position` her iki halde govdenin ortasi (atis hedefi); `headY` ve
+ * `headGap` can cubugunun ve isaretlerin dayandigi tepe (dunya) ve ekrandaki pay.
+ */
+type Standee = { mesh: THREE.Mesh; material: THREE.ShaderMaterial; shadow: THREE.Mesh; bar: THREE.Mesh; barMaterial: THREE.ShaderMaterial; textureKey: string; model?: EnemyModel; headY: number; headGap: number };
 
 // Kameraya donuk pano: merkez modelin konumunda, koseler goruntu duzleminde.
 // Renk Phaser'daki gibi ham (renk uzayi donusumu yok): carpimli ton ya da flasta doldurma.
@@ -295,6 +338,8 @@ export type TowerLayer = {
    * an tahtanin dokusuna aliniyor. Ardindan cizilen (efekt kamerasi) ayri duzleme.
    */
   captureBoard(): void;
+  /** Egik gorunumde efekt kamerasindan hemen sonra: tuvaldeki efektler kalkik duzlemin dokusuna. */
+  captureAir(): void;
   /**
    * Arazi (render3d/terrain): yasak bolgeler tepe ya da cukur, arenanin
    * yanlarinda kayalik yamac. `groundImage` haritanin zemin resmi (yamaclarin dokusu).
@@ -310,6 +355,8 @@ export type TowerLayer = {
   syncOperators(operators: readonly Operator3dInput[]): ReadonlySet<string>;
   /** Egik gorunumde 3D isciler. Donen kume: modeli yuklenmis olanlar (sprite'lari gizlenebilir). */
   syncWorkers(workers: readonly Worker3dInput[]): ReadonlySet<string>;
+  /** Egik gorunumde dik tabelalar (yazi ve simgeler); her karede tam liste. */
+  syncUprights(items: readonly Upright3dInput[]): void;
   /**
    * 3D zemin (karolar, yamaclar, bolge yuzeyleri) hazir mi: arazi bilindiginde evet.
    * Hazirsa zemin 3D'de cizili; Phaser karesi ustune yalnizca isik olarak
@@ -572,6 +619,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   air.visible = false;
   scene.add(air);
   let boardCaptured = false;
+  let airCaptured = false;
 
   // Panolarin dokulari (Phaser anahtariyla) ve ayak golgesi.
   const standeeTextures = new Map<string, { image: HTMLImageElement | HTMLCanvasElement; texture: THREE.Texture }>();
@@ -1185,6 +1233,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
           // Kaide kademeyle zenginlesiyor; ikmal binalari ve duvar eskisi gibi.
           instance.plinth = plinths.create(accent, span, tower.modelPath ? 2 : tower.tier);
           scene.add(instance.plinth);
+          if (!tower.modelPath) instance.pips = addLevelPips(instance.plinth, span);
         }
         instances.set(tower.id, instance);
         scene.add(root);
@@ -1228,6 +1277,13 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         levels.set(tower.id, { level: tower.level, tier: tower.tier });
       }
       applyScale(instance, performance.now());
+      if (instance.pips && tower.level !== undefined && instance.pipLevel !== tower.level) {
+        instance.pipLevel = tower.level;
+        const lit = Math.min(10, Math.max(0, Math.floor(tower.level)));
+        instance.pips.forEach((pip, index) => {
+          (pip as THREE.Mesh).material = index < lit ? pipLit(instance.accent ?? 0xffffff) : pipDim;
+        });
+      }
       tierFx.update(tower.id, tower.tier, grows ? instance.accent : undefined, {
         x: tower.x, z: tower.y, base, width: (size?.width ?? 0) * scale, height: (size?.height ?? 0) * scale, cell, span: Math.max(1, instance.span), visible: onPlinth
       });
@@ -1243,6 +1299,103 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       }
     }
     return visible;
+  }
+
+  /**
+   * Seviye noktalari: kaidenin on (guney) kenarinda 10 kucuk tus; seviye kadar
+   * yanik (kimlik renginde), gerisi sonuk. 2D'deki seviye kadraninin 3D karsiligi.
+   */
+  const pipGeometry = new THREE.BoxGeometry(0.05, 0.03, 0.045);
+  const pipDim = new THREE.MeshStandardMaterial({ color: 0x566176, roughness: 0.55, metalness: 0.2 });
+  const pipLitMaterials = new Map<number, THREE.MeshStandardMaterial>();
+  function pipLit(accent: number) {
+    let material = pipLitMaterials.get(accent);
+    if (!material) {
+      material = new THREE.MeshStandardMaterial({ color: 0x0b0d12, emissive: accent, emissiveIntensity: 1.4, roughness: 0.4, metalness: 0 });
+      pipLitMaterials.set(accent, material);
+    }
+    return material;
+  }
+  function addLevelPips(plinth: THREE.Object3D, span: number) {
+    const pips: THREE.Object3D[] = [];
+    const reach = 0.29 * span;
+    for (let index = 0; index < 10; index += 1) {
+      const pip = new THREE.Mesh(pipGeometry, pipDim);
+      pip.position.set(-reach + (index * reach * 2) / 9, PLINTH_HEIGHT_CELLS + 0.01, 0.42 * span);
+      plinth.add(pip);
+      pips.push(pip);
+    }
+    return pips;
+  }
+
+  // Dik tabelalar: Phaser nesnesi -> kameraya donuk sprite (dokusu nesnenin tuvali/resmi).
+  const uprightGroup = new THREE.Group();
+  uprightGroup.renderOrder = 30;
+  scene.add(uprightGroup);
+  const uprights = new Map<string, { sprite: THREE.Sprite; texture: THREE.Texture; source: HTMLCanvasElement | HTMLImageElement; version: string }>();
+
+  function syncUprights(items: readonly Upright3dInput[]) {
+    const seen = new Set<string>();
+    const cellSize = terrain?.cellSize ?? 34;
+    for (const item of items) {
+      seen.add(item.id);
+      let entry = uprights.get(item.id);
+      if (entry && entry.source !== item.source) {
+        removeUpright(item.id);
+        entry = undefined;
+      }
+      if (!entry) {
+        const texture = item.source instanceof HTMLCanvasElement ? new THREE.CanvasTexture(item.source) : new THREE.Texture(item.source);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.minFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        texture.needsUpdate = true;
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+        sprite.renderOrder = 30;
+        uprightGroup.add(sprite);
+        entry = { sprite, texture, source: item.source, version: item.version };
+        uprights.set(item.id, entry);
+      } else if (entry.version !== item.version) {
+        entry.version = item.version;
+        entry.texture.needsUpdate = true;
+      }
+      const frame = item.frame;
+      if (frame) {
+        entry.texture.repeat.set(frame.width / frame.sourceWidth, frame.height / frame.sourceHeight);
+        entry.texture.offset.set(frame.x / frame.sourceWidth, 1 - (frame.y + frame.height) / frame.sourceHeight);
+      }
+      const sprite = entry.sprite;
+      sprite.material.opacity = item.alpha;
+      sprite.scale.set(item.width, item.height, 1);
+      const anchor = item.anchor;
+      if (anchor && anchor !== "body") {
+        // Dusman panosunun merkezinde; ekranda basinin ustune (`center` goruntu duzleminde kaydiriyor).
+        const standee = standees.get(anchor.enemy);
+        if (!standee) {
+          sprite.visible = false;
+          continue;
+        }
+        sprite.position.set(standee.mesh.position.x, standee.headY, standee.mesh.position.z);
+        sprite.center.set(0.5, -(standee.headGap + 3 + item.rise) / Math.max(1e-3, item.height));
+      } else if (anchor === "body") {
+        sprite.position.set(item.x, zoneHeight(item.x, item.z) + standeeCenterHeight(airBodySize || cellSize * 0.6, orbit.elevation), item.z);
+        sprite.center.set(0.5, 0.5 - item.rise / Math.max(1e-3, item.height));
+      } else {
+        sprite.position.set(item.x, zoneHeight(item.x, item.z) + item.rise, item.z);
+        sprite.center.set(0.5, 0);
+      }
+      sprite.visible = true;
+    }
+    for (const id of [...uprights.keys()]) if (!seen.has(id)) removeUpright(id);
+  }
+
+  function removeUpright(id: string) {
+    const entry = uprights.get(id);
+    if (!entry) return;
+    uprightGroup.remove(entry.sprite);
+    entry.sprite.material.dispose();
+    entry.texture.dispose();
+    uprights.delete(id);
   }
 
   function removeInstance(instance: Instance) {
@@ -1262,7 +1415,90 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     return texture;
   }
 
+  function removeEnemyModel(standee: Standee) {
+    const model = standee.model;
+    if (!model) return;
+    scene.remove(model.root);
+    model.materials.forEach((material) => material.dispose());
+    model.flashMaterial.dispose();
+    standee.model = undefined;
+  }
+
+  function createEnemyModel(source: THREE.Object3D, key: string, x: number, z: number): EnemyModel {
+    const root = new THREE.Group();
+    const body = source.clone(true);
+    root.add(body);
+    const materials: THREE.MeshStandardMaterial[] = [];
+    const flash: THREE.Mesh[] = [];
+    const flashMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false });
+    // Once govdenin mesh'leri toplaniyor: eklenen flas ortusu de bir mesh (gezinti ona da inerdi).
+    const meshes: THREE.Mesh[] = [];
+    body.traverse((node: THREE.Object3D) => {
+      if ((node as THREE.Mesh).isMesh) meshes.push(node as THREE.Mesh);
+    });
+    meshes.forEach((mesh) => {
+      // Golge haritasi yalnizca kule degisince ciziliyor: yuruyen govde golge birakmiyor (ayakta yuvarlak golge).
+      mesh.castShadow = false;
+      const material = (mesh.material as THREE.MeshStandardMaterial).clone();
+      material.userData.baseColor = material.color.clone();
+      mesh.material = material;
+      materials.push(material);
+      const overlay = new THREE.Mesh(mesh.geometry, flashMaterial);
+      overlay.visible = false;
+      overlay.renderOrder = 2;
+      mesh.add(overlay);
+      flash.push(overlay);
+    });
+    const height = modelSizes.get(key)?.height ?? 1;
+    return { key, root, body, materials, flash, flashMaterial, height, yaw: Number.NaN, stride: 0, x, z, at: performance.now() };
+  }
+
+  /** Modelin bu karesi: konum, yone donus, adim sallantisi, ezilme, ton, saydamlik ve vurus flasi. */
+  function poseEnemyModel(model: EnemyModel, enemy: Enemy3dInput, ground: number) {
+    const now = performance.now();
+    const dt = Math.min(0.1, Math.max(0, (now - model.at) / 1000));
+    model.at = now;
+    const moved = Math.hypot(enemy.x - model.x, enemy.y - model.z);
+    model.x = enemy.x;
+    model.z = enemy.y;
+    // Isinlanma (havuz, ilk kare) adim sayilmiyor.
+    if (moved < enemy.modelSize * 2) model.stride += moved / Math.max(1, enemy.modelSize * 0.45);
+    const target = enemyModelYaw(enemy.rotation);
+    if (Number.isNaN(model.yaw)) model.yaw = target;
+    const turn = Math.atan2(Math.sin(target - model.yaw), Math.cos(target - model.yaw));
+    model.yaw += turn * Math.min(1, dt * 12);
+    // Ezilme: resmin en-boy orani kendi karesine gore ne kadar degistiyse model o kadar yayvan / uzun.
+    const aspect = enemy.frame.width / Math.max(1, enemy.frame.height);
+    const squash = Math.max(0.6, Math.min(1.6, enemy.width / Math.max(1e-3, enemy.height) / aspect));
+    const scale = enemy.modelSize;
+    model.root.scale.set(scale * Math.sqrt(squash), scale / Math.sqrt(squash), scale * Math.sqrt(squash));
+    const flying = enemy.extraLift > 0;
+    const step = Math.sin(model.stride * Math.PI);
+    const bob = flying ? Math.sin(now / 420 + model.stride * 0.3) * scale * 0.05 : Math.abs(step) * scale * 0.06;
+    model.root.position.set(enemy.x, ground + enemy.extraLift + bob, enemy.y);
+    model.root.rotation.y = model.yaw;
+    // Yurudukce yana yalpa (model ileri +X: X ekseni etrafinda).
+    model.body.rotation.x = flying ? 0 : step * 0.07;
+    const tint = enemy.tint;
+    const r = ((tint >> 16) & 255) / 255;
+    const g = ((tint >> 8) & 255) / 255;
+    const b = (tint & 255) / 255;
+    const clear = enemy.alpha < 0.999;
+    for (const material of model.materials) {
+      material.color.copy(material.userData.baseColor as THREE.Color).multiply(TMP_COLOR.setRGB(r, g, b));
+      material.transparent = clear;
+      material.depthWrite = !clear;
+      material.opacity = enemy.alpha;
+    }
+    for (const overlay of model.flash) overlay.visible = enemy.fill;
+    if (enemy.fill) {
+      model.flashMaterial.color.setRGB(r, g, b);
+      model.flashMaterial.opacity = 0.85 * enemy.alpha;
+    }
+  }
+
   function removeStandee(id: string, standee: Standee) {
+    removeEnemyModel(standee);
     scene.remove(standee.mesh);
     scene.remove(standee.shadow);
     scene.remove(standee.bar);
@@ -1319,7 +1555,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         bar.frustumCulled = false;
         // 2D'deki gibi her seyin ustunde (efekt duzleminin de).
         bar.renderOrder = 11;
-        standee = { mesh, material, shadow, bar, barMaterial, textureKey: "" };
+        standee = { mesh, material, shadow, bar, barMaterial, textureKey: "", headY: 0, headGap: 0 };
         standees.set(enemy.id, standee);
         scene.add(mesh);
         scene.add(shadow);
@@ -1339,10 +1575,31 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       uniforms.uTint.value.setRGB(((enemy.tint >> 16) & 255) / 255, ((enemy.tint >> 8) & 255) / 255, (enemy.tint & 255) / 255);
       uniforms.uAlpha.value = enemy.alpha;
       uniforms.uFill.value = enemy.fill ? 1 : 0;
-      const lift = standeeCenterHeight(enemy.size, orbit.elevation) + enemy.extraLift;
       // Tepeye tirmaniyor, cukura iniyor (arazi yalnizca gorunus).
       const ground = zoneHeight(enemy.x, enemy.y);
-      standee.mesh.position.set(enemy.x, ground + lift, enemy.y);
+      // 3D modeli varsa (yuklenince) pano gizli; model doku degisince (or. irk) yenileniyor.
+      const modelKey = enemyModelPath(enemy.textureKey);
+      const source = modelKey ? loaded.get(modelKey) : undefined;
+      if (modelKey && !source) request(modelKey);
+      if (standee.model && standee.model.key !== modelKey) removeEnemyModel(standee);
+      if (source && modelKey && !standee.model) {
+        standee.model = createEnemyModel(source, modelKey, enemy.x, enemy.y);
+        scene.add(standee.model.root);
+      }
+      const model = standee.model;
+      standee.mesh.visible = !model;
+      if (model) {
+        poseEnemyModel(model, enemy, ground);
+        const height = model.height * model.root.scale.y;
+        standee.mesh.position.set(enemy.x, model.root.position.y + height / 2, enemy.y);
+        standee.headY = model.root.position.y + height;
+        standee.headGap = 0;
+      } else {
+        const lift = standeeCenterHeight(enemy.size, orbit.elevation) + enemy.extraLift;
+        standee.mesh.position.set(enemy.x, ground + lift, enemy.y);
+        standee.headY = standee.mesh.position.y;
+        standee.headGap = Math.max(enemy.width, enemy.height) / 2;
+      }
       const bar = enemy.bar;
       standee.bar.visible = Boolean(bar);
       if (bar) {
@@ -1350,17 +1607,18 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         const box = { x: bar.width + 3, y: rows + 3 };
         const barUniforms = standee.barMaterial.uniforms;
         barUniforms.uBox.value.set(box.x, box.y);
-        // Alt kenari panonun tepesinin 4 birim ustunde (ekranda).
-        barUniforms.uOffset.value = Math.max(enemy.width, enemy.height) / 2 + 4;
+        // Alt kenari panonun (modelin) tepesinin 4 birim ustunde (ekranda).
+        barUniforms.uOffset.value = standee.headGap + 4;
         barUniforms.uWidth.value = bar.width;
         barUniforms.uRow.value = bar.row;
         barUniforms.uHp.value = bar.hp;
         barUniforms.uShield.value = bar.shield;
         barUniforms.uChampion.value = bar.champion ? 1 : 0;
-        standee.bar.position.copy(standee.mesh.position);
+        standee.bar.position.set(enemy.x, standee.headY, enemy.y);
       }
       standee.shadow.position.set(enemy.x, ground + 0.2, enemy.y);
-      standee.shadow.scale.setScalar(enemy.shadowRadius);
+      // Model panodan genis: golge de onun tabaninda.
+      standee.shadow.scale.setScalar(model ? Math.max(enemy.shadowRadius, enemy.modelSize * 0.42) : enemy.shadowRadius);
       standee.shadow.material.opacity = enemy.shadowAlpha;
     }
     for (const [id, standee] of standees) if (!active.has(id)) removeStandee(id, standee);
@@ -1372,6 +1630,14 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     // Simdi yukle: tuval birazdan efekt kamerasiyla yeniden ciziliyor.
     renderer.initTexture(boardTexture);
     boardCaptured = true;
+  }
+
+  function captureAir() {
+    if (disposed || view !== "angled") return;
+    airTexture.needsUpdate = true;
+    // Simdi yukle: tuval birazdan ekran panelleri icin temizleniyor.
+    renderer.initTexture(airTexture);
+    airCaptured = true;
   }
 
   let width = 0;
@@ -1556,6 +1822,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       stars.group.visible = false;
       if (slab) slab.group.visible = false;
       if (zoneBlocks) zoneBlocks.group.visible = false;
+      uprightGroup.visible = false;
       ground.visible = false;
       shadowCatcher.visible = true;
       air.visible = false;
@@ -1589,6 +1856,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     stars.group.visible = true;
     if (slab) slab.group.visible = true;
     if (zoneBlocks) zoneBlocks.group.visible = true;
+    uprightGroup.visible = true;
     ground.visible = groundReady();
     // 3D zemin golgeyi kendisi aliyor.
     shadowCatcher.visible = !ground.visible;
@@ -1597,18 +1865,20 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     boardTexture.offset.set(viewport.x / viewport.gameWidth, 1 - (viewport.y + viewport.height) / viewport.gameHeight);
     // Phaser bu karede cizdi; WebGL tamponu gorev bitene kadar gecerli, ayni karede yukleniyor.
     // Zemin `captureBoard`da alindiysa tuvalde artik yalnizca efektler var.
-    if (boardCaptured) {
+    // Zemin ve efektler Phaser karesinde ayri ayri alindi (`captureBoard`, `captureAir`);
+    // tuvalde artik yalnizca ekran panelleri var. Alinmadiysa (ilk kare) zemin tuvalden.
+    if (!boardCaptured) boardTexture.needsUpdate = true;
+    if (airCaptured) {
       air.visible = true;
       air.position.set(worldView.x + worldView.width / 2, standeeCenterHeight(airBodySize, orbit.elevation), worldView.y + worldView.height / 2);
       air.scale.set(worldView.width, worldView.height, 1);
       airTexture.repeat.copy(boardTexture.repeat);
       airTexture.offset.copy(boardTexture.offset);
-      airTexture.needsUpdate = true;
     } else {
       air.visible = false;
-      boardTexture.needsUpdate = true;
     }
     boardCaptured = false;
+    airCaptured = false;
 
     const current = orbitView();
     if (!current?.distance) return;
@@ -1661,6 +1931,10 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     for (const instance of instances.values()) removeInstance(instance);
     instances.clear();
     tierFx.dispose();
+    for (const id of [...uprights.keys()]) removeUpright(id);
+    pipGeometry.dispose();
+    pipDim.dispose();
+    pipLitMaterials.forEach((material) => material.dispose());
     plinths.dispose();
     stars.dispose();
     removeSlab();
@@ -1708,7 +1982,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   return {
     sync, syncEnemies, captureBoard, render, clientToWorld, worldToClient, dispose,
-    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, syncMines, syncWorkers, syncOperators, hasGround: groundReady,
+    rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, captureAir, syncUprights, syncMines, syncWorkers, syncOperators, hasGround: groundReady,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
     shots,
     shotsActive: () => !disposed && view === "angled",
