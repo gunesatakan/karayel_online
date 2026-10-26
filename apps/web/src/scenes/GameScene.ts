@@ -464,6 +464,7 @@ import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { EnemyHeadingTracker, findContactEnemy, getContactServerTime, resolveHitAnchor, type HitAnchor } from "../vfx/enemy-bodies";
 import { PlacementRangePreview } from "../vfx/placement-range";
 import { WallLineView, type WallHandleMark } from "../vfx/wall-line";
+import type { Shield3dInput } from "../render3d/energy-shield";
 import { SkillGestureView } from "../vfx/skill-gesture";
 import { MatchEndStage } from "../vfx/match-end-stage";
 import { MATCH_END_HUSK_TINT, MATCH_END_POWERED_DOWN_TINT } from "../vfx/match-end-vfx";
@@ -5780,6 +5781,16 @@ export class GameScene extends Phaser.Scene {
     if (!graphics) return;
     this.tickShieldGesture();
     this.tickMapSkillGesture();
+    const layer = this.towerLayer3d;
+    if (layer?.shotsActive()) {
+      // Egik gorunum: kalkan, onizleme ve yanki 3D enerji kalkani (render3d/energy-shield).
+      if (this.shieldDrawn) {
+        graphics.clear();
+        this.shieldDrawn = false;
+      }
+      layer.syncShields(this.collectShields3d(shields));
+      return;
+    }
     if (!Array.isArray(shields) || shields.length === 0) {
       if (this.shieldDrawn) {
         graphics.clear();
@@ -5942,11 +5953,43 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Egik gorunumun kalkanlari: sahadakiler (ilk goruluste yere oturus sesi),
+   * surukleme onizlemesi ve birakilanin yankisi; hepsi 3D enerji kalkani.
+   */
+  private collectShields3d(shields: readonly MetalShieldSnapshot[] | undefined): Shield3dInput[] {
+    const list: Shield3dInput[] = [];
+    const total = getMetalShieldWallDurationMs();
+    if (Array.isArray(shields) && shields.length > 0) {
+      for (const shield of shields) {
+        if (!isMetalShieldSnapshot(shield)) continue;
+        if (!this.shieldSeenIds.has(shield.id)) {
+          this.shieldSeenIds.add(shield.id);
+          this.announceShieldDeploy(shield);
+        }
+        list.push({ id: `shield-${shield.id}`, x1: shield.x1, y1: shield.y1, x2: shield.x2, y2: shield.y2, extent: getMetalShieldExtent(shield.ms, total), alpha: 1 });
+      }
+    } else if (this.shieldSeenIds.size > 0) {
+      this.shieldSeenIds.clear();
+    }
+    const preview = this.shieldGesture?.preview;
+    if (preview) {
+      const maxed = Math.hypot(preview.x2 - preview.x1, preview.y2 - preview.y1) >= getMetalShieldMaxLength(this.getMapCellSize()) - 0.01;
+      list.push({ id: "shield-preview", x1: preview.x1, y1: preview.y1, x2: preview.x2, y2: preview.y2, extent: 1, alpha: 0.5, maxed });
+    } else if (this.shieldEcho) {
+      const echo = this.shieldEcho.segment;
+      list.push({ id: "shield-echo", x1: echo.x1, y1: echo.y1, x2: echo.x2, y2: echo.y2, extent: 1, alpha: 0.3 });
+    }
+    return list;
+  }
+
   /** Surukleme onizlemesi; jest yokken birakilan kalkanin soluk yankisi. */
   private drawShieldPreview() {
     const graphics = this.shieldPreviewGraphics;
     if (!graphics) return;
     graphics.clear();
+    // Egik gorunumde onizleme 3D (`collectShields3d`, her karede).
+    if (this.towerLayer3d?.shotsActive()) return;
     const cellSize = this.getMapCellSize();
     const preview = this.shieldGesture?.preview;
     if (preview) {
@@ -11405,7 +11448,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       const span = getTowerGridSpan(tower.definitionId);
       const bodySize = getTowerBodySize(tower.definitionId, cellSize * span);
-      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span) });
+      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span), flame: this.getTowerFlame(tower, bodySize) });
     }
     return inputs;
   }
@@ -11780,10 +11823,22 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
   }
 
+  /**
+   * Performans alevinin 3D girdisi (egik gorunum): 2D'deki kuralla yogunluk ve
+   * ayak izinin yaricapi; alev yoksa tanimsiz.
+   */
+  private getTowerFlame(tower: TowerSnapshot, bodySize: number) {
+    if (tower.resourceProvider || tower.performance === undefined || this.isEdgePlacedDefinition(tower.definitionId)) return undefined;
+    const intensity = getTowerPerformanceFlameIntensity(tower.performance);
+    return intensity < PERFORMANCE_FLAME_MIN_INTENSITY ? undefined : { intensity, radius: bodySize * 0.47 };
+  }
+
   private renderTowerPerformanceFlames(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     // Performansi olmayan yapi (duvar, kenar yapisi) alev almiyor; eskiden
     // varsayilan %50 ile her duvara gorunmez bir pilot alev ciziliyordu.
     if (tower.resourceProvider || tower.performance === undefined || this.isEdgePlacedDefinition(tower.definitionId)) return;
+    // Egik gorunumde 3D modelli kulenin alevi 3D (render3d/shot-fx `flames`).
+    if (this.towerLayer3d?.shotsActive() && this.towers3dShown.has(tower.id)) return;
     const intensity = getTowerPerformanceFlameIntensity(tower.performance);
     // %50'deki pilot isik (%3 alfa) gorunmuyor ama kule basina ~225 cizim
     // komutu her karede yeniden ucgenleniyordu.

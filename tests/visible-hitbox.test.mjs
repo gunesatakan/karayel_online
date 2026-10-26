@@ -42,12 +42,19 @@ import {
   ENEMY_BODY_OUTLINES,
   ENEMY_BOMBER_ART_SCALE,
   ENEMY_SIZE_SCALE,
+  LANCE_SHOT_BODY,
+  PROJECTILE_SILHOUETTE_SIZE,
+  PROJECTILE_SLUG,
+  PROJECTILE_TIER_WEIGHT,
+  PROJECTILE_VISUAL_SCALE,
   SERVER_TICK_MS,
   SNAPSHOT_INTERVAL_MS,
   SNAPSHOT_SEND_INTERVAL_MS,
   SpatialGrid,
+  UCUBE_SHOT_BODY,
   WIRE_POSITION_QUANTUM,
   createEnemyBody,
+  fitProjectileFront,
   getAttackDroneBodyRadius,
   getBodyHeadingMinStep,
   getBodyHeadingRotation,
@@ -208,28 +215,31 @@ function clip(polygon, nx, ny, c) {
 /**
  * Merminin cizilen govdesi yerel cercevede (+x ucus): cizicinin parcalari
  * (`getProjectileBody`; parcalarin cizimle ayni oldugu tests/projectile-body'de
- * olculuyor) ve disk (cevreleyen 180 kenarli cokgen), merkezin `reach` gerisi
- * kesik. Melis dokularinda kapsul (eksende `[arka, wide]`, yaricap `radius`)
- * ve igne.
+ * olculuyor) ve disk (180 kenarli cokgen), merkezin `reach` gerisi kesik.
+ * Melis dokularinda kapsul (eksende `[arka, wide]`, yaricap `radius`) ve
+ * igne. Diskin ve kapsulun cokgeni `fit` "outer"da cemberi cevreliyor,
+ * "inner"da koseleri cemberin uzerinde (iceride); verilmezse disk
+ * cevreleyen, kapsul koseleri cemberde (eskisi gibi).
  */
-function projectileLocalParts(id, tier, shape, reach) {
+function projectileLocalParts(id, tier, shape, reach, fit) {
   const parts = [];
   const body = getProjectileBody(id, tier);
   for (const part of body.parts) parts.push(hull(Array.from({ length: part.length / 2 }, (_, i) => [part[2 * i], part[2 * i + 1]])));
   if (shape.disc === 1 && shape.radius > 0) {
-    const r = shape.radius / Math.cos(Math.PI / 180);
+    const r = fit === "inner" ? shape.radius : shape.radius / Math.cos(Math.PI / 180);
     parts.push(Array.from({ length: 180 }, (_, i) => [shape.wide + Math.cos((i / 180) * Math.PI * 2) * r, Math.sin((i / 180) * Math.PI * 2) * r]));
   }
   if (shape.disc === 2) {
     const rear = shape.wide - shape.radius < -reach ? shape.wide : Math.min(shape.wide, shape.radius - reach);
+    const r = fit === "outer" ? shape.radius / Math.cos(Math.PI / 360) : shape.radius;
     const local = [];
     for (let i = 0; i <= 180; i += 1) {
       const a = -Math.PI / 2 + (Math.PI * i) / 180;
-      local.push([shape.wide + Math.cos(a) * shape.radius, Math.sin(a) * shape.radius]);
+      local.push([shape.wide + Math.cos(a) * r, Math.sin(a) * r]);
     }
     for (let i = 0; i <= 180; i += 1) {
       const a = Math.PI / 2 + (Math.PI * i) / 180;
-      local.push([rear + Math.cos(a) * shape.radius, Math.sin(a) * shape.radius]);
+      local.push([rear + Math.cos(a) * r, Math.sin(a) * r]);
     }
     parts.push(hull(local));
   }
@@ -263,13 +273,14 @@ function firstZero(f, travel) {
 
 /**
  * Bagimsiz ilk temas: her parca ayri (uzaklik ucus boyunca dis bukey: ilk
- * sifir), en kucugu. Melis dokularinda igne de (parca).
+ * sifir), en kucugu. Melis dokularinda igne de (parca). `fit` diskin
+ * cokgeni (`projectileLocalParts`).
  */
-function referenceContact(polygon, id, tier, flown, fx, fy, ux, uy, travel) {
+function referenceContact(polygon, id, tier, flown, fx, fy, ux, uy, travel, fit) {
   const shape = getProjectileShape(id, tier);
   const reach = getProjectileReach(shape, flown);
   let best = -1;
-  for (const part of projectileLocalParts(id, tier, shape, reach)) {
+  for (const part of projectileLocalParts(id, tier, shape, reach, fit)) {
     const t = firstZero((s) => polygonDistance(polygon, placeLocal(part, fx + ux * s, fy + uy * s, ux, uy)), travel);
     if (t >= 0 && (best < 0 || t < best)) best = t;
   }
@@ -1259,14 +1270,22 @@ test("ucan mermi: ilk temas bagimsiz hesapla ayni (parcalar, disk, kesik disk; M
     const flown = index % 3 === 0 ? rnd() * 4 : 1000;
     const travel = 40;
     const model = getProjectileBodyContact(fx, fy, ux, uy, travel, shape, flown, body);
-    const reference = referenceContact(polygon, id, tier, flown, fx, fy, ux, uy, travel);
+    // Bagimsiz hesapta disk ve kapsul 180 kenarli cokgen: cemberi cevreleyen
+    // cokgen gercek govdeden once ya da ayni anda, koseleri cemberde olan sonra
+    // ya da ayni anda degiyor; gercek temas ikisinin arasinda. Aralik genelde
+    // binde birden dar; siyirarak degende (dusmanin kenari ucusa neredeyse
+    // paralel) cokgenin kirisi yolda buyuyor (olcek 0,64'te mage-1'in enerji
+    // gullesinde 0,011): sabit bir pay orada bagimsiz hesabin kendi hatasi olurdu.
+    const outer = referenceContact(polygon, id, tier, flown, fx, fy, ux, uy, travel, "outer");
+    const inner = shape.disc === 0 ? outer : referenceContact(polygon, id, tier, flown, fx, fy, ux, uy, travel, "inner");
     const label = `${id} ucus ${flown.toFixed(2)} yanal ${lateral.toFixed(2)}`;
-    if (reference < 0 || model < 0) {
-      assert.equal(model < 0, reference < 0, `${label}: model ${model} / bagimsiz ${reference}`);
+    if (model < 0) {
+      assert.ok(inner < 0, `${label}: model degmedi / bagimsiz (icteki cokgen) ${inner}`);
       continue;
     }
-    // Diskin cokgen kirisi (180 kose) ve ikili arama payi.
-    assert.ok(Math.abs(model - reference) <= 2e-3, `${label}: model ${model} / bagimsiz ${reference}`);
+    assert.ok(outer >= 0, `${label}: model ${model} / bagimsiz (cevreleyen cokgen) degmedi`);
+    // Ikili aramanin payi.
+    assert.ok(model >= outer - 1e-5 && (inner < 0 || model <= inner + 1e-5), `${label}: model ${model} / bagimsiz ${outer} - ${inner}`);
     hits += 1;
     if (-getProjectileReach(shape, flown) > -shape.tail) clipped += 1;
     const point = writeProjectileBodyContactPoint(fx, fy, ux, uy, model, shape, flown, body, { x: 0, y: 0 });
@@ -1290,39 +1309,66 @@ test("ucan mermi: ilk temas bagimsiz hesapla ayni (parcalar, disk, kesik disk; M
 
 test("merminin yanlari cizildigi kadar: govde cizgisinin ve damlanin yanina giren dusman cizim degmeden vurulmuyor; mizragin bas ucgeninin yanlari gec degil", () => {
   // Turun dogrulayicilarinin ornekleri. Eskiden tek kapsul en genis yerin
-  // (basin) eniyle kuyruga kadar gidiyordu: Hiza T1'in 0,6'lik govdesine 1,5,
-  // T3'unkine 2, Ucube'nin damlasina 3 birim yandan "degiyordu".
+  // (basin) eniyle kuyruga kadar gidiyordu: olcek 0,8'de Hiza T1'in 0,6'lik
+  // govdesine 1,5, T3'unkine 2, Ucube'nin damlasina 3 birim yandan "degiyordu".
+  // Olculer siluetin boyundan ve gorunus olceginden (`unit`); olcek 0,8'de
+  // eski orneklerin sayilari (yalnizca Ucube'nin karesi -6,6 yerine -6,55'te).
   // Kucuk kare govde (yari kenar 0,25): alt yuzu eksenden `gap` uzakta, `along`da;
   // yalnizca o yanin yanina giriyor (gercek dusman bas ucgenine de uzanirdi).
   const square = createEnemyBodyPolygon([-1, -1, 1, -1, 1, 1, -1, 1]);
   const probe = (gap, along) => ({ x: along, y: gap + 0.25, headingX: 0, headingY: 1, fromX: along, fromY: gap + 0.25, scale: 0.25, reach: 0.25 * square.radius, poly: square });
-  // Ucube'nin damlasi kuyruga dogru sivriliyor: karenin basa yakin kosesindeki (-6,35) en.
-  for (const [id, tier, along, drawnHalf] of [["zeynep-1", 1, -7.2, 0.6], ["zeynep-1", 3, -7.2, 0.96], ["warrior-6", 1, -6.6, 3.36 * (1 - 6.35 / 10.92)]]) {
+  const unit = (silhouette) => (PROJECTILE_SILHOUETTE_SIZE[silhouette] / 2) * PROJECTILE_VISUAL_SCALE;
+  const lance = unit("lance");
+  // Mizragin govde cizgisi (`drawSlug`, en az 1 kalin: olcek 0,64'te T1 tam bu en) ve
+  // Ucube'nin damlasi (taban basin capi, ucu kuyrukta).
+  const shaftHalf = (tier) => Math.max(PROJECTILE_SLUG.minWidth, LANCE_SHOT_BODY.minShaftWidth, lance * LANCE_SHOT_BODY.shaftWidth * PROJECTILE_TIER_WEIGHT[tier - 1]) / 2;
+  const shaft = lance * LANCE_SHOT_BODY.shaft;
+  const dropHead = unit("arc") * UCUBE_SHOT_BODY.size * UCUBE_SHOT_BODY.head * 2;
+  const dropTail = unit("arc") * UCUBE_SHOT_BODY.size * UCUBE_SHOT_BODY.tail;
+  // Kare govde cizgisinin ve damlanin %60'inda (bas ucgeninden ve basin diskinden
+  // uzak). Damla kuyruga dogru sivriliyor: karenin basa yakin kosesindeki en.
+  const dropAlong = -0.6 * dropTail;
+  for (const [id, tier, along, drawnHalf] of [
+    ["zeynep-1", 1, -0.6 * shaft, shaftHalf(1)],
+    ["zeynep-1", 3, -0.6 * shaft, shaftHalf(3)],
+    ["warrior-6", 1, dropAlong, dropHead * (1 + (dropAlong + 0.25) / dropTail)]
+  ]) {
     const shape = getProjectileShape(id, tier);
     // Cizilen yanin hemen otesi: degmiyor; hemen icinde: degiyor (tikin basinda).
     assert.equal(getProjectileBodyContact(0, 0, 1, 0, 0, shape, 1000, probe(drawnHalf + 0.05, along)), -1, `${id} ${tier}: cizilen govdenin ${drawnHalf.toFixed(2)} yanina degmeden vurdu`);
     assert.equal(getProjectileBodyContact(0, 0, 1, 0, 0, shape, 1000, probe(drawnHalf - 0.05, along)), 0, `${id} ${tier}: cizilen govdeye degen dusmana degmedi`);
-    // Eski kapsulun yaricapi (basin eni) cok daha genisti.
-    assert.ok(shape.halfWidth > drawnHalf + 0.9, `${id}`);
+    // Eski kapsulun yaricapi (basin eni) cok daha genisti: cizilen enin iki katindan fazla.
+    assert.ok(shape.halfWidth > 2 * drawnHalf, `${id} ${tier}: ${shape.halfWidth} / ${drawnHalf}`);
   }
   // Bas ucgeninin yani: eksenin yaninda gelen govde ucgenin kenarina degdigi anda.
-  // Ucgen (6,3, 0) -> (-0,9, +/-1,8): yanal 1,2'de on kenar x = 6,3 - 4 x 1,2 = 1,5.
-  // Karenin sol alt kosesi (30, 1,2): temas merkez 28,5'teyken.
+  // Ucgen (uc, 0) -> (-arka, +/-yari en); olcek 0,64'te (5,04, 0) -> (-0,72, +/-1,44).
+  // Yari enin 2/3'unde (0,96: kare basin ve govde cizgisinin otesi) on kenar
+  // x = uc - (uc + arka) / yari en x yanal = 5,04 - 4 x 0,96 = 1,2.
+  // Karenin sol alt kosesi (30, yanal): temas merkez 30 - 1,2 = 28,8'deyken.
   const shape = getProjectileShape("zeynep-1", 1);
-  const wall = probe(1.2, 30.25);
+  const tip = lance * LANCE_SHOT_BODY.tip;
+  const headBack = lance * LANCE_SHOT_BODY.headBack;
+  const headHalf = lance * LANCE_SHOT_BODY.headHalf;
+  const side = (2 / 3) * headHalf;
+  const edge = tip - ((tip + headBack) / headHalf) * side;
+  assert.ok(side > PROJECTILE_SLUG.minHead && side > shaftHalf(1), "yanal kare basin ve govde cizgisinin otesinde");
+  const wall = probe(side, 30.25);
   const polygon = worldPolygon(wall);
   const contact = getProjectileBodyContact(0, 0, 1, 0, 60, shape, 1000, wall);
-  near(contact, 28.5, "bas ucgeninin yani", 1e-9);
+  near(contact, 30 - edge, "bas ucgeninin yani", 1e-9);
   const reference = referenceContact(polygon, "zeynep-1", 1, 1000, 0, 0, 1, 0, 60);
   assert.ok(Math.abs(contact - reference) < 2e-3, `${contact} / ${reference}`);
   const point = writeProjectileBodyContactPoint(0, 0, 1, 0, contact, shape, 1000, wall, { x: 0, y: 0 });
   near(point.x, 30, "temas kose x", 1e-9);
-  near(point.y, 1.2, "temas kose y", 1e-9);
-  // Eski model (yaricapi 1,8 disk -1,12'de ve eksende igne) bu durumda gec:
-  // yanal 1,2'de diskin on kenari -1,12 + sqrt(1,8^2 - 1,2^2) = 0,22 (cizilen ucgen 1,5).
-  const circle = (cx) => Array.from({ length: 360 }, (_, i) => [cx + Math.cos((i / 360) * Math.PI * 2) * 1.8, Math.sin((i / 360) * Math.PI * 2) * 1.8]);
-  const oldDisc = firstZero((step) => polygonDistance(polygon, circle(step - 1.12)), 60);
-  assert.ok(oldDisc > contact + 1.2, `eski model ${oldDisc}`);
+  near(point.y, side, "temas kose y", 1e-9);
+  // Eski model (yaricapi basin yari eni olan disk on zarfa sigdigi `wide`da ve
+  // eksende igne) bu durumda gec: yanalda diskin on kenari wide + sqrt(yari en^2 -
+  // yanal^2) (olcek 0,8'de -1,12 + 1,34 = 0,22, cizilen ucgen 1,5; 0,64'te 0,18 / 1,2):
+  // cizilen kenarin %80'inden fazla geride.
+  const old = fitProjectileFront(getProjectileBody("zeynep-1", 1).parts, headHalf);
+  const circle = (cx) => Array.from({ length: 360 }, (_, i) => [cx + Math.cos((i / 360) * Math.PI * 2) * headHalf, Math.sin((i / 360) * Math.PI * 2) * headHalf]);
+  const oldDisc = firstZero((step) => polygonDistance(polygon, circle(step + old.wide)), 60);
+  assert.ok(oldDisc > contact + 0.8 * edge, `eski model ${oldDisc} (wide ${old.wide})`);
 });
 
 /* ------------------------------------------------------------------ */
@@ -1589,11 +1635,14 @@ test("tikin basinda ortusen mermi: nokta dilimdeki kenar noktalarinin merminin c
   // Turun dogrulayicilarinin ornekleri (kare 34, mermi (0, 0)'da +x'e). Eskiden
   // dilimde eksene en yakin kenar noktasi seciliyordu: kenar cizilen govdeyi
   // (Hiza'nin bas ucgenini, Ucube'nin basini, Obsesyon'un mercegini) baska
-  // yerde kesiyorken nokta cizimden 1,7-2,3 birim uzaktaydi.
+  // yerde kesiyorken nokta cizimden 1,7-2,3 birim uzaktaydi. Mermiler olcek
+  // 0,64'e kuculunce ornekler kaydi (kenar cizimi kesmiyordu, Ucube hic
+  // degmiyordu): dusmanin yeri ve yonu yeniden secildi, kenar yine cizimi
+  // kesiyor ve eski olcutun noktasi cizimden 1,2-1,7 birim uzakta.
   for (const [id, tier, flown, view, x, y, degrees] of [
-    ["zeynep-1", 3, 0, { race: "meka", type: "shooter" }, -0.2, 4.8, 247],
-    ["warrior-6", 1, 100, { race: "golem", type: "brute" }, -7.5, 16.2, 354],
-    ["warrior-4", 1, 0, { race: "spaceBug", type: "shooter" }, 1.7, 7.8, 281]
+    ["zeynep-1", 3, 0, { race: "meka", type: "shooter" }, -0.8, 5.7, 247],
+    ["warrior-6", 1, 100, { race: "golem", type: "brute" }, -7.2, 15.4, 354],
+    ["warrior-4", 1, 0, { race: "spaceBug", type: "shooter" }, 1.1, 8.9, 279]
   ]) {
     const body = createEnemyBody(view, 34, x, y);
     body.headingX = Math.cos((degrees * Math.PI) / 180);
@@ -1986,7 +2035,12 @@ test("meka kalkani: mermi zaten levhaya degiyorsa (kalkan o tikte indi) yerinde 
   const face = getMekaShieldFace(grid);
   const scale = getProjectileSceneScale(grid);
   // Kalkan dikey (normal +x) ve merminin onunde: merkez cizgiden `gap` geride, kafa kafaya.
-  for (const [id, limit] of [["zeynep-1", 10], ["warrior-6", 6], ["warrior-1", 4]]) {
+  // Eski orneklerin derinligi (Hiza 10, Ucube 6, Takipci 4) mermiler 0,8
+  // olcekteyken olculdu: levhanin yuzunden otesi merminin govdesi, olcekle
+  // kuculuyor (0,64'te Hiza 8,8, Ucube 5,6; Takipci'ninki yuzun icinde).
+  const measuredScale = 0.8;
+  const oldDepth = (depth) => Math.min(depth, face + (depth - face) * (PROJECTILE_VISUAL_SCALE / measuredScale));
+  for (const [id, limit] of [["zeynep-1", oldDepth(10)], ["warrior-6", oldDepth(6)], ["warrior-1", oldDepth(4)]]) {
     const shape = getProjectileShape(id, 1, scale);
     for (let gap = 0.5; gap <= 14; gap += 0.5) {
       landShield(room, center.x + gap, center.y, Math.PI / 2);
@@ -2008,9 +2062,10 @@ test("meka kalkani: mermi zaten levhaya degiyorsa (kalkan o tikte indi) yerinde 
       room.projectiles.delete(projectile.id);
     }
   }
-  // Ucun yaninda: Ucube'nin ekseni kalkanin ucundan 0,5-3 birim disarida, basi levhanin ucuna degiyor.
+  // Ucun yaninda: Ucube'nin ekseni kalkanin ucundan disarida (0,8 olcekte 0,5-3
+  // birim, basin yari eninin %90'ina kadar; olcekle), basi levhanin ucuna degiyor.
   const ucube = getProjectileShape("warrior-6", 1, scale);
-  for (const beyond of [0.5, 1, 2, 3]) {
+  for (const beyond of [0.5, 1, 2, 3].map((value) => (value * PROJECTILE_VISUAL_SCALE) / measuredScale)) {
     const shield = landShield(room, center.x + 40, center.y, Math.PI / 2);
     assert.ok(beyond < ucube.halfWidth, "bas ucun otesine uzanmiyor");
     const projectile = shoot(context, "warrior-6", { x: center.x, y: shield.y2 + beyond }, 0, { flown: 1000 });

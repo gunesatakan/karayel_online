@@ -127,8 +127,13 @@ test("sahne: onizleme bolgeyi reddediyor, birakista neden soyleniyor, cizim ve t
   assert.match(update, /setTint\(canPlace \? 0x86efac : 0xf87171\)/);
   assert.match(update, /this\.placementRange\?\.update\(\{[\s\S]*canPlace,/);
   assert.match(body("finishTowerDragAt"), /this\.isPreviewInBuildZone\(cell\.x, cell\.y\) \? "scene\.place\.forbiddenZone" : "scene\.place\.blocked"/);
-  // Cizim: harita grafiginde, anahtar bolgeleri de iceriyor.
-  assert.match(body("drawMap"), /drawBuildZones\(graphics, this\.getActiveBuildZones\(\), \{ originX: origin\.x, originY: origin\.y, cellSize \}\)/);
+  // Cizim: tepe/cukur isaretleriyle ayni grafikte (zeminin ustunde); egik 3D
+  // gorunum bolgeleri kendisi ciziyor, orada gizli. Anahtar bolgeleri de iceriyor.
+  const map = body("drawMap");
+  assert.match(map, /const reliefs = this\.buildZoneReliefGraphics \?\? this\.add\.graphics\(\)/);
+  assert.match(map, /drawBuildZones\(reliefs, this\.getActiveBuildZones\(\), \{ originX: origin\.x, originY: origin\.y, cellSize \}\)/);
+  assert.ok(map.indexOf("drawBuildZones(reliefs") < map.indexOf("this.syncBuildZoneReliefVisibility()"), "gorunurluk cizimden sonra");
+  assert.match(body("syncBuildZoneReliefVisibility"), /this\.buildZoneReliefGraphics\?\.setVisible\(this\.towerLayer3d\?\.getView\(\) !== "angled"\)/);
   assert.match(body("getMapRenderKey"), /getBuildZoneRenderKey\(zones\)/);
   assert.match(body("syncMap"), /this\.getMapRenderKey\(map\)/);
   // Tel: tam statik anlik goruntu; haritadan once yaziliyor.

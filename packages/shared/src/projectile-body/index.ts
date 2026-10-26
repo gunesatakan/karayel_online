@@ -34,11 +34,11 @@
 import { TOWER_GRID_SIZE } from "../index.js";
 
 /**
- * Kule mermilerinin gorunus olcegi (sahibin istegi: "mermiler %20 kucuk").
- * Govde bununla ciziliyor; isabet sekli de cizilen govde oldugu icin onu da
- * kapsiyor.
+ * Kule mermilerinin gorunus olcegi (sahibin istegi: "mermiler %20 kucuk",
+ * 2026-10-27'de bir %20 daha: 0,8 -> 0,64). Govde bununla ciziliyor; isabet
+ * sekli de cizilen govde oldugu icin onu da kapsiyor.
  */
-export const PROJECTILE_VISUAL_SCALE = 0.8;
+export const PROJECTILE_VISUAL_SCALE = 0.64;
 
 /** Merminin govdesi nasil ciziliyor. Ses (hit-sounds) bunu okuyor: degerler sabit. */
 export type ProjectileSilhouette =
@@ -161,7 +161,7 @@ export function getProjectileLanceMode(definitionId: string | undefined): Projec
 }
 
 /* ------------------------------------------------------------------ */
-/* Govdenin dis hatlari (r = siluet / 2 x sahne olcegi x 0,8)            */
+/* Govdenin dis hatlari (r = siluet / 2 x sahne olcegi x gorunus olcegi)  */
 /* ------------------------------------------------------------------ */
 
 /** `drawSlug` (kit): govde cizgisi, beyaz-sicak cekirdek ve parlak kare bas. */

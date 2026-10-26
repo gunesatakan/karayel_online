@@ -58,7 +58,8 @@ import {
   type OrbitView,
   type TowerTier
 } from "./tower-math";
-import { createShotFx, type DeathFxInput, type ShotFx } from "./shot-fx";
+import { createShotFx, type DeathFxInput, type ShotFlameInput, type ShotFx } from "./shot-fx";
+import { createEnergyShields, type Shield3dInput } from "./energy-shield";
 import { createOverlay3d, type OverlayAnchor, type OverlayMode, type Overlay3dSurface } from "./overlay-3d";
 import { createTierFx } from "./tower-tiers";
 import { setAngledRenderScale } from "./renderer-mode";
@@ -84,6 +85,8 @@ export type Tower3dInput = {
   modelPath?: string;
   /** Dikey olcek carpani (acik kapi: duvar alcaliyor). */
   heightScale?: number;
+  /** Performans alevi: yogunluk ve ayak izinin yaricapi (dunya birimi); yoksa alev yok. */
+  flame?: { intensity: number; radius: number };
 };
 
 /**
@@ -236,6 +239,8 @@ type Instance = {
   pop?: { at: number; big: boolean };
   /** Vurusun hedef noktasina kilit (`lockAim`): suresi dolana kadar `facing` yerine. */
   lock?: { x: number; y: number; z: number; until: number };
+  /** Performans alevi (egik gorunumde 3D): kaidenin ustu `y`. */
+  flame?: { intensity: number; radius: number; x: number; z: number; y: number };
 };
 
 const TMP_COLOR = new THREE.Color();
@@ -347,6 +352,8 @@ export type TowerLayer = {
   enemyDeath(id: string, death: EnemyDeath3dInput): void;
   /** Yerlestirme hayaletleri (surukleme ve yoldaki istek); bos liste: hepsi kalkar. */
   syncGhosts(ghosts: readonly Ghost3dInput[]): void;
+  /** Metal Kalkan'in 3D enerji kalkanlari (sahadakiler, onizleme, yanki); bos liste: hepsi kalkar. */
+  syncShields(shields: readonly Shield3dInput[]): void;
   /**
    * Egik gorunumun 3D cizim yuzeyi (render3d/overlay-3d): kule isaretleri, bag
    * cizgileri, operatorun is isini ve mac sonu isini 2D cagrilarla buraya ciziyor.
@@ -713,6 +720,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     }
     return found;
   }
+  /** Karenin alevli kuleleri (`shots.flames`): her karede yeniden dolduruluyor. */
+  const flameList: ShotFlameInput[] = [];
+  const energyShields = createEnergyShields(scene, { cellSize: () => terrain?.cellSize ?? 34, groundHeight: (x, z) => zoneHeight(x, z) });
   const shots = createShotFx(scene, {
     cellSize: () => terrain?.cellSize ?? 34,
     groundHeight: (x, z) => zoneHeight(x, z),
@@ -1347,6 +1357,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       instance.scale = scale;
       instance.heightScale = tower.heightScale ?? 1;
       instance.root.position.set(tower.x, base, tower.y);
+      instance.flame = tower.flame ? { ...tower.flame, x: tower.x, z: tower.y, y: base } : undefined;
       instance.aims = tower.fixedYaw === undefined && typeof tower.facing === "number";
       if (tower.fixedYaw !== undefined) {
         instance.root.rotation.y = tower.fixedYaw;
@@ -2258,7 +2269,15 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     tierFx.tick(now, true);
     tickCorpses(now);
     shots.setVisible(true);
+    flameList.length = 0;
+    for (const [id, instance] of instances) {
+      const flame = instance.flame;
+      if (flame && instance.root.visible) flameList.push({ id, x: flame.x, z: flame.z, y: flame.y, radius: flame.radius, intensity: flame.intensity });
+    }
+    shots.flames(flameList);
     shots.update(now);
+    energyShields.setVisible(true);
+    energyShields.update(now);
     overlay.setVisible(true);
     overlay.update(angledCamera);
     // Parlama: isikli seritler, kaide halkalari ve vuruslar (1'den parlaklar) yayiliyor.
@@ -2288,6 +2307,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     disposed = true;
     shots.dispose();
     overlay.dispose();
+    energyShields.dispose();
     for (const corpse of corpses.values()) disposeModel(corpse.model);
     corpses.clear();
     for (const id of [...ghosts.keys()]) removeGhost(id);
@@ -2348,6 +2368,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   return {
     sync, syncEnemies, enemyDeath, syncGhosts, captureBoard, render, clientToWorld, worldToClient, dispose,
+    syncShields: (list) => energyShields.sync(list),
     overlaySurface: (name, mode, additive) => overlay.surface(name, mode, additive),
     rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, captureAir, syncUprights, syncMines, syncWorkers, syncOperators, hasGround: groundReady,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
@@ -2362,6 +2383,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         syncWorkers([]);
         syncOperators([]);
         syncGhosts([]);
+        energyShields.setVisible(false);
         overlay.clear();
       }
     },

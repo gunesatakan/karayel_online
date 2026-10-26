@@ -65,7 +65,7 @@ test("kademe resmi kareyi dolduruyor: cizim boyu kule izi, cikinti payi yok", ()
 test("gorunus olcekleri: kuleler ve mermiler %20, isciler %10 kucuk; duvar ve Abarti ayni", async () => {
   const scales = await importWebModule("apps/web/src/visual-scale.ts");
   assert.equal(scales.TOWER_BODY_VISUAL_SCALE, 0.8);
-  assert.equal(scales.PROJECTILE_VISUAL_SCALE, 0.8);
+  assert.equal(scales.PROJECTILE_VISUAL_SCALE, 0.64);
   assert.equal(scales.WORKER_VISUAL_SCALE, 0.9);
   // Kenar yapilari: cizim boyu etki dikdortgeni, kuculmuyor.
   for (const id of ["wall-1", "zeynep-8"]) {

@@ -482,7 +482,10 @@ test("kaynak: seri afisi kompakt ust plaka, temali hareket geri geldi, hareket a
   assert.ok(show.includes("setScale(cssPx)"), "kapsayici CSS pikseline olcekli");
   assert.ok(!/\/ zoom/.test(show.replace("gamePxPerCss / zoom", "")),"plaka icinde ham zoom bolmesi kalmadi");
   assert.ok(show.includes("fontSize: \"11px\""), "buff satiri 11 CSS px");
-  assert.ok(show.includes("setResolution(Math.max(1, gamePxPerCss))"), "yazilar tuval cozunurlugunde");
+  assert.ok(show.includes("this.fixTextResolution(part, Math.max(1, gamePxPerCss))"), "yazilar tuval cozunurlugunde");
+  // Yardimci cozunurlugu yaziyor ve yaziyi kameranin yakinlasma takibinden cikariyor (ustune yazilmiyor).
+  const fix = client.slice(client.indexOf("private fixTextResolution("), client.indexOf("\n  }\n", client.indexOf("private fixTextResolution(")));
+  assert.ok(/this\.sharpTexts\.delete\(text\);\s*text\.setResolution\(resolution\);/.test(fix), "fixTextResolution cozunurlugu sabitliyor");
   assert.ok(!show.includes("zeynep-puppet-hands"), "kukla elleri resmi (390x260) afise donmedi");
   assert.ok(!client.includes("fitStreakBannerToCamera") && !client.includes("getKillStreakAnchor"), "eski dev afis yerlesimi donmedi");
 

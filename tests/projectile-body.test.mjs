@@ -24,7 +24,9 @@ import { readFileSync } from "node:fs";
 import { createGeometryRecorder, isBodyPrim, THIN_LINE } from "./helpers/geometry-recorder.mjs";
 import {
   ATAKAN_ATTACK_DRONE_BODY,
+  COMBAT_BODY,
   LANCE_SHOT_BODY,
+  PROJECTILE_SLUG,
   PROJECTILE_DISC_TOLERANCE,
   PROJECTILE_TIER_WEIGHT,
   UCUBE_SHOT_BODY,
@@ -245,8 +247,9 @@ test("Ucube'nin basi dairenin cokgeni: kenar ortasi daireden en fazla 0,05 iceri
     const head = getProjectileBody("warrior-6", 1, sceneScale).disc;
     const sides = getProjectileDiscSides(head);
     assert.ok(head * (1 - Math.cos(Math.PI / sides)) <= PROJECTILE_DISC_TOLERANCE + 1e-12, `${sceneScale}: ${sides} kenar`);
-    // Eski 8 kenar 3,4'luk basta 0,26 iceride kaliyordu.
-    if (sceneScale === 1) assert.ok(head * (1 - Math.cos(Math.PI / 8)) > 0.25);
+    // Eski 8 kenar 3,4'luk basta 0,26 iceride kaliyordu; bugunku basta da
+    // (olcek 0,64'te 2,69) 0,20: pay asiliyor, 8 kenar yetmiyor.
+    if (sceneScale === 1) assert.ok(sides > 8 && head * (1 - Math.cos(Math.PI / 8)) > PROJECTILE_DISC_TOLERANCE, `${head}: ${sides} kenar`);
   }
   const shots = readFileSync(new URL("../apps/web/src/vfx/atakan-shots.ts", import.meta.url), "utf8");
   assert.match(shots, /fillDisc\(g, x, y, head, getProjectileDiscSides\(head\)\);/);
@@ -295,18 +298,26 @@ test("sekil govdenin kendisi: cizilen parcalar ve disk; yanlar cizilen en, arka 
       assert.equal(getProjectileShape(id, tier), shape, "onbellek ayni nesne");
     }
   }
-  // Eski vurus tipi yaricapinin (4 / 8) yerine cizilen en: Ucube'nin basi 3,4,
-  // Takipci'nin izi 0,8, Hiza'nin basi 1,8.
-  assert.ok(Math.abs(getProjectileShape("warrior-6").radius - 3.36) < 1e-9 && getProjectileShape("warrior-6").disc === 1);
-  assert.ok(Math.abs(getProjectileShape("warrior-1").halfWidth - 0.784) < 1e-9);
-  assert.ok(Math.abs(getProjectileShape("zeynep-1").halfWidth - 1.8) < 1e-9);
+  // Eski vurus tipi yaricapinin (4 / 8) yerine cizilen en (olcek 0,64'te):
+  // Ucube'nin basi 2,69, Takipci'nin izi 0,7 (kare basin en kucugu), Hiza'nin
+  // basi 1,44. Sayilar siluetin boyundan ve gorunus olceginden (`unit`).
+  const unit = (silhouette) => (PROJECTILE_SILHOUETTE_SIZE[silhouette] / 2) * PROJECTILE_VISUAL_SCALE;
+  const ucubeHead = unit("arc") * UCUBE_SHOT_BODY.size * UCUBE_SHOT_BODY.head * 2;
+  assert.ok(Math.abs(getProjectileShape("warrior-6").radius - ucubeHead) < 1e-9 && getProjectileShape("warrior-6").disc === 1, `${getProjectileShape("warrior-6").radius} / ${ucubeHead}`);
+  const trail = (COMBAT_BODY.width + COMBAT_BODY.widthPerTier) * COMBAT_BODY.scale * PROJECTILE_VISUAL_SCALE;
+  const trailHalf = Math.max(Math.max(PROJECTILE_SLUG.minWidth, trail) / 2, PROJECTILE_SLUG.minHead, trail * PROJECTILE_SLUG.headRatio);
+  assert.ok(Math.abs(getProjectileShape("warrior-1").halfWidth - trailHalf) < 1e-9, `${getProjectileShape("warrior-1").halfWidth} / ${trailHalf}`);
+  const lanceHead = unit("lance") * LANCE_SHOT_BODY.headHalf;
+  assert.ok(Math.abs(getProjectileShape("zeynep-1").halfWidth - lanceHead) < 1e-9);
   // Hiza: bas ucgeni ve govde cizgisi (kare bas ucgenin icinde: atiliyor);
-  // ucgenin ucu eksenin en on noktasi. Govde cizgisinin eni 0,6, basin 1,8.
+  // ucgenin ucu eksenin en on noktasi. Govde cizgisinin eni en az 1 (olcek
+  // 0,64'te tam bu en: yari en 0,5), basin yari eni 1,44.
   const hiza = getProjectileShape("zeynep-1", 1);
   assert.equal(hiza.table.count, 2);
-  assert.ok(Math.abs(hiza.nose - 6.3) < 1e-9 && hiza.disc === 0, JSON.stringify({ nose: hiza.nose, disc: hiza.disc }));
+  assert.ok(Math.abs(hiza.nose - unit("lance") * LANCE_SHOT_BODY.tip) < 1e-9 && hiza.disc === 0, JSON.stringify({ nose: hiza.nose, disc: hiza.disc }));
+  const shaftHalf = Math.max(PROJECTILE_SLUG.minWidth, LANCE_SHOT_BODY.minShaftWidth, unit("lance") * LANCE_SHOT_BODY.shaftWidth) / 2;
   const widths = Array.from({ length: hiza.table.count }, (_, p) => hiza.table.yhi[p]).sort((a, b) => a - b);
-  assert.ok(Math.abs(widths[0] - 0.6) < 1e-9 && Math.abs(widths[1] - 1.8) < 1e-9, widths.join(","));
+  assert.ok(Math.abs(widths[0] - shaftHalf) < 1e-9 && Math.abs(widths[1] - lanceHead) < 1e-9, widths.join(","));
   // Sunucu paketinin iki ucgeni tek elmas (birlesimleri dis bukey).
   assert.equal(getProjectileShape("warrior-2", 1).table.count, 1);
   // Taht mizraklarinin kuyrugu Hiza'ninkiyle ayni: kertik pipleri isabet degil.

@@ -19,6 +19,7 @@
  */
 import * as THREE from "three";
 import { getShotRecipe, whiten, type ShotRecipe } from "./shot-recipes";
+import { getProjectileHitFit, type ProjectileHitFit } from "./projectile-hitbox";
 
 /** Dusmanin menzilli vurusunun isini (sunucu `ENEMY_SHOT_BEAM_ID`, 2D beam-renderer ile ayni). */
 const ENEMY_SHOT_BEAM = "enemy-shot";
@@ -117,11 +118,20 @@ export type DeathFxInput = {
   intensity: number;
 };
 
+/**
+ * Performans alevi (2D'de kulenin ayak izinin cevresindeki alev dilleri):
+ * kaidenin ustunde (`y`), govde yaricapinda (`radius`) yukselen alev. Yogunluk
+ * 2D'deki gibi (`getTowerPerformanceFlameIntensity`, 0,15 alti cizilmiyor).
+ */
+export type ShotFlameInput = { id: string; x: number; z: number; y: number; radius: number; intensity: number };
+
 export type ShotFx = {
   event(kind: ShotEventKind, input: ShotEventInput): void;
   death(input: DeathFxInput): void;
   projectiles(list: readonly ShotProjectileInput[]): void;
   beams(list: readonly ShotBeamInput[]): void;
+  /** Performans alevi: her karede alevli kulelerin listesi (yoksa bos). */
+  flames(list: readonly ShotFlameInput[]): void;
   /** Her karede cizimden once: parcaciklar ilerliyor ve yukleniyor. */
   update(now: number): void;
   setVisible(visible: boolean): void;
@@ -350,10 +360,18 @@ function rgbOf(hex: number) {
   return rgb;
 }
 
+/**
+ * Butun vuruslarin (mermi, namlu, carpma, isin, olum) parlakligi: isik
+ * parcaciklarinin ve mermi govdesinin HDR isisi bununla carpiliyor (sahibin
+ * istegi, 2026-10-27: "parlaklik %30 dusuk").
+ */
+const SHOT_BRIGHTNESS = 0.7;
+
 /** Govde malzemesi icin ayni HDR ton (aydinlatilmis ve carpilmis; setRGB calisma uzayinda, dogrusal). */
 function setHeatColor(target: { setRGB(r: number, g: number, b: number): unknown }, hex: number, heat: number) {
   const rgb = rgbOf(hex);
-  target.setRGB(rgb[3] * heat, rgb[4] * heat, rgb[5] * heat);
+  const lit = heat * SHOT_BRIGHTNESS;
+  target.setRGB(rgb[3] * lit, rgb[4] * lit, rgb[5] * lit);
 }
 
 class ParticleField {
@@ -439,7 +457,7 @@ class ParticleField {
     f[o + 23] = p.lifeMs <= 0 ? 1 : 0;
     f[o + 24] = 0;
     f[o + 25] = p.ex ?? 0; f[o + 26] = p.ey ?? 0; f[o + 27] = p.ez ?? 0;
-    f[o + 28] = this.hdr ? (p.heat ?? 1) : 1;
+    f[o + 28] = this.hdr ? (p.heat ?? 1) * SHOT_BRIGHTNESS : 1;
   }
 
   /** Ilerlet ve GPU'ya yaz; `ground` arazi yuksekligi (kirintinin sekmesi). */
@@ -527,6 +545,8 @@ class ParticleField {
 type Flight = {
   id: string;
   recipe: ShotRecipe;
+  /** Isabet seklinin 3D olculeri (govde, hale ve kuyruk ona oturuyor); yoksa tarifin boylari. */
+  fit?: ProjectileHitFit;
   root: THREE.Object3D;
   material: THREE.MeshStandardMaterial;
   /** Sunucunun yolundaki son yer (yatay). */
@@ -1039,7 +1059,7 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
         }
         const tip = muzzlePoint(projectile.x, projectile.y);
         flight = {
-          id: projectile.id, recipe, root, material: bodyMaterial(root),
+          id: projectile.id, recipe, root, material: bodyMaterial(root), fit: getProjectileHitFit(projectile.definitionId, projectile.tier, c),
           pathX: projectile.x, pathZ: projectile.y,
           offsetX: tip.x - projectile.x, offsetZ: tip.z - projectile.y,
           baseY: tip.y,
@@ -1092,24 +1112,45 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
         TMP_Q.multiply(SPIN_Q);
       }
       flight.root.quaternion.copy(TMP_Q);
-      flight.root.position.set(flight.x, flight.y, flight.z);
       const pulse = recipe.shape === "arc" ? 0.85 + 0.3 * Math.sin(now / 28 + flight.seed * 40) : 1;
-      flight.root.scale.set(body.width * c * pulse, body.length * c, body.width * c * pulse);
+      const fit = flight.fit;
+      // Govde isabet seklinin basina oturuyor: boyu front - rear, eni 2 half,
+      // merkezi merminin yerinden (front + rear) / 2 ileride (yatayda tam o kadar).
+      let cx = flight.x;
+      let cy = flight.y;
+      let cz = flight.z;
+      let length = body.length * c;
+      let width = body.width * c * pulse;
+      if (fit) {
+        const level = Math.max(0.2, Math.hypot(TMP_DIR.x, TMP_DIR.z));
+        const ahead = (fit.front + fit.rear) / 2 / level;
+        cx += TMP_DIR.x * ahead;
+        cy += TMP_DIR.y * ahead;
+        cz += TMP_DIR.z * ahead;
+        length = (fit.front - fit.rear) / level;
+        width = fit.half * 2;
+      }
+      // Hucre govdesi (altigen pul) silindirin boyunun 0,55'i: tam boyu kaplasin.
+      flight.root.scale.set(width, recipe.shape === "cell" && fit ? length / 0.55 : length, width);
+      flight.root.position.set(cx, cy, cz);
       // Govdenin halesi ve beyaz-sicak ozu (tek kare). Ince uzun mermide hale
       // ucus yonunde uzuyor: yuvarlak leke degil, parlak cubuk. Goz kuresinde oz
-      // yok, hale bir halka: koyu gozbebegi okunsun.
+      // yok, hale bir halka: koyu gozbebegi okunsun. Isabet sekli biliniyorsa
+      // hale basi az asiyor, oz icinde: parlayan alan vurdugu alan.
       const heat = recipe.heat;
       const slim = recipe.shape === "tracer" || recipe.shape === "lance";
       const eye = recipe.shape === "gaze";
-      const halo = c * (slim ? 0.15 : eye ? 0.24 : 0.24 + recipe.tier * 0.03) * pulse;
-      light.spawn({ x: flight.x, y: flight.y, z: flight.z, vx: TMP_DIR.x, vy: TMP_DIR.y, vz: TMP_DIR.z, color: recipe.color, heat: eye ? heat.halo * 1.3 : heat.halo, size: halo, lifeMs: 0, shape: eye ? SHAPE.ring : SHAPE.glow, stretch: slim ? 1.3 : 0, alpha: 0.8 });
-      if (!eye) light.spawn({ x: flight.x, y: flight.y, z: flight.z, vx: TMP_DIR.x, vy: TMP_DIR.y, vz: TMP_DIR.z, color: recipe.core, heat: heat.core * 0.8, size: c * (slim ? 0.08 : 0.1 + recipe.tier * 0.015) * pulse, lifeMs: 0, shape: SHAPE.glow, stretch: slim ? 1.2 : 0, alpha: 0.95 });
-      if (recipe.tier >= 3) light.spawn({ x: flight.x, y: flight.y, z: flight.z, color: recipe.accent, heat: heat.halo, size: c * (eye ? 0.32 : 0.36), lifeMs: 0, shape: eye ? SHAPE.ring : SHAPE.glow, alpha: eye ? 0.6 : 0.3 });
+      const extent = Math.max(length, width);
+      const halo = fit ? extent * 1.15 * pulse : c * (slim ? 0.15 : eye ? 0.24 : 0.24 + recipe.tier * 0.03) * pulse;
+      const core = fit ? Math.min(length, width) * 0.9 : c * (slim ? 0.08 : 0.1 + recipe.tier * 0.015) * pulse;
+      light.spawn({ x: cx, y: cy, z: cz, vx: TMP_DIR.x, vy: TMP_DIR.y, vz: TMP_DIR.z, color: recipe.color, heat: eye ? heat.halo * 1.3 : heat.halo, size: halo, lifeMs: 0, shape: eye ? SHAPE.ring : SHAPE.glow, stretch: slim && !fit ? 1.3 : 0, alpha: 0.8 });
+      if (!eye) light.spawn({ x: cx, y: cy, z: cz, vx: TMP_DIR.x, vy: TMP_DIR.y, vz: TMP_DIR.z, color: recipe.core, heat: heat.core * 0.8, size: core, lifeMs: 0, shape: SHAPE.glow, stretch: slim && !fit ? 1.2 : 0, alpha: 0.95 });
+      if (recipe.tier >= 3) light.spawn({ x: cx, y: cy, z: cz, color: recipe.accent, heat: heat.halo, size: fit ? extent * 1.3 : c * (eye ? 0.32 : 0.36), lifeMs: 0, shape: eye ? SHAPE.ring : SHAPE.glow, alpha: eye ? 0.6 : 0.25 });
       // Ucube: govdeden firlayan kisa, kirik elektrik dilleri (her kare degil).
       if (recipe.shape === "arc" && rand() < 0.25 + recipe.tier * 0.1) {
         const a = rand() * Math.PI * 2;
-        const reach = c * (0.18 + rand() * 0.14) * (1 + recipe.tier * 0.15);
-        streak(flight.x, flight.y, flight.z, flight.x + Math.cos(a) * reach, flight.y + (rand() - 0.3) * reach, flight.z + Math.sin(a) * reach, c * 0.05, rand() < 0.5 ? recipe.core : recipe.accent, 60, 0, 1, 0, heat.core * 0.8);
+        const reach = fit ? fit.half * (1.1 + rand() * 0.7) : c * (0.18 + rand() * 0.14) * (1 + recipe.tier * 0.15);
+        streak(cx, cy, cz, cx + Math.cos(a) * reach, cy + (rand() - 0.3) * reach, cz + Math.sin(a) * reach, fit ? Math.max(0.3, fit.half * 0.2) : c * 0.05, rand() < 0.5 ? recipe.core : recipe.accent, 60, 0, 1, 0, heat.core * 0.8);
       }
       pushPath(flight);
       emitRibbon(flight, recipe);
@@ -1148,7 +1189,10 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
   function emitRibbon(flight: Flight, recipe: ShotRecipe) {
     const c = cell();
     const path = flight.path;
-    const want = recipe.trail.length * c;
+    // Isabet seklinin kuyrugu kadar (yoksa serit yok): gorunen alan vurdugu alan.
+    const fit = flight.fit;
+    const want = fit ? fit.tail : recipe.trail.length * c;
+    if (want <= 0) return;
     let ax = flight.x;
     let ay = flight.y;
     let az = flight.z;
@@ -1170,7 +1214,7 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     }
     // Namludan yeni cikti: serit henuz cok kisa.
     if (want - left < c * 0.08) return;
-    const width = recipe.trail.width * c;
+    const width = fit ? fit.tailHalf * 2 : recipe.trail.width * c;
     light.spawn({ x: ax, y: ay, z: az, ex: flight.x, ey: flight.y, ez: flight.z, color: recipe.color, heat: recipe.heat.halo * 1.5, alpha: 0.9, size: width, lifeMs: 0, shape: SHAPE.trail });
     light.spawn({ x: ax, y: ay, z: az, ex: flight.x, ey: flight.y, ez: flight.z, color: recipe.core, heat: recipe.heat.core * 0.6, alpha: 1, size: width * 0.4, lifeMs: 0, shape: SHAPE.trail });
   }
@@ -1319,6 +1363,68 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     }
   }
 
+  /* ----------------------------- performans alevi ------------------------- */
+
+  const flameCarry = new Map<string, number>();
+  let lastFlameAt = performance.now();
+
+  /**
+   * Kaidenin cevresinde yukselen alev dilleri: ortasi sari, govdesi turuncu,
+   * kenari kirmizi; yogunlukla sayisi, boyu ve parlakligi artiyor. Yogun alevde
+   * ustten kivilcim savruluyor; zeminde kirmizi isik ve turuncu halka (2D'deki
+   * ayak izi parlamasi ve cemberi).
+   */
+  function flames(list: readonly ShotFlameInput[]) {
+    const now = performance.now();
+    const dt = Math.min(80, Math.max(0, now - lastFlameAt));
+    lastFlameAt = now;
+    if (!visible) return;
+    const c = cell();
+    const seen = new Set<string>();
+    for (const flame of list) {
+      seen.add(flame.id);
+      const i = flame.intensity;
+      const height = c * (0.16 + i * 0.6);
+      const life = 380 + i * 260;
+      const rise = height / (life / 1000);
+      // 2D'deki dil sayisi (5 + 9 i), her dil saniyede ~11 parcacik.
+      let carry = (flameCarry.get(flame.id) ?? 0) + (5 + 9 * i) * 11 * budget() * (dt / 1000);
+      const n = Math.min(24, Math.floor(carry));
+      carry -= n;
+      flameCarry.set(flame.id, carry);
+      for (let k = 0; k < n; k += 1) {
+        const a = rand() * Math.PI * 2;
+        const r = flame.radius * (0.82 + i * 0.08 + (rand() - 0.5) * 0.14);
+        const hot = rand();
+        light.spawn({
+          x: flame.x + Math.cos(a) * r, y: flame.y + c * 0.02, z: flame.z + Math.sin(a) * r,
+          vx: Math.cos(a) * rise * 0.1, vy: rise, vz: Math.sin(a) * rise * 0.1,
+          color: hot < 0.3 ? 0xfacc15 : hot < 0.78 ? 0xf97316 : 0xef4444,
+          heat: hot < 0.3 ? 1.9 : 1.45,
+          alpha: 0.5 + i * 0.5,
+          size: c * (0.08 + i * 0.13), sizeTo: c * 0.02,
+          lifeMs: life * (0.75 + rand() * 0.5),
+          // Dikine uzun dil: boyu eninin ~2,2 kati.
+          shape: SHAPE.glow, stretch: 1.2 / Math.max(1, rise), drag: 1.1, fade: 1.1, fadeIn: 0.12
+        });
+      }
+      if (i > 0.55 && rand() < (dt / 1000) * (3 + 7 * i) * budget()) {
+        const a = rand() * Math.PI * 2;
+        const r = flame.radius * 0.9;
+        light.spawn({
+          x: flame.x + Math.cos(a) * r, y: flame.y + height * 0.6, z: flame.z + Math.sin(a) * r,
+          vx: (rand() - 0.5) * c * 0.6, vy: rise * 1.3, vz: (rand() - 0.5) * c * 0.6,
+          color: rand() < 0.5 ? 0xfef08a : 0xfb923c, heat: 1.6,
+          size: c * 0.03, lifeMs: 520, shape: SHAPE.spark, stretch: 0.02, drag: 1.4, fade: 1
+        });
+      }
+      light.spawn({ x: flame.x, y: flame.y + 0.4, z: flame.z, color: 0xef4444, heat: 1, alpha: 0.03 + i * 0.16, size: flame.radius * 2 * (1.08 + i * 0.32), lifeMs: 0, shape: SHAPE.groundGlow });
+      // Halka bandi yaricapin 0,8'inde: cember govdenin 0,95'inde.
+      light.spawn({ x: flame.x, y: flame.y + 0.45, z: flame.z, color: 0xf97316, heat: 1.1, alpha: 0.12 + i * 0.58, size: (flame.radius * 2 * 0.95) / 0.8, lifeMs: 0, shape: SHAPE.groundRing });
+    }
+    for (const id of flameCarry.keys()) if (!seen.has(id)) flameCarry.delete(id);
+  }
+
   /* -------------------------------- kare --------------------------------- */
 
   function update(now: number) {
@@ -1363,7 +1469,8 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
 
   return {
     event,
-    death, projectiles, beams, update, setVisible, clear, dispose,
+    death, projectiles, beams,
+    flames, update, setVisible, clear, dispose,
     stats: () => ({ light: light.count, matter: matter.count, projectiles: flights.size })
   };
 }
