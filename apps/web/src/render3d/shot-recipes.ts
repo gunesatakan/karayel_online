@@ -11,6 +11,10 @@
  * - Kademe 3: beyaz-sicak cekirdek, isik sutunu ya da ikinci patlama, yanik izi,
  *   uzun sonen korlar ve kademenin vurgu rengi (ikinci ton).
  *
+ * Bicem: az ama iri ve parlak oge (oyuncak gibi temiz bilimkurgu). Cekirdekler
+ * ve parlamalar HDR (`heat`): egik gorunumun parlama (bloom) esigi 1,0; yalnizca
+ * ondan parlak isik yayiliyor. Koyu duman yok, isik eklemeli.
+ *
  * Saf veri: three.js yok, node testleri dogrudan okuyor.
  */
 
@@ -63,10 +67,19 @@ export type ShotRecipe = {
   color: number;
   core: number;
   accent: number;
+  /**
+   * HDR isik carpani (dogrusal): beyaz-sicak cekirdek ve parlamalar `core`,
+   * renkli hale `halo`; dolgun renk katmani (isin govdesi, ates topu) halenin
+   * 1,35 kati. Koyu ton (mor, kirmizi) once biraz aydinlatiliyor (shot-fx).
+   */
+  heat: { core: number; halo: number };
   /** Govde: boy ve en (hucre), donus hizi (tur / sn). */
   body: { length: number; width: number; spin: number };
-  /** Iz: birim yol basina parcacik, omur (ms), boy (hucre), kivilcim payi (0-1). */
-  trail: { density: number; lifeMs: number; size: number; sparkle: number };
+  /**
+   * Iz: birim yol basina parcacik, omur (ms), boy (hucre), kivilcim payi (0-1);
+   * govdenin arkasindaki incelen isik seridinin boyu ve eni (hucre).
+   */
+  trail: { density: number; lifeMs: number; size: number; sparkle: number; length: number; width: number };
   /** Kavis: yolun ortasindaki ek yukseklik (hucre); 0 duz hat (namludan hedefin govdesine). */
   arc: number;
   muzzle: { flash: number; sparks: number; smoke: number; ring: boolean };
@@ -88,8 +101,11 @@ export type ShotRecipe = {
     /** Yerdeki renkli isik (hucre). */
     groundGlow: number;
   };
-  /** Isin: cekirdek ve hale eni (isin eninin kati), titreme, akan nabiz. */
-  beamLook: { core: number; glow: number; flicker: number; pulses: number };
+  /**
+   * Isin: cekirdek ve hale eni (isin eninin kati), en az enleri (hucre; ince
+   * lazer de okunsun), titreme, akan nabiz.
+   */
+  beamLook: { core: number; glow: number; coreMin: number; glowMin: number; flicker: number; pulses: number };
 };
 
 type TowerSeed = {
@@ -164,38 +180,51 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
     impact: seed.impact,
     beam: seed.beam ?? "plain",
     color,
-    core: whiten(color, [0.55, 0.72, 0.9][index]),
+    // Cekirdek tonu hafif renkli: beyazligi HDR isi veriyor, ton kaybolmasin.
+    core: whiten(color, [0.4, 0.55, 0.7][index]),
     accent: seed.accent,
-    // Govde kulenin kucuk bir parcasi (kule ~1 hucre): mermi 0,1-0,3 hucre.
+    // Kademe yukseldikce daha sicak: cekirdek 2,4 -> 3,2 (parliyor, beyazlaniyor);
+    // hale ~1 (doygun renk; ACES 1'in cok ustunu beyaza kaciriyor).
+    heat: { core: [2.4, 2.8, 3.2][index], halo: [0.95, 1.05, 1.15][index] },
+    // Iri, okunur govde (kule ~1 hucre): mermi 0,15-0,45 hucre, ortasi beyaz-sicak.
     body: {
-      length: { tracer: 0.22, packet: 0.15, cell: 0.13, gaze: 0.13, arc: 0.14, lance: 0.3, orb: 0.11 }[seed.shape] * (1 + index * 0.08),
-      width: { tracer: 0.035, packet: 0.11, cell: 0.11, gaze: 0.11, arc: 0.12, lance: 0.05, orb: 0.09 }[seed.shape] * (1 + index * 0.1) * (seed.heavy ? 1.1 : 1),
+      length: { tracer: 0.34, packet: 0.26, cell: 0.22, gaze: 0.2, arc: 0.22, lance: 0.44, orb: 0.18 }[seed.shape] * (1 + index * 0.1),
+      width: { tracer: 0.075, packet: 0.2, cell: 0.2, gaze: 0.19, arc: 0.2, lance: 0.09, orb: 0.17 }[seed.shape] * (1 + index * 0.1) * (seed.heavy ? 1.1 : 1),
       spin: { tracer: 0, packet: 2.2, cell: 1.6, gaze: 0.4, arc: 3, lance: 0, orb: 0.8 }[seed.shape]
     },
+    // Iz once serit (tek parca, kisa ve parlak); parcaciklar seyrek ama iri.
     trail: {
-      density: (seed.shape === "tracer" || seed.shape === "lance" ? 0.55 : 0.4) * power,
-      lifeMs: 150 + index * 90,
-      size: 0.06 * (1 + index * 0.25) * (seed.heavy ? 1.1 : 1),
-      sparkle: [0.1, 0.3, 0.55][index]
+      density: (seed.shape === "tracer" || seed.shape === "lance" ? 0.2 : 0.16) * power,
+      lifeMs: 170 + index * 90,
+      size: 0.09 * (1 + index * 0.2) * (seed.heavy ? 1.1 : 1),
+      sparkle: [0.08, 0.2, 0.35][index],
+      length: { tracer: 1, packet: 0.7, cell: 0.6, gaze: 0.65, arc: 0.6, lance: 1.2, orb: 0.6 }[seed.shape] * (1 + index * 0.25),
+      width: { tracer: 0.12, packet: 0.17, cell: 0.16, gaze: 0.16, arc: 0.18, lance: 0.13, orb: 0.15 }[seed.shape] * (1 + index * 0.12)
     },
     arc: seed.arc ?? 0,
-    muzzle: { flash: 0.3 * power * heavy, sparks: Math.round(4 * power), smoke: index === 0 ? 0 : index, ring: index >= 1 },
+    // Namlu: sert parlama ve az ama iri kivilcim; duman yok.
+    muzzle: { flash: 0.32 * power * heavy, sparks: Math.round(3 * power), smoke: 0, ring: index >= 1 },
     hit: {
-      flash: 0.5 * power * heavy,
-      sparks: Math.round(10 * power * heavy),
-      speed: 3.2 + index * 1.1,
-      debris: seed.impact === "burst" || seed.impact === "uplink" || seed.impact === "lock" ? Math.round(4 * power) : Math.round(2 * power),
-      embers: index === 0 ? 0 : Math.round(5 * power),
-      smoke: Math.round((seed.heavy ? 3 : 1.5) * power),
-      rings: index + 1,
+      flash: 0.6 * power * heavy,
+      sparks: Math.round(6 * power * heavy),
+      speed: 3.6 + index,
+      debris: seed.impact === "burst" || seed.impact === "uplink" || seed.impact === "lock" ? Math.round(3 * power) : Math.round(1.5 * power),
+      embers: index === 0 ? 0 : Math.round(3 * power),
+      // Duman yok: koyu duman parlak sahnede kir, acik toz koyu tahtada gri pus gibi duruyor.
+      smoke: 0,
+      // Ortak yer halkasi 1/1/2: her carpmanin kendi halkasi zaten var.
+      rings: index === 2 ? 2 : 1,
       pillar: index === 2,
       scorch: index >= 1 || Boolean(seed.heavy),
-      groundGlow: (0.9 + index * 0.55) * heavy
+      groundGlow: (1 + index * 0.5) * heavy
     },
+    // Lazer: cekirdek 0,06/0,075/0,09, hale 0,28/0,32/0,38 hucre (en azi); titreme az.
     beamLook: {
-      core: [0.35, 0.42, 0.5][index],
-      glow: [2.2, 2.8, 3.6][index],
-      flicker: [0.12, 0.18, 0.26][index],
+      core: [0.4, 0.44, 0.48][index],
+      glow: [2, 2.4, 2.9][index],
+      coreMin: [0.06, 0.075, 0.09][index],
+      glowMin: [0.28, 0.32, 0.38][index],
+      flicker: [0.05, 0.07, 0.09][index],
       pulses: index
     }
   };

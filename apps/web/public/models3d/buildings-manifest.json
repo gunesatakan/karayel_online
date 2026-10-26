@@ -1,87 +1,87 @@
 {
-  "note": "Game copies of the Tripo buildings models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
+  "note": "Game copies of the Tripo buildings models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package. Target style since 2026-10-26: tools/3d-preview/build-target-tower.py --structure.",
   "targetTriangles": 8000,
   "textureSize": 512,
   "models": [
     {
       "key": "building-energy-tier-1",
-      "bytes": 612512,
-      "triangles": 8000,
-      "height": 0.3569,
-      "leveledDegrees": 0.0,
+      "bytes": 428240,
+      "triangles": 6000,
+      "height": 0.8326,
+      "leveledDegrees": 0,
       "turnedDegrees": 0,
-      "sha256": "1398d2a377c227f12a7c4d713c5aa0727a9e9a71ce26c6b4e47db79ad257ced8",
-      "source": "Tripo H3.1 / art-direction/buildings/energy-t1.png"
+      "sha256": "48bf2d340640fae4b8f2f97b1bdca7c7fa83338c4a89578d5ab3efa8460d265e",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     },
     {
       "key": "building-energy-tier-2",
-      "bytes": 634288,
-      "triangles": 7999,
-      "height": 0.279,
+      "bytes": 461368,
+      "triangles": 5999,
+      "height": 0.8651,
       "leveledDegrees": 0.02,
       "turnedDegrees": 0,
-      "sha256": "8e427ff59ec73299f12128fc595bd4e7f0faf3d4542ae8707d787c6e222c7ee8",
-      "source": "Tripo H3.1 / art-direction/buildings/energy-t2.png"
+      "sha256": "fd6f9cf86941bd4eddaffba0ca207143d857a5bd72159a368732528681a4b69d",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     },
     {
       "key": "building-ammunition-tier-1",
-      "bytes": 575136,
-      "triangles": 7999,
-      "height": 0.2803,
+      "bytes": 436192,
+      "triangles": 6000,
+      "height": 0.9434,
       "leveledDegrees": 54.09,
       "turnedDegrees": 0,
-      "sha256": "a5363cd29d15b089e76215783b3462e4bbd2b16237e1380c5fc9f7d3d812d784",
-      "source": "Tripo H3.1 / art-direction/buildings/ammunition-t1.png"
+      "sha256": "ad777cd6a5ae7ce55625f7a105f6e3489be92d6ba3ab5fb3f15179fe145f64ac",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     },
     {
       "key": "building-ammunition-tier-2",
-      "bytes": 643728,
-      "triangles": 7999,
-      "height": 0.1956,
-      "leveledDegrees": 0.0,
+      "bytes": 499080,
+      "triangles": 5999,
+      "height": 0.6877,
+      "leveledDegrees": 0,
       "turnedDegrees": 0,
-      "sha256": "474ba5d0bfc3524607483be60a333b0128ce1a749c18b3b177cae4c257295d8f",
-      "source": "Tripo H3.1 / art-direction/buildings/ammunition-t2.png"
+      "sha256": "cea4c1167148b181cea961b8df25f635ea58e094a89272815ba1b8d91276c6be",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     },
     {
       "key": "building-warehouse-tier-1",
-      "bytes": 717656,
-      "triangles": 7999,
-      "height": 0.2197,
+      "bytes": 418520,
+      "triangles": 6000,
+      "height": 0.7224,
       "leveledDegrees": 0.03,
       "turnedDegrees": 0,
-      "sha256": "088026da06c469a3255b32a5e8db790ca06e350aa7ca98cc6eefa2a4be8bf9ac",
-      "source": "Tripo H3.1 / art-direction/buildings/warehouse-t1.png"
+      "sha256": "837e528a7da6d8839463d60e4889f6c52f9224b6dbc87d3847e381781339c6d7",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     },
     {
       "key": "building-warehouse-tier-2",
-      "bytes": 637848,
-      "triangles": 8000,
-      "height": 0.2122,
-      "leveledDegrees": 0.0,
+      "bytes": 432484,
+      "triangles": 6000,
+      "height": 0.8677,
+      "leveledDegrees": 0,
       "turnedDegrees": 0,
-      "sha256": "eccc826bd134a136e65b24dccaaae51b8ea9fcb5c6d30ce264d8c59da858458b",
-      "source": "Tripo H3.1 / art-direction/buildings/warehouse-t2.png"
+      "sha256": "d639b3172cb7d4b8fab660cc2575728f43c2fb02366d254d9ff5f0e82c54e25c",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     },
     {
       "key": "building-repair-tier-1",
-      "bytes": 611000,
-      "triangles": 8000,
-      "height": 0.2848,
+      "bytes": 414904,
+      "triangles": 6000,
+      "height": 0.7691,
       "leveledDegrees": 0.02,
       "turnedDegrees": 0,
-      "sha256": "d3595da45f6259905de5c51f3f2545d25eaf471057e56bc728b7ae584dcfb704",
-      "source": "Tripo H3.1 / art-direction/buildings/repair-t1.png"
+      "sha256": "319db038bc89cf2581ac19b347a04b66922abfffbc9e2202bb946e9153467b2a",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     },
     {
       "key": "building-repair-tier-2",
-      "bytes": 625008,
-      "triangles": 8000,
-      "height": 0.4011,
-      "leveledDegrees": 0.0,
+      "bytes": 423232,
+      "triangles": 6000,
+      "height": 0.622,
+      "leveledDegrees": 0,
       "turnedDegrees": 0,
-      "sha256": "6dc9484a6d4f78b6825ed127fdde23dada8b9025be85aa1dec53b0660f6a22ff",
-      "source": "Tripo H3.1 / art-direction/buildings/repair-t2.png"
+      "sha256": "ef62002f935687cc2d13b58787f50e5dfc9de9c4c6b7aa2c1a865cb412d9ec53",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     }
   ]
 }

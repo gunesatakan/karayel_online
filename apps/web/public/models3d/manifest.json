@@ -1,259 +1,259 @@
 {
-  "note": "Game copies of the 3D preview towers (tools/3d-preview/build-game-lods.py). Not included in the itch.io package.",
+  "note": "Game copies of the tower models. Target style (Endless Defense look): tools/3d-preview/build-target-tower.py from Tripo H3.1 sources. Not included in the itch.io package.",
   "targetTriangles": 6000,
   "textureSize": 512,
   "models": [
     {
       "key": "warrior-1-tier-1",
-      "bytes": 368640,
-      "triangles": 5999,
-      "sha256": "df1440099219fd617023824c9fa9ebfaba57b699aa99651d0e150f2fda8794b1",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-1-tier-1.glb"
+      "bytes": 462824,
+      "triangles": 5998,
+      "sha256": "bee6d50660472aab704c68ff93b0343db8d6fbc4972f986f88700a976552dc78",
+      "source": "asset-work/target-style/warrior-1/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-1-tier-2",
-      "bytes": 416812,
-      "triangles": 5999,
-      "sha256": "20c0ff28d6b32854590f29f2af275790b24c670b681129b377a2bff7676860f5",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-1-tier-2.glb"
+      "bytes": 436836,
+      "triangles": 6000,
+      "sha256": "9502da48ee642afba9e2d9b49c6820c059f2c423b3fc91e6473e1420358834df",
+      "source": "asset-work/target-style/warrior-1/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-1-tier-3",
-      "bytes": 376456,
+      "bytes": 455844,
       "triangles": 5999,
-      "sha256": "b2b0924605cb53317596ad5050741c36cac9125f6d9f07aeb8fb1822446ece07",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-1-tier-3.glb"
+      "sha256": "aa0ec2a884b27c6e3ff5d36cd67a7656c6be711ee3cf842b22ce86a32b8021f8",
+      "source": "asset-work/target-style/warrior-1/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-2-tier-1",
-      "bytes": 393776,
+      "bytes": 442760,
       "triangles": 5999,
-      "sha256": "998416cecead99846d4e1755f8269b7edbb8d73e82bca922eed14795eb452886",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-2-tier-1.glb"
+      "sha256": "0835905a08ed6e2bbc9abbeba76d0681354d875a06d0a3adfb1857d4cfbd7ef1",
+      "source": "asset-work/target-style/warrior-2/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-2-tier-2",
-      "bytes": 404904,
-      "triangles": 5998,
-      "sha256": "5dba78efe33e0900fe18a0b95e3bd8b193f25de11b85ed636111e17922fad173",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-2-tier-2.glb"
+      "bytes": 463496,
+      "triangles": 6000,
+      "sha256": "e52335a0e40455a5101a0cc0ed40c342c8761e17979a228a6b2ef73ece86d92c",
+      "source": "asset-work/target-style/warrior-2/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-2-tier-3",
-      "bytes": 412180,
-      "triangles": 5999,
-      "sha256": "e59fe7a006d4bd6cba9e6e76dde81aa82c03c2d932d4e9bc0d1363f27b8c8e68",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-2-tier-3.glb"
+      "bytes": 465056,
+      "triangles": 5986,
+      "sha256": "39baca4b1a340073ca059abb6c44f532dec80abc1a608fe982b1661088c9c43d",
+      "source": "asset-work/target-style/warrior-2/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-3-tier-1",
-      "bytes": 355608,
-      "triangles": 5998,
-      "sha256": "26e6bacc8a64536a7c2fdf021ae5c29db6bf8435f542b26584d5157afd14ba79",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-3-tier-1.glb"
+      "bytes": 471836,
+      "triangles": 6000,
+      "sha256": "5a5e23b95c4956e3dfc52f06aa4b02cfede989d5586561d81dd0ede141f8ca63",
+      "source": "asset-work/target-style/warrior-3/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-3-tier-2",
-      "bytes": 412844,
+      "bytes": 452952,
       "triangles": 5999,
-      "sha256": "2484cf63e97a413653c10927aebd8d7d9d186415627463917dc9dd161546a5fa",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-3-tier-2.glb"
+      "sha256": "6c804106d1f5a3488d9cfce9d8770c338dfc7243b778e0abb5bf03544f7a587b",
+      "source": "asset-work/target-style/warrior-3/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-3-tier-3",
-      "bytes": 434644,
-      "triangles": 5999,
-      "sha256": "bffb559a45228d96f5cfae38a379717148121cd0b17884ba838c293b462aeab5",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-3-tier-3.glb"
+      "bytes": 459840,
+      "triangles": 6000,
+      "sha256": "62721db23056e2e9d278fc83a2c96b97dff6094ab1bae8c59011187ab74bcae4",
+      "source": "asset-work/target-style/warrior-3/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-4-tier-1",
-      "bytes": 373456,
-      "triangles": 5999,
-      "sha256": "f95bfb1d2aaa86889100ab93da023eb9e83539f522b15c701c5009b7c6b03796",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-4-tier-1.glb"
+      "bytes": 383632,
+      "triangles": 6000,
+      "sha256": "e8a3489cb5575d745ccd381fee52a7b4fb4b0571ad56a56f0b4875929cff5d85",
+      "source": "asset-work/target-style/warrior-4/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-4-tier-2",
-      "bytes": 396612,
-      "triangles": 5999,
-      "sha256": "665e5422561ebe4bb084ca8c76a8578742d84cd2446c0f8aa839d10c44265ee0",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-4-tier-2.glb"
+      "bytes": 400884,
+      "triangles": 6000,
+      "sha256": "21d5f635a88369469485d62d61ec0c940b5399fd0f3de75bc42a563b28306faf",
+      "source": "asset-work/target-style/warrior-4/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-4-tier-3",
-      "bytes": 394024,
+      "bytes": 397452,
       "triangles": 5999,
-      "sha256": "56508240e75ab3dc388016229ed1db9c1cdf965711b477f95295e62909ff6347",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-4-tier-3.glb"
+      "sha256": "10144476f922589b6418ae3af6bfc446ba761757e14c66387cba2c96d36b80ce",
+      "source": "asset-work/target-style/warrior-4/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-5-tier-1",
-      "bytes": 399556,
-      "triangles": 5999,
-      "sha256": "a4def152b52399645a68b0080ce24379d162b0b913ad5f8b6a2265a8862be21f",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-5-tier-1.glb"
+      "bytes": 426744,
+      "triangles": 6000,
+      "sha256": "174f28b7c44e5747aaacb44af4a3feebe97669e07150fc1b822d46b87bf9349f",
+      "source": "asset-work/target-style/warrior-5/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-5-tier-2",
-      "bytes": 431520,
-      "triangles": 5999,
-      "sha256": "ff0c21387c18697079680aecef6c249c9366fe9debee1db061e785245ff82947",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-5-tier-2.glb"
+      "bytes": 439772,
+      "triangles": 6000,
+      "sha256": "6ecaa970390903020cd00a0079d5aa9b5a433a1ef9af10398cb8f4eeeb998dac",
+      "source": "asset-work/target-style/warrior-5/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-5-tier-3",
-      "bytes": 405592,
-      "triangles": 5999,
-      "sha256": "6df47444326216bf20e2d6c54812f4e018b36d7a41d986a0e59a3ee64e9ca373",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-5-tier-3.glb"
+      "bytes": 439368,
+      "triangles": 6000,
+      "sha256": "fa3f48ba27be6a9d24a8c0c3f17998d2639aac149fdf11d1ae51f53336ab2a5c",
+      "source": "asset-work/target-style/warrior-5/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-6-tier-1",
-      "bytes": 379380,
-      "triangles": 5999,
-      "sha256": "8eedb28e7ff5e386f99dcba8df432afbf899df1058c6cf9043d53f8366e0f37b",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-6-tier-1.glb"
+      "bytes": 399100,
+      "triangles": 6000,
+      "sha256": "578d5efa7cd2fa97677d6486b510d6a1ea51132451526ef300c600a7fd0df484",
+      "source": "asset-work/target-style/warrior-6/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-6-tier-2",
-      "bytes": 400908,
-      "triangles": 5999,
-      "sha256": "3bd3f0f1ba55f1cf72bb325adb32eed9c2bce4ec6a2b1894d37f52e9c1e67f0f",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-6-tier-2.glb"
+      "bytes": 392448,
+      "triangles": 5998,
+      "sha256": "c7be7f4b193a9fba47bfa612f80a25300c747936720eb71a4abe2aaf21aae112",
+      "source": "asset-work/target-style/warrior-6/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "warrior-6-tier-3",
-      "bytes": 380256,
-      "triangles": 5998,
-      "sha256": "ad6cb1bb78c7db91717acd6d6f87ecb80569d3ceb0e1385ec1fa02bcaabbcb39",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/warrior-6-tier-3.glb"
+      "bytes": 453692,
+      "triangles": 5999,
+      "sha256": "693f92f450873fae19e59f74f4bac56cedf7a0c73c8b6c5ea73c20edb1a5be76",
+      "source": "asset-work/target-style/warrior-6/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-1-tier-1",
-      "bytes": 317372,
+      "bytes": 452384,
       "triangles": 5999,
-      "sha256": "b4679d63fccc49c6a1a65ec763e1fa87b27bd28f7c8906ef26149182ffe0a5e6",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-1-tier-1.glb"
+      "sha256": "5b13fae55817e9374b18c0633a9eee20820b23ccbe7174e2a4bc13eaec720e35",
+      "source": "asset-work/target-style/zeynep-1/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-1-tier-2",
-      "bytes": 324640,
+      "bytes": 481224,
       "triangles": 5999,
-      "sha256": "87df054390e49b67502360ea2b202730431c05f324f0c32ba112d3da5a0b376d",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-1-tier-2.glb"
+      "sha256": "aad9dcfa17a936e915a4b1effa870fd3211d18e34899b1c226eafc24d74b5c6a",
+      "source": "asset-work/target-style/zeynep-1/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-1-tier-3",
-      "bytes": 342168,
-      "triangles": 5998,
-      "sha256": "c2bed7ba68927ffe415461608b443f1c7c18a1428c31d416b62593384c09bd01",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-1-tier-3.glb"
+      "bytes": 460728,
+      "triangles": 6000,
+      "sha256": "35f6aede62f594c5be1153716487e34121ba95d6e8cdc7e5c63f90ab04831414",
+      "source": "asset-work/target-style/zeynep-1/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-2-tier-1",
-      "bytes": 350484,
-      "triangles": 5999,
-      "sha256": "c3accf2a380b92f60ca86be070c15f271ee1ba6fbfb385b357a16c0122262a05",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-2-tier-1.glb"
+      "bytes": 459396,
+      "triangles": 6000,
+      "sha256": "ebf06d1a95142469d3928bf45ae36f59b9058ea64970e9539fbf3158f91bebbf",
+      "source": "asset-work/target-style/zeynep-2/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-2-tier-2",
-      "bytes": 349940,
-      "triangles": 5999,
-      "sha256": "bce2ede8bfd37a79f2a5f134c36ede6d280d72e283723a1fbc2c4a7fcf5f46b8",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-2-tier-2.glb"
+      "bytes": 442380,
+      "triangles": 6000,
+      "sha256": "3091dee6873be097af39fef080e7cce1210ff48741419e3c70b4081cb48be865",
+      "source": "asset-work/target-style/zeynep-2/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-2-tier-3",
-      "bytes": 388364,
-      "triangles": 5999,
-      "sha256": "71e09ebfc19f6608de1291736fc4baef89267f8d15b7da42e8751541c2282894",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-2-tier-3.glb"
+      "bytes": 441312,
+      "triangles": 6000,
+      "sha256": "3c1f499aaadece4889a332f83d62b11f151c4eb38da0618f51233d6051c7f51c",
+      "source": "asset-work/target-style/zeynep-2/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-3-tier-1",
-      "bytes": 351844,
-      "triangles": 5999,
-      "sha256": "bdafb0aeee8279d8ee6139ef2eeced80bb5abbf6134b5727e3746363f8b0953c",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-3-tier-1.glb"
+      "bytes": 389212,
+      "triangles": 6000,
+      "sha256": "3f1772e28d86c3ebbe37eebabf8758ee58bf0d50112dd3e1e2225971f6bdf918",
+      "source": "asset-work/target-style/zeynep-3/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-3-tier-2",
-      "bytes": 353320,
-      "triangles": 5999,
-      "sha256": "7565909837b7b676959d438d1b0f54fcfcc1380769a487d7c3056bdbebaa044d",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-3-tier-2.glb"
+      "bytes": 421316,
+      "triangles": 6000,
+      "sha256": "006cd268757564b06d8da6d5190d7cd30bd1c411101659b056fb48de6540f521",
+      "source": "asset-work/target-style/zeynep-3/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-3-tier-3",
-      "bytes": 364144,
-      "triangles": 5999,
-      "sha256": "096f20b547191b525849192f7fd0a39834b634d1b87fcb377d9c7e36308520a6",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-3-tier-3.glb"
+      "bytes": 452792,
+      "triangles": 6000,
+      "sha256": "80836544fae1d6812ef3618cc7ff0261bcadcb051a8f9ed0bcda140b50733616",
+      "source": "asset-work/target-style/zeynep-3/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-6-tier-1",
-      "bytes": 297156,
-      "triangles": 5999,
-      "sha256": "5ca44c4df7389901f434a26969a45caf70d3dee57512301097d49963b5ddb332",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-6-tier-1.glb"
+      "bytes": 431480,
+      "triangles": 6000,
+      "sha256": "d56b20cb26ed8becff8a5d4adda649530c264276b1412a808b0ef3a6bb81835a",
+      "source": "asset-work/target-style/zeynep-6/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-6-tier-2",
-      "bytes": 309248,
-      "triangles": 5998,
-      "sha256": "f31335af21f4ab986b88ba0d02e3eeacf52c4a2b0e23966f84c53de03f3c4aa9",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-6-tier-2.glb"
+      "bytes": 451296,
+      "triangles": 6000,
+      "sha256": "39c9a7e44bc64ee167cf28fea7d5f93dce548e2c319f5b9bf084b7ee5662c9ab",
+      "source": "asset-work/target-style/zeynep-6/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-6-tier-3",
-      "bytes": 320636,
-      "triangles": 5999,
-      "sha256": "969ab3156e676f0b9a1ed6cad312d3e36d13c44f3b8a1694de4d6dd4e08e3ccf",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-6-tier-3.glb"
+      "bytes": 530528,
+      "triangles": 6000,
+      "sha256": "8606493dd007fae31b40b16174faeb71214ba9b70d641fe8af0a23ced098787e",
+      "source": "asset-work/target-style/zeynep-6/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-7-tier-1",
-      "bytes": 327496,
+      "bytes": 566432,
       "triangles": 5999,
-      "sha256": "49cb672860440edf023919f7b471a301b3a4e0d6943db31b19bf7984ce656358",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-7-tier-1.glb"
+      "sha256": "31511b0784a8e7eb72eafab7815214d4ccede0725401e736dbb32573efdc07b0",
+      "source": "asset-work/target-style/zeynep-7/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-7-tier-2",
-      "bytes": 382676,
+      "bytes": 542944,
       "triangles": 5999,
-      "sha256": "83e90546c082bbf55f28ce5737d3a0c3aaf42e811a8cb4cb3dc2bf7739e02e1a",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-7-tier-2.glb"
+      "sha256": "8ee3c0e3685f68e315dff41ed74acc4a7a39d6172b3c0721162f7428049ccd5a",
+      "source": "asset-work/target-style/zeynep-7/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-7-tier-3",
-      "bytes": 395900,
-      "triangles": 5998,
-      "sha256": "e8da7ee359966b71bb006f2914c89915db616c44ef13719761bbc899bff0bac5",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-7-tier-3.glb"
+      "bytes": 529504,
+      "triangles": 5999,
+      "sha256": "d3ee82aa8c01ed0ce74de52f259433b24779c40ad1cb574c2dc65dfe555eb9dd",
+      "source": "asset-work/target-style/zeynep-7/tier-3-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-8-tier-1",
-      "bytes": 331440,
-      "triangles": 5999,
-      "sha256": "82b3bf10affcbe117921c34d27f0f2f104a57b9a4a87b398f4a429205c1d32f6",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-8-tier-1.glb"
+      "bytes": 460144,
+      "triangles": 6000,
+      "sha256": "1786b2ff883a8a0f96fdd4bf1ca71eb42a2031878e2fccc1c478fab0d6225039",
+      "source": "asset-work/target-style/zeynep-8/tier-1-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-8-tier-2",
-      "bytes": 353464,
-      "triangles": 5999,
-      "sha256": "31df555010e1692d9f8da31d3c0d6cdfa195295db080e59ed4d389e419b8aca3",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-8-tier-2.glb"
+      "bytes": 469620,
+      "triangles": 6000,
+      "sha256": "9c0baf3199e172eba45f6f610d8dd273e43dccde87c50b67e8707eea16b25a8e",
+      "source": "asset-work/target-style/zeynep-8/tier-2-meshopt.glb (Tripo H3.1, target style)"
     },
     {
       "key": "zeynep-8-tier-3",
-      "bytes": 389800,
-      "triangles": 5999,
-      "sha256": "fa0f2a678a55bc4dfbc2c0608e0023e337398403d4a1a6f90b331d00ece03593",
-      "source": "tools/3d-preview/public/game-assets/models/evolution/zeynep-8-tier-3.glb"
+      "bytes": 482908,
+      "triangles": 6000,
+      "sha256": "fe9a5b74835879defda65443ef10fb34f21d22b60ab1567f799c94e3fa1ec040",
+      "source": "asset-work/target-style/zeynep-8/tier-3-meshopt.glb (Tripo H3.1, target style)"
     }
   ]
 }

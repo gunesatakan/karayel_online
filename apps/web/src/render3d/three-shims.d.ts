@@ -63,6 +63,12 @@ declare module "three" {
   export const NormalBlending: number;
   export const DynamicDrawUsage: number;
   export const DoubleSide: number;
+  // Hedef gorunus (target-look): karo zemin, kayalar, kaide, parlama.
+  export const Shape: any; export type Shape = any;
+  export const ExtrudeGeometry: any;
+  export const WebGLRenderTarget: any; export type WebGLRenderTarget = any;
+  export const HalfFloatType: number;
+  export const ClampToEdgeWrapping: number;
 }
 
 declare module "three/addons/loaders/GLTFLoader.js" {
@@ -71,4 +77,24 @@ declare module "three/addons/loaders/GLTFLoader.js" {
 
 declare module "three/addons/environments/RoomEnvironment.js" {
   export const RoomEnvironment: any;
+}
+
+declare module "three/addons/postprocessing/EffectComposer.js" {
+  export const EffectComposer: any;
+}
+
+declare module "three/addons/postprocessing/RenderPass.js" {
+  export const RenderPass: any;
+}
+
+declare module "three/addons/postprocessing/UnrealBloomPass.js" {
+  export const UnrealBloomPass: any;
+}
+
+declare module "three/addons/postprocessing/OutputPass.js" {
+  export const OutputPass: any;
+}
+
+declare module "three/addons/postprocessing/FXAAPass.js" {
+  export const FXAAPass: any;
 }

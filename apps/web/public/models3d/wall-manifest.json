@@ -1,17 +1,17 @@
 {
-  "note": "Game copies of the Tripo wall models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package.",
+  "note": "Game copies of the Tripo wall models (tools/3d-preview/build-structure-lods.py). Not included in the itch.io package. Target style since 2026-10-26: tools/3d-preview/build-target-tower.py --structure.",
   "targetTriangles": 8000,
   "textureSize": 512,
   "models": [
     {
       "key": "wall-1",
-      "bytes": 769408,
-      "triangles": 8000,
-      "height": 0.4051,
+      "bytes": 361160,
+      "triangles": 5999,
+      "height": 0.264,
       "leveledDegrees": 0.02,
       "turnedDegrees": -90.13,
-      "sha256": "7b0a4caeb43b7611340c2e236ac62b7d490426187764a52739a2dc8d4b02484a",
-      "source": "Tripo H3.1 / art-direction/buildings/wall.png"
+      "sha256": "86bda764cbdcf9835adf044f98bfe2f3a0706cc624987a2bf8470b84c84e6538",
+      "source": "asset-work/target-style (Tripo H3.1, target style; build-target-tower.py --structure)"
     }
   ]
 }
