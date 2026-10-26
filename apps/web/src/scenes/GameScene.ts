@@ -718,6 +718,9 @@ type RenderMover = {
   cargoEscaping?: boolean;
   /** Golem taslasmasi (0-1): egik gorunumde 3D levhalar. */
   petrifyRatio?: number;
+  /** Kalkanin kalani (0-1; kalkani olamayan dusmanda yok) ve Yavaslatin kademesi (egik 3D gorunum). */
+  shieldRatio?: number;
+  slowTier?: number;
   /** Son karede takimin tarafinda mi (hukmedilmis, olumsuz, cevrilmis); Execute bunlari secmiyor. */
   teamSide?: boolean;
   /** Irk mekanigi yuzeyi (tas levhalar, faz hayaleti, yigin kertikleri); yalnizca gereken dusmanda aciliyor. */
@@ -1996,6 +1999,8 @@ export class GameScene extends Phaser.Scene {
    */
   private towerCardsCache?: { definitionId: string; source: string[]; applied: string[] };
   private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
+  /** Komutlarin son gorulen kademesi (0 yok): verilis ani dalgasi icin. */
+  private readonly zeynepCommandLevels = new Map<"haste" | "range" | "slow", number>();
   /** Kart perdesi acikken gelen bag anlari; perde kapaninca oynuyor. */
   private pendingLinkMoments: Array<() => void> = [];
   private lastHudKey = "";
@@ -7965,6 +7970,7 @@ export class GameScene extends Phaser.Scene {
     this.workerRosterSource = snapshot;
     this.renderSetupPhase(snapshot);
     this.zeynepCommandEffects = snapshot.zeynepCommands;
+    this.noteZeynepCommands(snapshot.zeynepCommands, snapshot.bodies);
     let sectionStart = performance.now();
     this.syncMapFromSnapshot(snapshot);
     this.arenaPlayerCount = this.selectedMapData.cols >= 23 ? 4 : this.selectedMapData.cols >= 20 ? 3 : this.selectedMapData.cols >= 15 ? 2 : 1;
@@ -10241,7 +10247,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (mover.shieldHalo && mover.shieldHalo.radius !== shieldRadius) mover.shieldHalo.setRadius(shieldRadius);
       mover.shieldHalo?.setFillStyle(0x38bdf8, hasShield ? 0.04 + shieldRatio * 0.08 : 0);
       mover.shieldHalo?.setStrokeStyle(1.5, 0x60a5fa, hasShield ? 0.42 + shieldRatio * 0.45 : 0);
-      mover.shieldHalo?.setVisible(hasShield);
+      // Egik gorunumde kalkan govdeyi saran 3D kabuk (render3d/enemy-shields), yavaslatma ayakta 3D altigen.
+      mover.shieldRatio = enemy.maxShield > 0 ? shieldRatio : undefined;
+      mover.slowTier = slowTierLevel > 0 ? slowTierLevel : undefined;
+      mover.shieldHalo?.setVisible(hasShield && !this.towerLayer3d?.shotsActive());
       this.drawEnemyBleedEffect(mover.bleedEffect, enemy, displayedEnemySize);
       this.drawEnemyFrostEffect(mover.frostEffect, enemy, displayedEnemySize);
       mover.bar = this.drawEnemyHealthBar(mover.healthBar, enemy, displayedEnemySize);
@@ -11126,6 +11135,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         extraLift: mover.air ? cellSize * ANGLED_AIR_ENEMY_LIFT_CELLS : 0,
         modelSize: (size / STANDEE_SIZE_SCALE) * ENEMY_MODEL_SIZE_SCALE,
         petrify: mover.petrifyRatio,
+        shield: mover.shieldRatio,
+        slow: mover.slowTier ? { tier: mover.slowTier, color: getZeynepSlowTint(mover.slowTier) } : undefined,
         bar: mover.bar,
         shadowRadius: size * (mover.air ? 0.26 : 0.34),
         shadowAlpha: mover.air ? 0.22 : 0.38
@@ -11448,7 +11459,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       const span = getTowerGridSpan(tower.definitionId);
       const bodySize = getTowerBodySize(tower.definitionId, cellSize * span);
-      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span), flame: this.getTowerFlame(tower, bodySize) });
+      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span), flame: this.getTowerFlame(tower, bodySize), command: this.getTowerCommand3d(tower, bodySize) });
     }
     return inputs;
   }
@@ -12089,10 +12100,48 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
   }
 
+  /**
+   * Zeynep'in suren komutlarinin 3D girdisi (egik gorunum): 2D'deki kuralla
+   * (kenar yapisi, hararetli ve tukenmis kule halesiz), kademe ve tonlar.
+   */
+  private getTowerCommand3d(tower: TowerSnapshot, bodySize: number) {
+    const commands = this.zeynepCommandEffects;
+    if ((!commands?.haste && !commands?.range) || this.isEdgePlacedDefinition(tower.definitionId) || tower.status === "Hararet" || tower.status === "Tukenmis") return undefined;
+    const look = (type: "haste" | "range", effect: NonNullable<GameSnapshot["zeynepCommands"]>["haste"]) => {
+      if (!effect) return undefined;
+      const tier = getZeynepCommandTierLevel(effect.tier);
+      return { tier, colors: getZeynepCommandPalette(type, tier) };
+    };
+    return { radius: bodySize * 0.5, haste: look("haste", commands.haste), range: look("range", commands.range) };
+  }
+
+  /**
+   * Komut verildi ya da kademesi yukseldi (egik gorunum): Zeynep'in govdesinden
+   * zeminde yayilan dalga. Govde yoksa haritanin ortasindan.
+   */
+  private noteZeynepCommands(commands: GameSnapshot["zeynepCommands"], bodies: GameSnapshot["bodies"]) {
+    const layer = this.towerLayer3d;
+    for (const kind of ["haste", "range", "slow"] as const) {
+      const effect = commands?.[kind];
+      const level = effect ? getZeynepCommandTierLevel(effect.tier) : 0;
+      const previous = this.zeynepCommandLevels.get(kind) ?? 0;
+      this.zeynepCommandLevels.set(kind, level);
+      if (level <= previous || !layer?.shotsActive()) continue;
+      const body = bodies?.find((candidate) => candidate.c === "zeynep");
+      const bounds = getMapWorldBounds(this.selectedMapData);
+      const x = body?.x ?? bounds.left + bounds.width / 2;
+      const y = body?.y ?? bounds.top + bounds.height / 2;
+      const palette = kind === "slow" ? { primary: getZeynepSlowTint(level), accent: 0xe0f2fe } : getZeynepCommandPalette(kind, level);
+      layer.shots.commandPulse({ x, z: y, color: palette.primary, accent: palette.accent, reach: this.getMapCellSize() * (3 + level) });
+    }
+  }
+
   private renderZeynepCommandTowerEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     if (this.isEdgePlacedDefinition(tower.definitionId) || tower.status === "Hararet" || tower.status === "Tukenmis") {
       return;
     }
+    // Egik gorunumde 3D modelli kulenin halesi 3D (render3d/shot-fx `auras`).
+    if (this.towerLayer3d?.shotsActive() && this.towers3dShown.has(tower.id)) return;
 
     const commands = this.zeynepCommandEffects;
     if (!commands?.haste && !commands?.range) {

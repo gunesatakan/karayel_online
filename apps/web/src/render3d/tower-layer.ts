@@ -58,7 +58,8 @@ import {
   type OrbitView,
   type TowerTier
 } from "./tower-math";
-import { createShotFx, type DeathFxInput, type ShotFlameInput, type ShotFx } from "./shot-fx";
+import { createShotFx, type CommandColors, type DeathFxInput, type ShotAuraInput, type ShotFlameInput, type ShotFx, type ShotSlowInput } from "./shot-fx";
+import { createEnemyShields, ENEMY_SHIELD_COLOR, type EnemyShield3dInput } from "./enemy-shields";
 import { createEnergyShields, type Shield3dInput } from "./energy-shield";
 import { createOverlay3d, type OverlayAnchor, type OverlayMode, type Overlay3dSurface } from "./overlay-3d";
 import { createTierFx } from "./tower-tiers";
@@ -87,6 +88,8 @@ export type Tower3dInput = {
   heightScale?: number;
   /** Performans alevi: yogunluk ve ayak izinin yaricapi (dunya birimi); yoksa alev yok. */
   flame?: { intensity: number; radius: number };
+  /** Zeynep'in suren komutlari (Hizlanin, Alani Tutun): kademe 1-3 ve tonlar; govde yaricapi. */
+  command?: { radius: number; haste?: { tier: number; colors: CommandColors }; range?: { tier: number; colors: CommandColors } };
 };
 
 /**
@@ -142,6 +145,10 @@ export type Enemy3dInput = {
   modelSize: number;
   /** Golem taslasmasi (0-1): modelin cevresinde tas levhalar. */
   petrify?: number;
+  /** Kalkanin kalani (0-1; kalkani olabilen dusmanda, kiriliksa 0): govdeyi saran enerji kabugu. */
+  shield?: number;
+  /** Zeynep'in Yavaslatin komutu: kademe (1-3) ve ton; ayakta buz altigeni. */
+  slow?: { tier: number; color: number };
   /** Can cubugu (2D'deki `drawEnemyHealthBar`in aynisi, panonun basinin ustunde). */
   bar?: EnemyBar;
   /** Ayaktaki golgenin yaricapi ve opakligi. */
@@ -241,6 +248,8 @@ type Instance = {
   lock?: { x: number; y: number; z: number; until: number };
   /** Performans alevi (egik gorunumde 3D): kaidenin ustu `y`. */
   flame?: { intensity: number; radius: number; x: number; z: number; y: number };
+  /** Zeynep'in komut halesi: kaidenin ustu `y`, kulenin boyu `height`. */
+  command?: NonNullable<Tower3dInput["command"]> & { x: number; z: number; y: number; height: number };
 };
 
 const TMP_COLOR = new THREE.Color();
@@ -387,7 +396,7 @@ export type TowerLayer = {
    * Egik gorunumun 3D vuruslari (render3d/shot-fx): 2D efekt sistemi olaylari ve
    * mermileri buraya aynaliyor. Tepeden gorunumde kapali (`shotsActive`).
    */
-  shots: Pick<ShotFx, "event" | "projectiles" | "beams" | "stats">;
+  shots: Pick<ShotFx, "event" | "projectiles" | "beams" | "stats" | "commandPulse">;
   shotsActive(): boolean;
   /** Egik gorunumde 3D operator bedenleri. Donen kume: modeli yuklenmis olanlar. */
   syncOperators(operators: readonly Operator3dInput[]): ReadonlySet<string>;
@@ -723,6 +732,11 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   /** Karenin alevli kuleleri (`shots.flames`): her karede yeniden dolduruluyor. */
   const flameList: ShotFlameInput[] = [];
   const energyShields = createEnergyShields(scene, { cellSize: () => terrain?.cellSize ?? 34, groundHeight: (x, z) => zoneHeight(x, z) });
+  /** Karenin komut haleleri, yavaslayan dusmanlari ve dusman kalkanlari (her karede yeniden). */
+  const auraList: ShotAuraInput[] = [];
+  const slowList: ShotSlowInput[] = [];
+  const shieldList: EnemyShield3dInput[] = [];
+  const enemyShields = createEnemyShields(scene, (x, y, z, radius) => shots.shieldBreak(x, y, z, radius, ENEMY_SHIELD_COLOR));
   const shots = createShotFx(scene, {
     cellSize: () => terrain?.cellSize ?? 34,
     groundHeight: (x, z) => zoneHeight(x, z),
@@ -1358,6 +1372,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       instance.heightScale = tower.heightScale ?? 1;
       instance.root.position.set(tower.x, base, tower.y);
       instance.flame = tower.flame ? { ...tower.flame, x: tower.x, z: tower.y, y: base } : undefined;
+      instance.command = tower.command ? { ...tower.command, x: tower.x, z: tower.y, y: base, height: size ? size.height * scale * (tower.heightScale ?? 1) : cell } : undefined;
       instance.aims = tower.fixedYaw === undefined && typeof tower.facing === "number";
       if (tower.fixedYaw !== undefined) {
         instance.root.rotation.y = tower.fixedYaw;
@@ -1845,6 +1860,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   function syncEnemies(enemies: readonly Enemy3dInput[]) {
     const active = new Set<string>();
     modelShown.clear();
+    shieldList.length = 0;
+    slowList.length = 0;
     for (const enemy of enemies) {
       active.add(enemy.id);
       let standee = standees.get(enemy.id);
@@ -1953,12 +1970,23 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         barUniforms.uChampion.value = bar.champion ? 1 : 0;
         standee.bar.position.set(enemy.x, standee.headY, enemy.y);
       }
+      // Kalkan kabugu ve yavaslatma govdenin ortasinda (model ya da pano).
+      const center = standee.mesh.position;
+      const bodyHeight = model ? model.height * model.root.scale.y : Math.max(enemy.width, enemy.height);
+      if (enemy.shield !== undefined) {
+        const radius = model ? Math.max(enemy.modelSize * 0.62, bodyHeight * 0.45) : Math.max(enemy.width, enemy.height) * 0.55;
+        shieldList.push({ id: enemy.id, x: center.x, y: center.y, z: center.z, radius, radiusY: model ? bodyHeight * 0.62 : radius, ratio: enemy.shield });
+      }
+      if (enemy.slow) {
+        slowList.push({ x: enemy.x, z: enemy.y, y: center.y, ground, radius: model ? enemy.modelSize * 0.55 : enemy.size * 0.5, tier: enemy.slow.tier, color: enemy.slow.color });
+      }
       standee.shadow.position.set(enemy.x, ground + 0.2, enemy.y);
       // Model panodan genis: golge de onun tabaninda.
       standee.shadow.scale.setScalar(model ? Math.max(enemy.shadowRadius, enemy.modelSize * 0.42) : enemy.shadowRadius);
       standee.shadow.material.opacity = enemy.shadowAlpha;
     }
     for (const [id, standee] of standees) if (!active.has(id)) removeStandee(id, standee);
+    enemyShields.sync(view === "angled" ? shieldList : []);
     if (view !== "angled") {
       for (const corpse of corpses.values()) disposeModel(corpse.model);
       corpses.clear();
@@ -2275,9 +2303,21 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       if (flame && instance.root.visible) flameList.push({ id, x: flame.x, z: flame.z, y: flame.y, radius: flame.radius, intensity: flame.intensity });
     }
     shots.flames(flameList);
+    auraList.length = 0;
+    for (const instance of instances.values()) {
+      const command = instance.command;
+      if (!command || !instance.root.visible) continue;
+      const base = { x: command.x, z: command.z, y: command.y, radius: command.radius, height: command.height };
+      if (command.range) auraList.push({ ...base, kind: "range", tier: command.range.tier, colors: command.range.colors });
+      if (command.haste) auraList.push({ ...base, kind: "haste", tier: command.haste.tier, colors: command.haste.colors });
+    }
+    shots.auras(auraList);
+    shots.slows(slowList);
     shots.update(now);
     energyShields.setVisible(true);
     energyShields.update(now);
+    enemyShields.setVisible(true);
+    enemyShields.update(now);
     overlay.setVisible(true);
     overlay.update(angledCamera);
     // Parlama: isikli seritler, kaide halkalari ve vuruslar (1'den parlaklar) yayiliyor.
@@ -2308,6 +2348,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     shots.dispose();
     overlay.dispose();
     energyShields.dispose();
+    enemyShields.dispose();
     for (const corpse of corpses.values()) disposeModel(corpse.model);
     corpses.clear();
     for (const id of [...ghosts.keys()]) removeGhost(id);
@@ -2384,6 +2425,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         syncOperators([]);
         syncGhosts([]);
         energyShields.setVisible(false);
+        enemyShields.setVisible(false);
+        slowList.length = 0;
         overlay.clear();
       }
     },

@@ -125,6 +125,20 @@ export type DeathFxInput = {
  */
 export type ShotFlameInput = { id: string; x: number; z: number; y: number; radius: number; intensity: number };
 
+/** Komutun ton uclusu (2D'deki `getZeynepCommandPalette`). */
+export type CommandColors = { primary: number; secondary: number; accent: number };
+/**
+ * Zeynep'in komut halesi (kule basina, her karede): Hizlanin govdenin belinde
+ * hizla donen kivilcimlar ve kuyruklari, zeminde nabiz atan halka; Alani
+ * Tutun zeminde soluk disk, cift halka ve ters yonde yavas donen isiklar.
+ * `y` kaidenin ustu, `height` kulenin boyu, `tier` 1-3.
+ */
+export type ShotAuraInput = { x: number; z: number; y: number; radius: number; height: number; kind: "haste" | "range"; tier: number; colors: CommandColors };
+/** Yavaslatin (dusman basina, her karede): ayakta yavas donen buz altigeni, govdede donen zerreler. */
+export type ShotSlowInput = { x: number; z: number; y: number; ground: number; radius: number; tier: number; color: number };
+/** Komutun verildigi an: Zeynep'in govdesinden zeminde yayilan dalga ve parlama. */
+export type ShotPulseInput = { x: number; z: number; color: number; accent: number; reach: number };
+
 export type ShotFx = {
   event(kind: ShotEventKind, input: ShotEventInput): void;
   death(input: DeathFxInput): void;
@@ -132,6 +146,13 @@ export type ShotFx = {
   beams(list: readonly ShotBeamInput[]): void;
   /** Performans alevi: her karede alevli kulelerin listesi (yoksa bos). */
   flames(list: readonly ShotFlameInput[]): void;
+  /** Zeynep'in komut haleleri (kuleler) ve yavaslatmasi (dusmanlar): her karede. */
+  auras(list: readonly ShotAuraInput[]): void;
+  slows(list: readonly ShotSlowInput[]): void;
+  /** Komutun verildigi an. */
+  commandPulse(input: ShotPulseInput): void;
+  /** Dusmanin kalkani kirildi: kabuk dagiliyor. */
+  shieldBreak(x: number, y: number, z: number, radius: number, color: number): void;
   /** Her karede cizimden once: parcaciklar ilerliyor ve yukleniyor. */
   update(now: number): void;
   setVisible(visible: boolean): void;
@@ -1425,6 +1446,74 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     for (const id of flameCarry.keys()) if (!seen.has(id)) flameCarry.delete(id);
   }
 
+  /* ------------------------------ Zeynep'in komutlari --------------------- */
+
+  function auras(list: readonly ShotAuraInput[]) {
+    if (!visible) return;
+    const t = performance.now() / 1000;
+    for (const aura of list) {
+      const r = aura.radius;
+      const { primary, secondary, accent } = aura.colors;
+      if (aura.kind === "haste") {
+        const pulse = 0.7 + Math.sin((t + 0.21) * Math.PI * 2) * 0.22;
+        const marks = aura.tier + 2;
+        const orbit = r * 1.18;
+        for (let index = 0; index < marks; index += 1) {
+          const angle = t * Math.PI * 2 * 1.7 + (index * Math.PI * 2) / marks;
+          const h = aura.y + aura.height * (0.3 + 0.16 * (index % 2));
+          const x = aura.x + Math.cos(angle) * orbit;
+          const z = aura.z + Math.sin(angle) * orbit;
+          light.spawn({ x, y: h, z, vx: -Math.sin(angle), vy: 0, vz: Math.cos(angle), color: index % 2 ? primary : accent, heat: 1.8, alpha: 0.95, size: r * 0.34, lifeMs: 0, shape: SHAPE.glow, stretch: 1.8 });
+          // Kuyruk: yorungede geride kalan kisa omurlu isik.
+          light.spawn({ x, y: h, z, color: primary, heat: 1.3, alpha: 0.6, size: r * 0.22, sizeTo: r * 0.05, lifeMs: 220, shape: SHAPE.glow, fade: 1.3 });
+        }
+        light.spawn({ x: aura.x, y: aura.y + 0.6, z: aura.z, color: primary, heat: 1.1, alpha: 0.32 + pulse * 0.28, size: (orbit * 2) / 0.8, lifeMs: 0, shape: SHAPE.groundRing });
+        continue;
+      }
+      const pulse = 0.7 + Math.sin(t * Math.PI * 2) * 0.22;
+      const ring = r * (1.2 + aura.tier * 0.04);
+      light.spawn({ x: aura.x, y: aura.y + 0.5, z: aura.z, color: primary, heat: 1, alpha: 0.1 + aura.tier * 0.03, size: ring * 2.2, lifeMs: 0, shape: SHAPE.groundGlow });
+      light.spawn({ x: aura.x, y: aura.y + 0.55, z: aura.z, color: primary, heat: 1.15, alpha: 0.35 + pulse * 0.3, size: (ring * 2) / 0.8, lifeMs: 0, shape: SHAPE.groundRing });
+      light.spawn({ x: aura.x, y: aura.y + 0.55, z: aura.z, color: secondary, heat: 1, alpha: 0.3 + pulse * 0.2, size: (ring * 2.25) / 0.8, lifeMs: 0, shape: SHAPE.groundRing });
+      const marks = aura.tier + 2;
+      for (let index = 0; index < marks; index += 1) {
+        const angle = -t * Math.PI * 2 * 0.65 + (index * Math.PI * 2) / marks;
+        light.spawn({ x: aura.x + Math.cos(angle) * ring * 1.12, y: aura.y + 1.2, z: aura.z + Math.sin(angle) * ring * 1.12, color: index % 2 ? primary : accent, heat: 1.5, alpha: 0.9, size: r * 0.28, lifeMs: 0, shape: SHAPE.glow });
+      }
+    }
+  }
+
+  function slows(list: readonly ShotSlowInput[]) {
+    if (!visible) return;
+    const t = performance.now() / 1000;
+    for (const slow of list) {
+      const r = slow.radius;
+      // Buz altigeni: hex sekli bandini yaricapin 0,8'inde ciziyor.
+      light.spawn({ x: slow.x, y: slow.ground + 0.5, z: slow.z, color: slow.color, heat: 1.05, alpha: 0.3 + slow.tier * 0.1, size: (r * 2) / 0.8, lifeMs: 0, shape: SHAPE.hex, spin: t * 0.5 });
+      for (let index = 0; index < slow.tier; index += 1) {
+        const angle = t * Math.PI * 2 * 0.25 + (index * Math.PI * 2) / slow.tier;
+        light.spawn({ x: slow.x + Math.cos(angle) * r * 0.9, y: slow.y + Math.sin(t * 2 + index) * r * 0.15, z: slow.z + Math.sin(angle) * r * 0.9, color: slow.color, heat: 1.4, alpha: 0.75, size: r * 0.14, lifeMs: 0, shape: SHAPE.glow });
+      }
+    }
+  }
+
+  function commandPulse(input: ShotPulseInput) {
+    if (!visible) return;
+    const c = cell();
+    const y = deps.groundHeight(input.x, input.z) + 0.8;
+    for (let k = 0; k < 2; k += 1) {
+      light.spawn({ x: input.x, y, z: input.z, color: k ? input.accent : input.color, heat: 1.6, alpha: 0.9, size: c * 0.6, sizeTo: (input.reach * 2) / 0.8, lifeMs: 950 + k * 200, delayMs: k * 160, shape: SHAPE.groundRing, fade: 1.4 });
+    }
+    light.spawn({ x: input.x, y: y + c * 0.6, z: input.z, color: input.accent, heat: 2.2, alpha: 1, size: c * 1.2, sizeTo: c * 0.2, lifeMs: 420, shape: SHAPE.flare, spinRate: 2 });
+    sparkBurst(input.x, y + c * 0.5, input.z, 16, c * 4, [input.color, input.accent], { up: 1.2, life: 600, size: c * 0.05 });
+  }
+
+  function shieldBreak(x: number, y: number, z: number, radius: number, color: number) {
+    if (!visible) return;
+    light.spawn({ x, y, z, color, heat: 1.8, alpha: 0.9, size: radius * 2, sizeTo: radius * 3.2, lifeMs: 320, shape: SHAPE.ring, fade: 1.2 });
+    sparkBurst(x, y, z, 14, radius * 6, [color, 0xe0f2fe], { up: 0.4, life: 420, size: radius * 0.12, heat: 1.6 });
+  }
+
   /* -------------------------------- kare --------------------------------- */
 
   function update(now: number) {
@@ -1470,7 +1559,11 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
   return {
     event,
     death, projectiles, beams,
-    flames, update, setVisible, clear, dispose,
+    flames,
+    auras,
+    slows,
+    commandPulse,
+    shieldBreak, update, setVisible, clear, dispose,
     stats: () => ({ light: light.count, matter: matter.count, projectiles: flights.size })
   };
 }
