@@ -398,6 +398,14 @@ export function createBloom(renderer: THREE.WebGLRenderer, scene: THREE.Scene, c
   const composer = new EffectComposer(renderer, target);
   const renderPass = new RenderPass(scene, camera);
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), TARGET_LIGHT.bloomStrength, TARGET_LIGHT.bloomRadius, TARGET_LIGHT.bloomThreshold);
+  // Parlamanin girdisi temizleniyor: tek bir NaN/sonsuz piksel bulaniklastirma
+  // basamaklarinda yayilip ekranin buyuk bir kismini karartiyordu (vurus aninda).
+  const highPass = bloom.materialHighPassFilter;
+  highPass.fragmentShader = highPass.fragmentShader.replace(
+    "vec4 texel = texture2D( tDiffuse, vUv );",
+    "vec4 texel = texture2D( tDiffuse, vUv );\n\tif ( any( isnan( texel ) ) || any( isinf( texel ) ) ) texel = vec4( 0.0 );\n\ttexel = min( texel, vec4( 64.0 ) );"
+  );
+  highPass.needsUpdate = true;
   const output = new OutputPass();
   output.needsSwap = false;
   composer.addPass(renderPass);

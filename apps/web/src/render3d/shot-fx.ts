@@ -20,6 +20,9 @@
 import * as THREE from "three";
 import { getShotRecipe, whiten, type ShotRecipe } from "./shot-recipes";
 
+/** Dusmanin menzilli vurusunun isini (sunucu `ENEMY_SHOT_BEAM_ID`, 2D beam-renderer ile ayni). */
+const ENEMY_SHOT_BEAM = "enemy-shot";
+
 export type ShotEventKind = "muzzle" | "anticipation" | "impact" | "beamHit";
 
 export type ShotEventInput = {
@@ -282,8 +285,11 @@ void main() {
     col = mix(col, hot, hotMix * pow(max(0.0, 1.0 - across * 2.6), 2.0) * vAlong * 0.8);
   }
   a *= vColor.a;
-  if (a < 0.003) discard;
-  gl_FragColor = vec4(col, a);
+  // Gecersiz deger (NaN/sonsuz) parlama gecisinde bulaniklasip ekranin buyuk bir
+  // kismini karartiyor: boyle piksel atiliyor (karsilastirma NaN'da yanlis), cok
+  // parlaklar sinirlaniyor.
+  if (!(a >= 0.003) || !(col.r + col.g + col.b < 1.0e4)) discard;
+  gl_FragColor = vec4(min(col, vec3(64.0)), min(a, 1.0));
   // Parlama gecisinin hedefine dogrusal HDR (ton esleme orada); ekrana dogrudan cizimde burada.
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -1221,22 +1227,59 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
 
   /* -------------------------------- isinlar ------------------------------- */
 
+  /**
+   * Taret ve namlu kulenin isinlarinin ilk hedefine kilitleniyor: isin namlunun
+   * ucundan, onun hattinda. Ayni kulenin birden cok isini varsa (Debug Lazer
+   * 10. seviyede sola ve saga supuren iki kiris) taret bir kez, uclarinin
+   * ortasina donuyor ve hepsi ayni namlu ucundan cikiyor: her isin kendine
+   * kilitlenince taret sonuncuya donuk kaliyor, digerleri havadan cikiyordu.
+   * Dusmanin atisi (`enemy-shot`, dusmandan kuleye) dusmanin govdesinden cikiyor:
+   * yakindaki kulenin namlusuna yapisip kuleyi kendi merkezine dondurmuyor.
+   */
+  function beamStarts(list: readonly ShotBeamInput[]) {
+    const groups = new Map<string, ShotBeamInput[]>();
+    const starts = new Map<ShotBeamInput, THREE.Vector3>();
+    for (const beam of list) {
+      if (beam.definitionId === ENEMY_SHOT_BEAM) {
+        starts.set(beam, new THREE.Vector3(beam.x1, targetHeight(beam.x1, beam.y1), beam.y1));
+        continue;
+      }
+      const key = `${Math.round(beam.x1)}|${Math.round(beam.y1)}`;
+      const group = groups.get(key);
+      if (group) group.push(beam);
+      else groups.set(key, [beam]);
+    }
+    for (const group of groups.values()) {
+      const first = group[0];
+      if (deps.aimAt) {
+        let x = 0;
+        let z = 0;
+        for (const beam of group) {
+          const bounces = beam.b ?? [];
+          x += bounces.length >= 2 ? bounces[0] : beam.x2;
+          z += bounces.length >= 2 ? bounces[1] : beam.y2;
+        }
+        x /= group.length;
+        z /= group.length;
+        deps.aimAt(first.x1, first.y1, TMP_TARGET.set(x, targetHeight(x, z), z));
+      }
+      const start = muzzlePoint(first.x1, first.y1);
+      for (const beam of group) starts.set(beam, start);
+    }
+    return starts;
+  }
+
   function beams(list: readonly ShotBeamInput[]) {
     if (!visible) return;
     const c = cell();
     const now = performance.now();
     const time = now / 1000;
+    const starts = beamStarts(list);
     for (const beam of list) {
       const recipe = getShotRecipe(beam.definitionId, beam.tier, beam.color);
       const look = recipe.beamLook;
       const bounces = beam.b ?? [];
-      // Taret ve namlu isinin ilk hedefine kilitleniyor: isin namlunun ucundan, onun hattinda.
-      if (deps.aimAt) {
-        const tx = bounces.length >= 2 ? bounces[0] : beam.x2;
-        const tz = bounces.length >= 2 ? bounces[1] : beam.y2;
-        deps.aimAt(beam.x1, beam.y1, TMP_TARGET.set(tx, targetHeight(tx, tz), tz));
-      }
-      const start = muzzlePoint(beam.x1, beam.y1);
+      const start = starts.get(beam)!.clone();
       const points: THREE.Vector3[] = [start];
       for (let index = 0; index + 1 < bounces.length; index += 2) points.push(new THREE.Vector3(bounces[index], targetHeight(bounces[index], bounces[index + 1]), bounces[index + 1]));
       points.push(new THREE.Vector3(beam.x2, targetHeight(beam.x2, beam.y2), beam.y2));
@@ -1281,7 +1324,9 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
   function update(now: number) {
     const dt = Math.min(80, Math.max(0, now - lastNow));
     lastNow = now;
-    const time = now / 1000;
+    // Saat 1000 sn'de basa donuyor: uzun oturumda dusuk hassasiyetli GPU'da
+    // `uTime * 22` tasip sin() gecersiz deger vermesin.
+    const time = (now / 1000) % 1000;
     light.material.uniforms.uTime.value = time;
     matter.material.uniforms.uTime.value = time;
     light.step(dt, deps.groundHeight);
