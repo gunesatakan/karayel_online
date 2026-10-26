@@ -248,11 +248,20 @@ type Instance = {
   lock?: { x: number; y: number; z: number; until: number };
   /** Performans alevi (egik gorunumde 3D): kaidenin ustu `y`. */
   flame?: { intensity: number; radius: number; x: number; z: number; y: number };
+  /** Nisangah: namlu ucundaki halka (nisan alan kulede; `addSight`). */
+  sight?: THREE.Object3D;
   /** Zeynep'in komut halesi: kaidenin ustu `y`, kulenin boyu `height`. */
   command?: NonNullable<Tower3dInput["command"]> & { x: number; z: number; y: number; height: number };
 };
 
 const TMP_COLOR = new THREE.Color();
+/** Nisangahin tonu: kulelerin beyaz, pembe ve mavisinden ayrilan sicak altin (soluk parlama). */
+const SIGHT_COLOR = 0xffc45c;
+/** Nisangah halkasinin yaricapi (hucre). */
+const SIGHT_RADIUS_CELLS = 0.1;
+const SIGHT_AXIS_Q = new THREE.Quaternion();
+const SIGHT_MUZZLE_Q = new THREE.Quaternion();
+const SIGHT_SCALE = new THREE.Vector3();
 /** Kademeye gore isima: kademe 1 sade (parlama esiginin altinda), 3 parlak ve nabiz atiyor. */
 const TIER_GLOW = { 1: 0.55, 2: 1, 3: 1.05 } as const;
 /**
@@ -1394,6 +1403,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         levels.set(tower.id, { level: tower.level, tier: tower.tier });
       }
       applyScale(instance, performance.now());
+      if (instance.aims && instance.muzzle && !instance.sight) instance.sight = addSight(instance);
+      if (instance.sight) instance.sight.visible = instance.aims;
       if (instance.pips && tower.level !== undefined && instance.pipLevel !== tower.level) {
         instance.pipLevel = tower.level;
         const lit = Math.min(10, Math.max(0, Math.floor(tower.level)));
@@ -1513,6 +1524,37 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     entry.sprite.material.dispose();
     entry.texture.dispose();
     uprights.delete(id);
+  }
+
+  // Nisangah: halka ve ortasindaki nokta (butun kulelerde ortak geometri ve malzeme).
+  const sightRingGeometry = new THREE.TorusGeometry(1, 0.11, 8, 36);
+  const sightDotGeometry = new THREE.CircleGeometry(0.16, 16);
+  const sightMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(SIGHT_COLOR).multiplyScalar(1.25), transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, toneMapped: false
+  });
+
+  /**
+   * Nisangah: nisan alan kulenin namlu ucunda, namluya dik, kulenin tonundan
+   * farkli (sicak altin) soluk parlayan halka ve ortasinda nokta. Namlunun ucuna
+   * bagli: donuyor, egiliyor, geri tepiyor. Goz almiyor (parlama esiginin hemen
+   * ustu); namlunun nereye baktigini okutuyor (Gosteri ve Taht'in simetrik
+   * govdelerinde donus baska turlu gorunmuyordu). Yonelimi ve boyu bir kez:
+   * namlunun ekseni egim dugumunun (yoksa donus dugumunun) dunya +Z'si.
+   */
+  function addSight(instance: Instance) {
+    const muzzle = instance.muzzle!;
+    instance.root.updateMatrixWorld(true);
+    const sight = new THREE.Group();
+    sight.name = "sight";
+    sight.add(new THREE.Mesh(sightRingGeometry, sightMaterial), new THREE.Mesh(sightDotGeometry, sightMaterial));
+    (instance.pitch ?? instance.yaw ?? muzzle).getWorldQuaternion(SIGHT_AXIS_Q);
+    muzzle.getWorldQuaternion(SIGHT_MUZZLE_Q);
+    sight.quaternion.copy(SIGHT_MUZZLE_Q.invert().multiply(SIGHT_AXIS_Q));
+    muzzle.getWorldScale(SIGHT_SCALE);
+    const radius = (terrain?.cellSize ?? 34) * SIGHT_RADIUS_CELLS;
+    sight.scale.set(radius / SIGHT_SCALE.x, radius / SIGHT_SCALE.y, radius / SIGHT_SCALE.z);
+    muzzle.add(sight);
+    return sight;
   }
 
   function removeInstance(instance: Instance) {
@@ -2352,6 +2394,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     shots.dispose();
     overlay.dispose();
     energyShields.dispose();
+    sightRingGeometry.dispose();
+    sightDotGeometry.dispose();
+    sightMaterial.dispose();
     enemyShields.dispose();
     for (const corpse of corpses.values()) disposeModel(corpse.model);
     corpses.clear();
