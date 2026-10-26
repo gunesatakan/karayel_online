@@ -2464,12 +2464,13 @@ export class GameScene extends Phaser.Scene {
     graphics.fillRect(sky.left, bounds.top, Math.max(0, bounds.left - sky.left), bounds.height);
     graphics.fillRect(bounds.right, bounds.top, Math.max(0, sky.left + sky.width - bounds.right), bounds.height);
 
-    // Kurulum yasak bolgeler: zeminin ustunde, oyun ogelerinin altinda.
-    drawBuildZones(graphics, this.getActiveBuildZones(), { originX: origin.x, originY: origin.y, cellSize });
-    // Tepe ve cukur isaretleri ayri grafikte: egik 3D gorunum araziyi kendisi ciziyor, orada gizli.
+    // Kurulum yasak bolgeler ve tepe/cukur isaretleri ayri grafikte: zeminin ustunde,
+    // oyun ogelerinin altinda. Egik 3D gorunum bolgeleri kendisi ciziyor (tepe
+    // bloklari, kirmizi kenarli cukurlar), orada gizli.
     const reliefs = this.buildZoneReliefGraphics ?? this.add.graphics().setDepth(1.05);
     this.buildZoneReliefGraphics = reliefs;
     reliefs.clear();
+    drawBuildZones(reliefs, this.getActiveBuildZones(), { originX: origin.x, originY: origin.y, cellSize });
     drawBuildZoneReliefs(reliefs, this.getActiveBuildZones(), { originX: origin.x, originY: origin.y, cellSize });
     this.syncBuildZoneReliefVisibility();
 
@@ -2490,7 +2491,7 @@ export class GameScene extends Phaser.Scene {
     this.syncTerrain3d();
   }
 
-  /** Tepe/cukur isaretleri 2D'de ve tepeden 3D'de; egik gorunumde arazi kendisi tepe. */
+  /** Bolgeler ve tepe/cukur isaretleri 2D'de ve tepeden 3D'de; egik gorunumde 3D kendisi ciziyor. */
   private syncBuildZoneReliefVisibility() {
     this.buildZoneReliefGraphics?.setVisible(this.towerLayer3d?.getView() !== "angled");
   }

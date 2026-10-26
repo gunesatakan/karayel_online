@@ -59,8 +59,8 @@ import { createShotFx, type ShotFx } from "./shot-fx";
 import { createTierFx } from "./tower-tiers";
 import { setAngledRenderScale } from "./renderer-mode";
 import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START, createQualityGovernor, stepQualityGovernor } from "./resolution";
-import { createZoneHeight, edgeSlopeHeight, terrainShade, type TerrainInput } from "./terrain";
-import { PLINTH_HEIGHT_CELLS, TARGET_LIGHT, createBloom, createPlinthFactory, createRockFrame, createTileBoard, targetStyleAccent, tuneTargetMaterials, type TileBoard } from "./target-look";
+import { createZoneHeight, edgeSlopeHeight, getZoneLayout, terrainShade, type TerrainInput } from "./terrain";
+import { PLINTH_HEIGHT_CELLS, TARGET_LIGHT, createBloom, createPlinthFactory, createRockFrame, createTileBoard, createZoneBlocks, targetStyleAccent, tuneTargetMaterials, type TileBoard } from "./target-look";
 
 export type Tower3dInput = {
   id: string;
@@ -266,9 +266,8 @@ void main() {
   gl_FragColor = vec4(color, alpha);
 }`;
 
-/** Yamaclar ve bolge (tepe/cukur) yuzeyleri: dokusuz koyu gri-mavi kaya, acik renkli cerceve kayalari ustunde secilsin; zemin karolar (target-look). */
+/** Yamaclar: dokusuz koyu gri-mavi kaya, acik renkli cerceve kayalari ustunde secilsin; zemin karolar (target-look). */
 const SLOPE_ROCK = 0x2e353f;
-const ZONE_ROCK = 0x363d48;
 
 /** Kulelerin tepesine pay: egik kesitte uzun kuleler ust kenardan tasmasin (dunya birimi). */
 const TOWER_HEADROOM = 70;
@@ -416,13 +415,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   floor.receiveShadow = true;
   floor.visible = false;
   scene.add(floor);
-  // Yasak bolgelerin kayalik yuzeyi: tahtanin bolge karelerindeki parcasi, isikli ve golgeli.
-  const zoneMaterial = new THREE.MeshStandardMaterial({ color: ZONE_ROCK, roughness: 0.95, metalness: 0, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-  const zoneSurface = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), zoneMaterial);
-  zoneSurface.castShadow = zoneSurface.receiveShadow = true;
-  zoneSurface.position.y = -0.4;
-  zoneSurface.visible = false;
-  scene.add(zoneSurface);
+  // Yasak bolgeler: tepe karelerinde yukselmis bloklar (target-look); cukurlar karo dokusunda.
+  let zoneBlocks: ReturnType<typeof createZoneBlocks> | undefined;
   let terrain: (TerrainInput & { groundImage?: HTMLImageElement | HTMLCanvasElement; stage?: number }) | undefined;
   // 3D zemin: arenanin koyu karolari (target-look), isikli ve golgeli; Phaser karesi
   // (halkalar, cizgiler, yazilar) ustune ekran karisimiyla. Kuleler ve vuruslar koyu karolarin ustunde one cikiyor.
@@ -501,7 +495,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     if (key === terrainKey) return;
     terrainKey = key;
     const cell = terrain?.cellSize ?? 34;
-    const boardGeometry = buildGrid(world.x, world.y, world.width, world.height, cell / 4, zoneHeight,
+    // Zemin ve Phaser karesi duz: tepeler ayri bloklar, cukurlar duz (karo dokusunda).
+    const flat = () => 0;
+    const boardGeometry = buildGrid(world.x, world.y, world.width, world.height, cell, flat,
       (x, z) => [(x - world.x) / world.width, 1 - (z - world.y) / world.height], true);
     board.geometry.dispose();
     board.geometry = boardGeometry;
@@ -512,30 +508,20 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     if (terrain) {
       // Karolar dunya izgarasina birebir; arenanin disi dokunun kenar rengi (bos pay).
       // Hucre basina 128 piksel (telefonda 96): yakinlasinca karo cizgileri keskin kaliyor.
-      tileBoard = createTileBoard({ ...terrain, pixels: coarsePointer ? 96 : 128 });
+      const layout = getZoneLayout(terrain);
+      tileBoard = createTileBoard({ ...terrain, pixels: coarsePointer ? 96 : 128, pitCells: layout.pits });
       tileBoard.texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
       groundMaterial.map = tileBoard.texture;
       groundMaterial.needsUpdate = true;
       const margin = cell * 10;
-      ground.geometry = buildGrid(world.x - margin, world.y - margin, world.width + margin * 2, world.height + margin * 2, cell / 4, zoneHeight, tileBoard.uv, false);
+      ground.geometry = buildGrid(world.x - margin, world.y - margin, world.width + margin * 2, world.height + margin * 2, cell, flat, tileBoard.uv, false);
+      removeZoneBlocks();
+      zoneBlocks = createZoneBlocks(layout, terrain);
+      zoneBlocks.group.visible = view === "angled";
+      scene.add(zoneBlocks.group);
     } else {
       ground.geometry = new THREE.PlaneGeometry(1, 1);
-    }
-    zoneSurface.geometry.dispose();
-    if (terrain && terrain.zoneCells.length > 0) {
-      const zones = new Set(terrain.zoneCells);
-      const t = terrain;
-      const inZone = (x: number, z: number) => {
-        const col = Math.floor((x - t.originX) / t.cellSize);
-        const row = Math.floor((z - t.originY) / t.cellSize);
-        return col >= 0 && row >= 0 && col < t.cols && row < t.rows && zones.has(row * t.cols + col);
-      };
-      const tile = t.cols * t.cellSize;
-      // Kose rengi: tepenin gunes alan yuzu ve cukurun derinlik karartmasi; renk malzemeden.
-      zoneSurface.geometry = buildGrid(world.x, world.y, world.width, world.height, cell / 4, zoneHeight,
-        (x, z) => [x / (tile * 0.5), -z / (tile * 0.75)], true, inZone);
-    } else {
-      zoneSurface.geometry = new THREE.PlaneGeometry(1, 1);
+      removeZoneBlocks();
     }
     slopes.geometry.dispose();
     if (terrain) {
@@ -567,6 +553,13 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     scene.remove(rockFrame.group);
     rockFrame.dispose();
     rockFrame = undefined;
+  }
+
+  function removeZoneBlocks() {
+    if (!zoneBlocks) return;
+    scene.remove(zoneBlocks.group);
+    zoneBlocks.dispose();
+    zoneBlocks = undefined;
   }
 
   function mergeGrids(a: THREE.BufferGeometry, b: THREE.BufferGeometry) {
@@ -1604,7 +1597,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       board.visible = false;
       slopes.visible = false;
       floor.visible = false;
-      zoneSurface.visible = false;
+      if (zoneBlocks) zoneBlocks.group.visible = false;
       ground.visible = false;
       if (rockFrame) rockFrame.group.visible = false;
       shadowCatcher.visible = true;
@@ -1639,7 +1632,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     board.visible = true;
     slopes.visible = Boolean(terrain);
     floor.visible = true;
-    zoneSurface.visible = Boolean(terrain && terrain.zoneCells.length > 0);
+    if (zoneBlocks) zoneBlocks.group.visible = true;
     ground.visible = groundReady();
     if (rockFrame) rockFrame.group.visible = true;
     // 3D zemin golgeyi kendisi aliyor.
@@ -1718,6 +1711,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     tierFx.dispose();
     plinths.dispose();
     removeRocks();
+    removeZoneBlocks();
     bloom?.dispose();
     tileBoard?.texture.dispose();
     shadowCatcher.material.dispose();
@@ -1741,7 +1735,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     shadowGeometry.dispose();
     const textures = new Set<THREE.Texture>([boardTexture, airTexture, shadowTexture, ...[...standeeTextures.values()].map((entry) => entry.texture)]);
     standeeTextures.clear();
-    for (const object of [...loaded.values(), board, air, slopes, floor, zoneSurface, ground]) {
+    for (const object of [...loaded.values(), board, air, slopes, floor, ground]) {
       object.traverse((node: THREE.Object3D) => {
         const mesh = node as THREE.Mesh;
         if (!mesh.isMesh) return;

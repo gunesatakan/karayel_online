@@ -7,11 +7,14 @@
  * - Cerceve: arenanin yanlarinda koseli, duz golgeli kayalar.
  * - Kule kaidesi: her kulenin altinda ayni koyu kare kaide ve kulenin
  *   kimlik renginde parlayan halka (modelin `accent` ekstrasi).
+ * - Yasak bolgeler: tepe karelerinde ayri ayri yukselmis bloklar, cukur
+ *   kareleri siyah ve kirmizi kenarli (gercekci arazi degil).
  * - Parlama (bloom): yalnizca 1'den parlak yuzeyler (isikli seritler, vuruslar).
  *
  * Yalnizca gorunus; oyun kurallari, konumlar ve girdi esleme degismez.
  */
 import * as THREE from "three";
+import type { ZoneLayout } from "./terrain";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -51,7 +54,7 @@ export type TileBoard = { texture: THREE.Texture; uv: (x: number, z: number) => 
  * ustte ciziliyor, altlari yalnizca koyu dolgu. Arenanin disi bos pay rengi;
  * doku kenara kenetli oldugu icin tahtanin otesi de o renk.
  */
-export function createTileBoard(input: { cols: number; rows: number; cellSize: number; originX: number; originY: number; zoneCells: readonly number[]; pixels?: number }): TileBoard {
+export function createTileBoard(input: { cols: number; rows: number; cellSize: number; originX: number; originY: number; zoneCells: readonly number[]; pixels?: number; pitCells?: readonly number[] }): TileBoard {
   const { cols, rows, cellSize, originX, originY } = input;
   const tile = input.pixels ?? TILE_PIXELS;
   // Cizgi kalinliklari ve koseler 64 piksellik hucreye gore; yogunlukla olcekleniyor.
@@ -64,6 +67,7 @@ export function createTileBoard(input: { cols: number; rows: number; cellSize: n
     context.fillStyle = "#0d0f13";
     context.fillRect(0, 0, canvas.width, canvas.height);
     const zones = new Set(input.zoneCells);
+    const pits = new Set(input.pitCells ?? []);
     const radius = (x: number, y: number, w: number, h: number, r: number) => {
       context.beginPath();
       context.moveTo(x + r, y);
@@ -77,7 +81,18 @@ export function createTileBoard(input: { cols: number; rows: number; cellSize: n
       for (let col = 0; col < cols; col += 1) {
         const x = (col + TILE_PAD_CELLS) * tile;
         const y = (row + TILE_PAD_CELLS) * tile;
+        if (pits.has(row * cols + col)) {
+          // Cukur: siyah kare, kenari beyaz yerine kirmizi.
+          context.fillStyle = "#020203";
+          context.fillRect(x, y, tile, tile);
+          radius(x + 8 * k, y + 8 * k, tile - 16 * k, tile - 16 * k, 5 * k);
+          context.lineWidth = 2.5 * k;
+          context.strokeStyle = "rgba(239, 68, 68, 0.85)";
+          context.stroke();
+          continue;
+        }
         if (zones.has(row * cols + col)) {
+          // Tepe: ustunde blok duruyor, karo gorunmuyor.
           context.fillStyle = "#121418";
           context.fillRect(x, y, tile, tile);
           continue;
@@ -175,6 +190,51 @@ export function createRockFrame(input: { left: number; right: number; top: numbe
     dispose() {
       shapes.forEach((geometry) => geometry.dispose());
       materials.forEach((material) => material.dispose());
+    }
+  };
+}
+
+/**
+ * Tepe bloklari: her tepe karesi ayri, yuvarlak koseli ve kenari pahli bir
+ * dikdortgen prizma (aralarinda ince bosluk); ustu acik, yanlari koyu arduvaz.
+ * Olcu dunya biriminde (`ZoneLayout.hills`).
+ */
+export function createZoneBlocks(layout: ZoneLayout, input: { cellSize: number; originX: number; originY: number }) {
+  const { cellSize, originX, originY } = input;
+  const group = new THREE.Group();
+  const top = new THREE.MeshStandardMaterial({ color: 0x4b5568, roughness: 0.82, metalness: 0.08 });
+  const side = new THREE.MeshStandardMaterial({ color: 0x2c3340, roughness: 0.88, metalness: 0.06 });
+  const geometries: THREE.BufferGeometry[] = [];
+  const half = cellSize * 0.45;
+  const round = cellSize * 0.09;
+  const bevel = cellSize * 0.035;
+  for (const hill of layout.hills) {
+    const shape = new THREE.Shape();
+    shape.moveTo(-half + round, -half);
+    shape.lineTo(half - round, -half);
+    shape.quadraticCurveTo(half, -half, half, -half + round);
+    shape.lineTo(half, half - round);
+    shape.quadraticCurveTo(half, half, half - round, half);
+    shape.lineTo(-half + round, half);
+    shape.quadraticCurveTo(-half, half, -half, half - round);
+    shape.lineTo(-half, -half + round);
+    shape.quadraticCurveTo(-half, -half, -half + round, -half);
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.max(bevel, hill.height - bevel * 2), bevelEnabled: true, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 2, curveSegments: 4 });
+    // Ekstruzyon +Z'de; dondurunce +Y (yukari), taban zeminde.
+    geometry.rotateX(-Math.PI / 2);
+    geometry.translate(originX + (hill.col + 0.5) * cellSize, bevel, originY + (hill.row + 0.5) * cellSize);
+    geometries.push(geometry);
+    // Grup 0 kapaklar (ust/alt), grup 1 yanlar ve pah.
+    const mesh = new THREE.Mesh(geometry, [top, side]);
+    mesh.castShadow = mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  return {
+    group,
+    dispose() {
+      geometries.forEach((geometry) => geometry.dispose());
+      top.dispose();
+      side.dispose();
     }
   };
 }

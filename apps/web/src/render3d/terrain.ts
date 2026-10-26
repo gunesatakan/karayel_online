@@ -1,11 +1,12 @@
 /**
  * Egik 3D gorunumun arazisi (yalnizca gorunus).
  *
- * - Kurulum yasak bolgeler lekeler halinde kayalik tepe ya da derin cukur
+ * - Kurulum yasak bolgeler lekeler halinde tepe ya da cukur
  *   (`getBuildZoneReliefs`, sunucuyla ayni: tepe kara atis hattini kesiyor,
- *   bolgeden kara birlikleri 0,66 hizla geciyor). Yukseklik yalnizca
- *   bolge karelerinin icinde; bolgenin kenarinda sifir, komsu kareler (kule
- *   kurulan yerler) dumduz kaliyor.
+ *   bolgeden kara birlikleri 0,66 hizla geciyor). Hedef gorunusle uyumlu,
+ *   gercekci degil: tepe karelerinin her biri ayri, yukselmis bir blok
+ *   (`getZoneLayout`); cukur kareleri duz, siyah ve kirmizi kenarli (karo
+ *   dokusunda). Dusmanlar bloklarin ustunden geciyor (`createZoneHeight`).
  * - Arenanin sag ve sol disinda kayalik yamaclar. Ust ve alt acik: dusmanlar
  *   ustten giriyor, nexus altta.
  *
@@ -25,10 +26,10 @@ export type TerrainInput = {
   zoneCells: readonly number[];
 };
 
-/** Tepenin yuksekligi ve cukurun derinligi (hucre); bolge kenarindan icerideki yumusama payi. */
-export const ZONE_HILL_CELLS = 1.5;
-export const ZONE_PIT_CELLS = 1.9;
-export const ZONE_RAMP_CELLS = 0.8;
+/** Tepe blogunun boyu (hucre): kareye gore bu aralikta, tekrarlanabilir. */
+export const ZONE_BLOCK_CELLS = { min: 0.5, max: 0.75 } as const;
+/** Blogun disina yumusak rampa (hucre): dusman bloga cikarken sicramiyor. */
+export const ZONE_BLOCK_RAMP_CELLS = 0.15;
 /** Kenar yamaci: egim (yukselis / uzaklik) ve en yuksek nokta (hucre). Egim 0,45 ~ 24 derece: 25 derecenin ustundeki kamera arenanin kenarini yamacin arkasinda kaybetmiyor. */
 export const EDGE_SLOPE = 0.45;
 export const EDGE_MAX_CELLS = 3.2;
@@ -59,46 +60,61 @@ function smoothstep(edge0: number, edge1: number, value: number) {
   return t * t * (3 - 2 * t);
 }
 
+export type ZoneLayout = {
+  /** Tepe kareleri: indeks, sutun, satir ve blogun boyu (dunya birimi). */
+  hills: { index: number; col: number; row: number; height: number }[];
+  /** Cukur kare indeksleri. */
+  pits: number[];
+};
+
+/** Lekeleri tepe ve cukur karelerine ayir; her tepe karesine kendi blok boyu. */
+export function getZoneLayout(input: TerrainInput): ZoneLayout {
+  const { cols, rows, cellSize } = input;
+  const hills: ZoneLayout["hills"] = [];
+  const pits: number[] = [];
+  for (const relief of getBuildZoneReliefs({ cols, rows, cells: input.zoneCells })) {
+    for (const index of relief.cells) {
+      if (!relief.hill) {
+        pits.push(index);
+        continue;
+      }
+      const col = index % cols;
+      const row = (index - col) / cols;
+      const spread = terrainNoise(col * 1.7 + 0.31, row * 1.3 + 0.77);
+      hills.push({ index, col, row, height: cellSize * (ZONE_BLOCK_CELLS.min + (ZONE_BLOCK_CELLS.max - ZONE_BLOCK_CELLS.min) * spread) });
+    }
+  }
+  return { hills, pits };
+}
+
 /**
- * Yasak bolgelerin yukseklik alani: (x, z) -> yukseklik (dunya birimi; tepe
- * arti, cukur eksi). Bolge disinda tam 0.
+ * Bolgelerin yuruyus yuksekligi: (x, z) -> dunya birimi. Tepe karesinde blogun
+ * ustu, hemen disinda kisa bir rampa; cukur ve diger her yer 0 (cukur artik duz).
  */
 export function createZoneHeight(input: TerrainInput) {
   const { cols, rows, cellSize, originX, originY } = input;
-  // Kare -> lekenin isareti ve boyu (0: bolge degil).
-  const amplitude = new Float32Array(cols * rows);
-  // Lekeler sirayla tepe ve cukur; tur sunucunun kuraliyla ayni kaynaktan.
-  for (const relief of getBuildZoneReliefs({ cols, rows, cells: input.zoneCells })) {
-    const size = relief.hill ? ZONE_HILL_CELLS : -ZONE_PIT_CELLS;
-    for (const index of relief.cells) amplitude[index] = size * cellSize;
-  }
-  const ramp = ZONE_RAMP_CELLS * cellSize;
-  const reach = Math.ceil(ZONE_RAMP_CELLS) + 1;
-  const isZone = (col: number, row: number) => col >= 0 && row >= 0 && col < cols && row < rows && amplitude[row * cols + col] !== 0;
-
+  const top = new Float64Array(cols * rows);
+  for (const hill of getZoneLayout(input).hills) top[hill.index] = hill.height;
+  const ramp = ZONE_BLOCK_RAMP_CELLS * cellSize;
   return (x: number, z: number) => {
     const col = Math.floor((x - originX) / cellSize);
     const row = Math.floor((z - originY) / cellSize);
-    if (!isZone(col, row)) return 0;
-    // Bolge disindaki en yakin noktaya uzaklik (komsu kareler ve izgaranin disi).
-    let distance = Infinity;
-    for (let dr = -reach; dr <= reach; dr += 1) {
-      for (let dc = -reach; dc <= reach; dc += 1) {
+    let height = 0;
+    for (let dr = -1; dr <= 1; dr += 1) {
+      for (let dc = -1; dc <= 1; dc += 1) {
         const c = col + dc;
         const r = row + dr;
-        if (isZone(c, r)) continue;
+        if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+        const size = top[r * cols + c];
+        if (size === 0) continue;
         const left = originX + c * cellSize;
-        const top = originY + r * cellSize;
+        const upper = originY + r * cellSize;
         const dx = Math.max(left - x, 0, x - (left + cellSize));
-        const dz = Math.max(top - z, 0, z - (top + cellSize));
-        distance = Math.min(distance, Math.hypot(dx, dz));
+        const dz = Math.max(upper - z, 0, z - (upper + cellSize));
+        height = Math.max(height, size * (1 - smoothstep(0, ramp, Math.hypot(dx, dz))));
       }
     }
-    const profile = smoothstep(0, ramp, distance);
-    const size = amplitude[row * cols + col];
-    // Kayalik yuzey: gurultu ici dolu bolgede; kenarda profil sifirliyor.
-    const rough = 0.78 + 0.44 * terrainNoise(x / (cellSize * 0.55), z / (cellSize * 0.55));
-    return size * profile * rough;
+    return height;
   };
 }
 

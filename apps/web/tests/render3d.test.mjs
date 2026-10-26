@@ -37,7 +37,7 @@ import {
   upgradePopFactor,
   yawFromFacing
 } from "../src/render3d/tower-math.ts";
-import { EDGE_SLOPE, createZoneHeight, edgeSlopeHeight } from "../src/render3d/terrain.ts";
+import { EDGE_SLOPE, ZONE_BLOCK_CELLS, createZoneHeight, edgeSlopeHeight, getZoneLayout } from "../src/render3d/terrain.ts";
 import { getBuildZoneReliefs } from "@karayel/shared";
 import { SHOT_TOWER_IDS, getShotRecipe, shotTowerId } from "../src/render3d/shot-recipes.ts";
 import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START, createQualityGovernor, stepQualityGovernor } from "../src/render3d/resolution.ts";
@@ -273,18 +273,30 @@ test("dar ekranda kesit derinlige gore buyuyor", () => {
   assert.ok(Math.abs(frustum.halfWidth / frustum.halfHeight - 2) < 1e-9);
 });
 
-test("arazi: yasak bolge lekeleri donusumlu tepe ve cukur, bolge disi ve kenari dumduz", () => {
+test("arazi: tepe kareleri ayri yukselmis bloklar, cukurlar duz; bolge disi dumduz", () => {
   const input = { cols: 12, rows: 18, cellSize: 34, originX: 0, originY: 55, zoneCells: [3 * 12 + 2, 3 * 12 + 3, 4 * 12 + 3, 10 * 12 + 8, 10 * 12 + 9, 11 * 12 + 9] };
-  assert.deepEqual(getBuildZoneReliefs({ cols: 12, rows: 18, cells: input.zoneCells }).map((relief) => relief.cells), [[38, 39, 51], [128, 129, 141]]);
+  const reliefs = getBuildZoneReliefs({ cols: 12, rows: 18, cells: input.zoneCells });
+  assert.deepEqual(reliefs.map((relief) => relief.cells), [[38, 39, 51], [128, 129, 141]]);
+  const hillCells = reliefs.filter((relief) => relief.hill).flatMap((relief) => relief.cells);
+  const pitCells = reliefs.filter((relief) => !relief.hill).flatMap((relief) => relief.cells);
+  assert.ok(hillCells.length > 0 && pitCells.length > 0);
+  const layout = getZoneLayout(input);
+  assert.deepEqual(layout.hills.map((hill) => hill.index).sort(), [...hillCells].sort());
+  assert.deepEqual([...layout.pits].sort(), [...pitCells].sort());
+  for (const hill of layout.hills) assert.ok(hill.height >= ZONE_BLOCK_CELLS.min * 34 && hill.height <= ZONE_BLOCK_CELLS.max * 34);
   const height = createZoneHeight(input);
-  const center = (col, row) => [input.originX + (col + 0.5) * 34, input.originY + (row + 0.5) * 34];
-  const first = height(...center(3, 3));
-  const second = height(...center(9, 10));
-  assert.ok(first !== 0 && second !== 0 && Math.sign(first) !== Math.sign(second), `${first} ${second}`);
-  // Kule kurulan komsu kare ve bolgenin siniri duz.
-  assert.equal(height(...center(1, 3)), 0);
-  assert.equal(height(...center(6, 6)), 0);
-  assert.ok(Math.abs(height(input.originX + 2 * 34 + 0.01, input.originY + 3.5 * 34)) < 0.5);
+  const center = (index) => [input.originX + ((index % 12) + 0.5) * 34, input.originY + (Math.floor(index / 12) + 0.5) * 34];
+  // Dusman blogun ustunde yuruyor; cukur ve bolge disi duz.
+  for (const hill of layout.hills) assert.equal(height(...center(hill.index)), hill.height);
+  for (const pit of layout.pits) assert.equal(height(...center(pit)), 0);
+  assert.equal(height(...center(6 * 12 + 6)), 0);
+  // Blogun hemen disinda kisa rampa, biraz otede duz.
+  const hill = layout.hills[0];
+  const left = input.originX + hill.col * 34;
+  const z = input.originY + (hill.row + 0.5) * 34;
+  const near = height(left - 34 * 0.03, z);
+  assert.ok(near > 0 && near < hill.height, `${near}`);
+  if (!input.zoneCells.includes(hill.index - 1)) assert.equal(height(left - 34 * 0.3, z), 0);
 });
 
 test("arazi: yamac yalnizca arenanin sag ve solunda, egimi sinirli", () => {
