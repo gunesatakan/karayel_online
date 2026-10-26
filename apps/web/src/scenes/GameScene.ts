@@ -1,4 +1,6 @@
-import { HARVESTER_QUOTA } from "@karayel/shared";
+import { GOLEM_PETRIFY, HARVESTER_QUOTA } from "@karayel/shared";
+import { SwitchSurface } from "../vfx/switch-surface";
+import type { OverlayMode } from "../render3d/overlay-3d";
 import { buildWorkerRoster, getWorkerRosterRole, listResourceNodes, resolveWorkerMapTarget, type WorkerPick, type WorkerRosterState } from "../worker-roster";
 import { getTowerMaxLevel } from "@karayel/shared";
 import { ACTIVE_WORKER_ROLES, isTransportProduct } from "@karayel/shared";
@@ -51,7 +53,7 @@ import {
   type SpecialEnemyKind
 } from "@karayel/shared";
 import { Room } from "colyseus.js";
-import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
+import { CombatVfx, getDeathColors, readTextureAccent } from "../vfx/combat-vfx";
 import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signatures";
 import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEventInput, type CourtFrame, type ReceiptContext } from "../vfx/zeynep-signatures";
 import { getTowerBodySize, getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_SCALE } from "../tower-art";
@@ -474,7 +476,7 @@ import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
 import { EDGE_MODEL_IDS, ENEMY_MODEL_SIZE_SCALE, MINE_KINDS, OPERATOR_SIZE_SCALE, STANDEE_SIZE_SCALE, WORKER_SIZE_SCALE, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
-import type { Enemy3dInput, EnemyBar, Mine3dInput, Operator3dInput, Tower3dInput, TowerLayer, Upright3dInput, Worker3dInput } from "../render3d/tower-layer";
+import type { Enemy3dInput, EnemyBar, Ghost3dInput, Mine3dInput, Operator3dInput, Tower3dInput, TowerLayer, Upright3dInput, Worker3dInput } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getWaveMusicLevel, getWaveMusicTrackForState, WAVE_MUSIC_TRACKS, WaveMusicPlayer } from "../wave-music";
@@ -710,6 +712,11 @@ type RenderMover = {
   specialEffect?: Phaser.GameObjects.Graphics;
   /** Ozel dusman turu; infaz dokunusunda bagisiklik icin. */
   specialKind?: SpecialEnemyKind;
+  /** Hasatcinin yuku (0-1) ve kacisi: egik gorunumde dik tabela cubugu. */
+  cargoRatio?: number;
+  cargoEscaping?: boolean;
+  /** Golem taslasmasi (0-1): egik gorunumde 3D levhalar. */
+  petrifyRatio?: number;
   /** Son karede takimin tarafinda mi (hukmedilmis, olumsuz, cevrilmis); Execute bunlari secmiyor. */
   teamSide?: boolean;
   /** Irk mekanigi yuzeyi (tas levhalar, faz hayaleti, yigin kertikleri); yalnizca gereken dusmanda aciliyor. */
@@ -1352,6 +1359,8 @@ export class GameScene extends Phaser.Scene {
   private droneSnapshots3d: readonly DroneSnapshot[] = [];
   /** Egik gorunumde 3D modeliyle cizilen isciler (2D besgen ve can cubugu cizilmiyor). */
   private workers3dShown: ReadonlySet<string> = new Set();
+  /** Egik gorunumde 3D modeliyle cizilen dusmanlar (taslasma levhalari 3D'de). */
+  private enemyModels3d: ReadonlySet<string> = new Set();
   /** Dik tabela can cubuklarinin tuvalleri (isci ve operator basina). */
   private readonly barCanvases = new Map<string, { canvas: HTMLCanvasElement; key: string }>();
   /** Iscinin nabizsiz govde genisligi: 3D dron 2D'deki buyuyup kuculmeyi almiyor. */
@@ -2143,11 +2152,13 @@ export class GameScene extends Phaser.Scene {
     // Atakan isaretleri: alan dusmanlarin altinda (7.4), bag ve ip mermilerin
     // altinda (10.4, ADD omuzlari 10.42), nisangah ve gosterge dusman ve kule
     // govdesinin ustunde, can cubugunun (16) altinda (13.2).
+    // Egik 3D gorunumde bag, ip ve isaretler 3D yuzeye (render3d/overlay-3d): bag kuleden kuleye,
+    // nisangah ve gosterge govdenin ortasinda ayakta. Alan ve karantina dolgusu zeminde kaliyor.
     this.atakanSignatures = new AtakanSignatureVfx(
       this.add.graphics().setDepth(7.4),
-      this.add.graphics().setDepth(10.4),
-      this.add.graphics().setDepth(10.42).setBlendMode(Phaser.BlendModes.ADD),
-      this.add.graphics().setDepth(13.2),
+      this.switchSurface(this.add.graphics().setDepth(10.4), "atakan.links", "link"),
+      this.switchSurface(this.add.graphics().setDepth(10.42).setBlendMode(Phaser.BlendModes.ADD), "atakan.glow", "link", true),
+      this.switchSurface(this.add.graphics().setDepth(13.2), "atakan.marks", "mark"),
       { lod: this.vfxLod, reducedMotion: () => this.feedback?.reducedMotion ?? false }
     );
     this.signatureTowers = [];
@@ -2157,9 +2168,9 @@ export class GameScene extends Phaser.Scene {
     // altinda (13.25).
     this.zeynepSignatures = new ZeynepSignatureVfx(
       this.add.graphics().setDepth(7.45),
-      this.add.graphics().setDepth(10.41),
-      this.add.graphics().setDepth(10.43).setBlendMode(Phaser.BlendModes.ADD),
-      this.add.graphics().setDepth(13.25),
+      this.switchSurface(this.add.graphics().setDepth(10.41), "zeynep.links", "link"),
+      this.switchSurface(this.add.graphics().setDepth(10.43).setBlendMode(Phaser.BlendModes.ADD), "zeynep.glow", "link", true),
+      this.switchSurface(this.add.graphics().setDepth(13.25), "zeynep.marks", "mark"),
       { lod: this.vfxLod, reducedMotion: () => this.feedback?.reducedMotion ?? false }
     );
     this.zeynepReceipt.clear();
@@ -2247,7 +2258,9 @@ export class GameScene extends Phaser.Scene {
         // Uyari gorsel: kendi bedeninde bir not, takim arkadasinda yalnizca halka.
         if (body.id === this.localSessionId && !this.matchResultShown) this.showNotice(t("scene.body.lowHp"));
       },
-      barsIn3d: () => this.towerLayer3d?.getView() === "angled"
+      barsIn3d: () => this.towerLayer3d?.getView() === "angled",
+      // Is isini egik gorunumde 3D: modelin govdesinden yapinin ya da dusmanin govdesine.
+      beamSurface: () => this.angledOverlay("operator.beam", "link")
     });
     this.shieldDrawn = false;
     this.shieldGesture = undefined;
@@ -5475,6 +5488,7 @@ export class GameScene extends Phaser.Scene {
     const cellSize = this.getMapCellSize();
     const burrowed = Boolean(view?.burrow);
     const phased = Boolean(view?.phased);
+    mover.petrifyRatio = view && view.petrify > 0 ? view.petrify / GOLEM_PETRIFY.maxStacks : 0;
     // Yer altina giris ve cikis: gorulen gecisten (toz halkasi, cikis patlamasi).
     if (burrowed !== Boolean(mover.raceBurrowed)) {
       this.raceTransients.add(burrowed ? RACE_TRANSIENT.dig : RACE_TRANSIENT.emerge, enemy.x, enemy.y, now);
@@ -5537,7 +5551,7 @@ export class GameScene extends Phaser.Scene {
       drawBurrowFurrow(graphics, enemy.x, enemy.y, size, seed, options);
       return;
     }
-    if (view!.petrify > 0) drawPetrifyPlating(graphics, enemy.x, enemy.y, size, view!.petrify, seed);
+    if (view!.petrify > 0 && !this.isEnemyModelAngled3d(enemy.id)) drawPetrifyPlating(graphics, enemy.x, enemy.y, size, view!.petrify, seed);
     if (view!.trait === "drawer") drawSoulDrawerMark(graphics, enemy.x, enemy.y, size, view!.drawer);
     if (phased) drawPhaseGhost(graphics, enemy.x, enemy.y, size, seed, options);
   }
@@ -5650,6 +5664,11 @@ export class GameScene extends Phaser.Scene {
     const cellSize = this.getMapCellSize();
     drawSpecialEnemyMarker(graphics, kind, enemy.x, enemy.y, displayedSize, getHeaterRadius(cellSize), options);
     if (kind === "harvester") {
+      mover.cargoRatio = Math.min(1, (enemy.cargo ?? 0) / HARVESTER_QUOTA);
+      mover.cargoEscaping = Boolean(enemy.escaping);
+    }
+    // Egik gorunumde yuk cubugu dik tabela (collectAngledUprights): zemine yatik cizilmiyor.
+    if (kind === "harvester" && this.towerLayer3d?.getView() !== "angled") {
       const width = displayedSize * 0.7;
       graphics.fillStyle(0x111827, 0.9).fillRect(enemy.x - width / 2, enemy.y + displayedSize * 0.6, width, 3);
       graphics.fillStyle(enemy.escaping ? 0xff725e : 0xe0ad52, 1).fillRect(enemy.x - width / 2, enemy.y + displayedSize * 0.6, width * Math.min(1, (enemy.cargo ?? 0) / HARVESTER_QUOTA), 3);
@@ -8427,7 +8446,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       lod: this.vfxLod,
       reducedMotion: () => this.feedback?.reducedMotion ?? false,
       playSample: (cue, key) => this.feedback?.playSampleCue(cue.family, cue.rate, cue.gain, key),
-      shake: (px, durationMs) => this.feedback?.shakeCamera({ own: true, priority: 0, px, durationMs })
+      shake: (px, durationMs) => this.feedback?.shakeCamera({ own: true, priority: 0, px, durationMs }),
+      // Zafer isini egik gorunumde nexus'tan gokyuzune dik (2D'de tahta boyunca kuzeye yatiyordu).
+      beamSurface: (layer) => this.angledOverlay(`matchEnd.beam.${layer}`, "upright", layer === "glow")
     });
     this.matchEndStage = stage;
     const cellSize = this.getMapCellSize();
@@ -11021,6 +11042,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         size,
         extraLift: mover.air ? cellSize * ANGLED_AIR_ENEMY_LIFT_CELLS : 0,
         modelSize: (size / STANDEE_SIZE_SCALE) * ENEMY_MODEL_SIZE_SCALE,
+        petrify: mover.petrifyRatio,
         bar: mover.bar,
         shadowRadius: size * (mover.air ? 0.26 : 0.34),
         shadowAlpha: mover.air ? 0.22 : 0.38
@@ -11035,7 +11057,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.angledAirContent = airContent;
     // Efekt yoksa ikinci kamera hic cizmiyor (kopya da yok).
     air.setVisible(airContent);
-    layer.syncEnemies(enemies);
+    this.enemyModels3d = layer.syncEnemies(enemies);
+    layer.syncGhosts(this.collectAngledGhosts(both));
     // Madenler: modeli olan ikon 3D'de, ikonu iki kamerada da gizli; kalan miktar yazisi zeminde.
     const mines: Mine3dInput[] = [];
     for (const [id, sprite] of this.resourceSprites) {
@@ -11155,6 +11178,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const span = getTowerGridSpan(tower.definitionId);
       bar(`t${id}`, (tower.hp ?? 0) / maxHp, tower.x, tower.y, Math.max(22, cellSize * span * 0.88), cellSize * span * 1.15);
     }
+    // Hasatcinin yuk cubugu: can cubugunun ustunde, dusmanin basina bagli.
+    for (const [id, mover] of this.enemies) {
+      if (mover.specialKind !== "harvester" || mover.cargoRatio === undefined || !mover.sprite.active || !mover.sprite.visible) continue;
+      liveBars.add(`c${id}`);
+      const { canvas, key } = this.drawBarCanvas(`c${id}`, mover.cargoRatio, mover.cargoEscaping ? "#ff725e" : "#e0ad52");
+      const width = Math.max(14, Math.abs(mover.sprite.displayWidth) * 0.7);
+      items.push({ id: `bar-c${id}`, source: canvas, version: key, x: mover.sprite.x, z: mover.sprite.y, anchor: { enemy: id }, rise: 9, width, height: 3.5, alpha: 1 });
+    }
     for (const id of [...this.barCanvases.keys()]) if (!liveBars.has(id)) this.barCanvases.delete(id);
     // Hasar sayilari: dogdugu yerde govde yuksekliginde, yukari kayisi yukseklige.
     this.damageNumbers?.forEachActive((text, bornX, bornY) => add(text, { x: text.x, z: bornY, anchor: "body", rise: Math.max(0, bornY - text.y) }));
@@ -11167,10 +11198,47 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     return items;
   }
 
+  /** Egik 3D gorunumun cizim yuzeyi (adli); baska gorunumde yok. */
+  private angledOverlay(name: string, mode: OverlayMode, additive = false) {
+    const layer = this.towerLayer3d;
+    return layer && layer.getView() === "angled" ? layer.overlaySurface(name, mode, additive) : undefined;
+  }
+
+  /** Phaser yuzeyi ya da (egik gorunumde) onun 3D karsiligi: cizen kod ikisine ayni cagrilari yapiyor. */
+  private switchSurface(flat: Phaser.GameObjects.Graphics, name: string, mode: OverlayMode, additive = false) {
+    return new SwitchSurface(flat, () => this.angledOverlay(name, mode, additive));
+  }
+
+  /** Dusman egik gorunumde 3D modeliyle mi cizildi (son karede). */
+  private isEnemyModelAngled3d(id: string) {
+    return this.towerLayer3d?.getView() === "angled" && this.enemyModels3d.has(id);
+  }
+
+  /**
+   * Yerlestirme hayaletleri 3D: surukleme hayaleti (yesil / kirmizi) ve yoldaki
+   * istekler (soluk, nefes alip veriyor). Kulenin kendi modeli; 2D resimleri
+   * uc kameradan da gizli. Modeli olmayan tanim 2D kaliyor.
+   */
+  private collectAngledGhosts(hidden: number): Ghost3dInput[] {
+    const ghosts: Ghost3dInput[] = [];
+    const add = (id: string, image: Phaser.GameObjects.Image, definitionId: string, valid: boolean, alpha: number) => {
+      if (!image.active || !image.visible || !hasTowerModel(definitionId)) return;
+      const snapshot = { id, definitionId, x: image.x, y: image.y, level: 1, orientation: this.getPlacementOrientation(definitionId, image.x, image.y) } as unknown as TowerSnapshot;
+      const [input] = this.buildTowers3dInputs([snapshot]);
+      if (!input) return;
+      image.cameraFilter |= hidden;
+      ghosts.push({ ...input, valid, alpha });
+    };
+    const drag = this.placementGhost;
+    if (drag && this.draggedTowerDefinition) add("ghost-drag", drag, this.draggedTowerDefinition.id, drag.tintTopLeft !== 0xf87171, 0.9);
+    this.pendingPlacements.forEach((entry, index) => add(`ghost-pending-${index}`, entry.ghost, entry.definitionId, true, Math.min(1, entry.ghost.alpha * 1.6)));
+    return ghosts;
+  }
+
   /** Can cubugu tuvali (koyu zemin, oranda yesil-turuncu-kirmizi); oran 1/40 adimla yeniden ciziliyor. */
-  private drawBarCanvas(id: string, ratio: number) {
+  private drawBarCanvas(id: string, ratio: number, fill?: string) {
     const clamped = Math.max(0, Math.min(1, ratio));
-    const key = String(Math.round(clamped * 40));
+    const key = `${Math.round(clamped * 40)}${fill ?? ""}`;
     let entry = this.barCanvases.get(id);
     if (!entry) {
       const canvas = document.createElement("canvas");
@@ -11186,7 +11254,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         context.clearRect(0, 0, 96, 16);
         context.fillStyle = "rgba(2, 6, 23, 0.92)";
         context.fillRect(0, 0, 96, 16);
-        context.fillStyle = clamped > 0.5 ? "#22c55e" : clamped > 0.25 ? "#f59e0b" : "#ef4444";
+        context.fillStyle = fill ?? (clamped > 0.5 ? "#22c55e" : clamped > 0.25 ? "#f59e0b" : "#ef4444");
         context.fillRect(3, 3, 90 * clamped, 10);
       }
     }
@@ -13236,6 +13304,22 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const lastHit = this.lastEnemyHits.get(event.enemyId);
     this.lastEnemyHits.delete(event.enemyId);
     const recentHit = lastHit && now - lastHit.at <= 1500 ? lastHit : undefined;
+    // Egik 3D gorunumde patlama 3D: model cokuyor, kirintilar yere sekiyor (2D patlama yatik kaliyordu).
+    if (this.towerLayer3d?.getView() === "angled") {
+      const color = tintAccentColor(this.getEnemyAccentColor(trace.texture), trace.tint);
+      this.towerLayer3d.enemyDeath(event.enemyId, {
+        x: trace.x,
+        y: trace.y,
+        size: trace.size,
+        color,
+        ...getDeathColors(trace.texture, color),
+        heading: recentHit?.angle,
+        heavy: shape.heavy,
+        air: trace.air,
+        intensity: own ? 1 : TEAMMATE_DEATH_BURST_INTENSITY
+      });
+      return;
+    }
     this.combatVfx?.emitDeath({
       style: recentHit?.death,
       heading: recentHit?.angle,

@@ -1,6 +1,7 @@
 import type Phaser from "phaser";
 import { OPERATOR_BODY_LOW_HP_RATIO, type CharacterId, type GameSnapshot, type OperatorBodySnapshot } from "@karayel/shared";
 import type { FlashSink } from "./flash-pool";
+import type { VfxGraphics } from "./kit";
 import type { VfxLod } from "./lod";
 import { WORKER_VISUAL_SCALE } from "../visual-scale";
 
@@ -150,6 +151,8 @@ export type OperatorBodyViewDeps = {
   onDown?: (body: OperatorBodySnapshot) => void;
   /** Can cubugu 3D'de dik tabela (egik gorunum): burada cizilmiyor. */
   barsIn3d?: () => boolean;
+  /** Is isininin 3D yuzeyi (egik gorunum, render3d/overlay-3d); yoksa ust katmana duz. */
+  beamSurface?: () => (VfxGraphics & { clear(): unknown }) | undefined;
 };
 
 export type OperatorBodyFrame = {
@@ -199,6 +202,7 @@ export class OperatorBodyView {
         this.shadow.clear();
         this.trail.clear();
         this.overlay.clear();
+        this.deps.beamSurface?.()?.clear();
         this.drawn = false;
       }
       return;
@@ -207,6 +211,7 @@ export class OperatorBodyView {
     this.shadow.clear();
     this.trail.clear();
     this.overlay.clear();
+    this.deps.beamSurface?.()?.clear();
     const still = this.deps.reducedMotion();
     const local = this.deps.localSessionId();
     for (const body of list) {
@@ -337,23 +342,24 @@ export class OperatorBodyView {
     const tx = body.wx!;
     const ty = body.wy!;
     const age = Math.max(0, now - view.workStartedAt);
+    const g: VfxGraphics = this.deps.beamSurface?.() ?? this.overlay;
     const flicker = still ? 1 : 0.75 + 0.25 * Math.sin(now / 21 + view.seed);
     const fromX = body.x + Math.sin(view.rotation) * size * 0.3;
     const fromY = body.y - Math.cos(view.rotation) * size * 0.3;
     const distance = Math.hypot(tx - fromX, ty - fromY);
     if (distance > size * 0.2) {
-      this.overlay.lineStyle(size * 0.16, palette.tone, 0.45 * flicker);
-      this.overlay.lineBetween(fromX, fromY, tx, ty);
-      this.overlay.lineStyle(Math.max(0.7, size * 0.05), palette.core, 0.9 * flicker);
-      this.overlay.lineBetween(fromX, fromY, tx, ty);
+      g.lineStyle(size * 0.16, palette.tone, 0.45 * flicker);
+      g.lineBetween(fromX, fromY, tx, ty);
+      g.lineStyle(Math.max(0.7, size * 0.05), palette.core, 0.9 * flicker);
+      g.lineBetween(fromX, fromY, tx, ty);
     }
     // Ucta sert beyaz nokta; ilk anda kisa bir halka (kurulum/onarim/infaz ani).
-    this.overlay.fillStyle(palette.core, 0.95 * flicker);
-    this.overlay.fillCircle(tx, ty, size * 0.09);
+    g.fillStyle(palette.core, 0.95 * flicker);
+    g.fillCircle(tx, ty, size * 0.09);
     if (age < 160) {
       const t = age / 160;
-      this.overlay.lineStyle(Math.max(0.7, size * 0.05), palette.core, 0.7 * (1 - t));
-      this.overlay.strokeCircle(tx, ty, size * (still ? 0.45 : 0.18 + 0.4 * t));
+      g.lineStyle(Math.max(0.7, size * 0.05), palette.core, 0.7 * (1 - t));
+      g.strokeCircle(tx, ty, size * (still ? 0.45 : 0.18 + 0.4 * t));
     }
     if (this.deps.lod.sparks && !still) {
       for (let index = 0; index < 4; index += 1) {
@@ -362,8 +368,8 @@ export class OperatorBodyView {
         const reach = size * (0.12 + 0.3 * life);
         const sx = tx + Math.cos(angle) * reach;
         const sy = ty + Math.sin(angle) * reach;
-        this.overlay.lineStyle(Math.max(0.6, size * 0.04), index % 2 ? palette.core : 0xd9c08a, 0.8 * (1 - life));
-        this.overlay.lineBetween(sx, sy, sx - Math.cos(angle) * size * 0.1, sy - Math.sin(angle) * size * 0.1);
+        g.lineStyle(Math.max(0.6, size * 0.04), index % 2 ? palette.core : 0xd9c08a, 0.8 * (1 - life));
+        g.lineBetween(sx, sy, sx - Math.cos(angle) * size * 0.1, sy - Math.sin(angle) * size * 0.1);
       }
     }
   }

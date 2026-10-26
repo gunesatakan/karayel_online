@@ -1,175 +1,238 @@
 {
-  "note": "Game copies of the Tripo enemy models (target style: tools/3d-preview/build-target-tower.py --structure unit --palette native). Key = the Phaser texture key. Not included in the itch.io package.",
+  "note": "Game copies of the Tripo enemy models (target style: tools/3d-preview/build-target-tower.py --structure unit --palette native; with walkSpeed: Tripo rig and walk preset merged by build-enemy-rig.py). Key = the Phaser texture key. Not included in the itch.io package.",
   "targetTriangles": 3000,
   "textureSize": 256,
   "models": [
     {
       "key": "enemy-brute",
-      "bytes": 210416,
+      "bytes": 328560,
       "triangles": 3000,
       "height": 0.5047,
-      "sha256": "cab7749f010f432a3af59a4656ead6fdf335c1fa0ec4fd75efcbd31917379e42",
-      "source": "asset-work/target-style/enemies/enemy-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 28,
+      "walkSpeed": 0.0664,
+      "walkSeconds": 2.5417,
+      "sha256": "8334de670266e5f987f29000058fd735db0564676d213a42437d9a0b6dc53ee4",
+      "source": "asset-work/target-style/enemies/enemy-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fallen-bomber",
-      "bytes": 207560,
+      "bytes": 325392,
       "triangles": 3000,
       "height": 0.9475,
-      "sha256": "60ee727f90207c3d5b975555e618adbbd8743bd12ad20cecea9656856117ac28",
-      "source": "asset-work/target-style/enemies/enemy-fallen-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.3514,
+      "walkSeconds": 2.3333,
+      "sha256": "f7b473ee20e5824249220f735bdd138cc1c7b241fc8ca8b4226c5d789b29b8dc",
+      "source": "asset-work/target-style/enemies/enemy-fallen-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fallen-brute",
-      "bytes": 206112,
+      "bytes": 337812,
       "triangles": 2999,
       "height": 0.9207,
-      "sha256": "29d850f978b3d5bf6d98c28a15b63f7805efbdaf98c488da28583a55f6124715",
-      "source": "asset-work/target-style/enemies/enemy-fallen-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 28,
+      "walkSpeed": 0.0935,
+      "walkSeconds": 2.5417,
+      "sha256": "ee210e6c5592bca2edb0bf17b520de52e48edd1c0d90a1187eab336e2ce0adc8",
+      "source": "asset-work/target-style/enemies/enemy-fallen-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fallen-grunt",
-      "bytes": 203300,
+      "bytes": 322512,
       "triangles": 3000,
       "height": 0.9668,
-      "sha256": "98abb7979b8f31001b5883ac90a2c94e5fb87433c12018cc4d57f98949c7af08",
-      "source": "asset-work/target-style/enemies/enemy-fallen-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.6988,
+      "walkSeconds": 2.3333,
+      "sha256": "6ecb86d048982677d50eaf4c36e35ac4f618505a38330f6f344a68710c13fb04",
+      "source": "asset-work/target-style/enemies/enemy-fallen-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fallen-harvester",
-      "bytes": 229308,
+      "bytes": 377800,
       "triangles": 3000,
       "height": 0.7551,
-      "sha256": "9349af9ddcc13b27aaf65555aa4290c300d79d6e1afa8f388db1c8fb92ff26be",
-      "source": "asset-work/target-style/enemies/enemy-fallen-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 56,
+      "walkSpeed": 0.05,
+      "walkSeconds": 2.5417,
+      "sha256": "1c855a191a222f9b54c45877ecf6e6dca8532c68bac4f60ee62744c37d514a43",
+      "source": "asset-work/target-style/enemies/enemy-fallen-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fallen-runner",
-      "bytes": 225716,
+      "bytes": 360956,
       "triangles": 3000,
       "height": 0.5859,
-      "sha256": "d219fc0d5e39d06e165180bb88471161a485207cbf0a8e363dd9f35d16fce372",
-      "source": "asset-work/target-style/enemies/enemy-fallen-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 32,
+      "walkSpeed": 0.0632,
+      "walkSeconds": 2.5417,
+      "sha256": "4a802517a891f4d8792d8a6a0e66a2b2b513f8e959b7786f367844c9b966cfae",
+      "source": "asset-work/target-style/enemies/enemy-fallen-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fallen-shooter",
-      "bytes": 217276,
+      "bytes": 345760,
       "triangles": 3000,
       "height": 0.6372,
-      "sha256": "e428d24d649a8650cd4cda4a86dc2eea1633a1f543429b05bbb282fc7fecb94f",
-      "source": "asset-work/target-style/enemies/enemy-fallen-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 35,
+      "walkSpeed": 0.0774,
+      "walkSeconds": 2.5417,
+      "sha256": "23bf9d3f34d535cf228874f9958232ff52773f1771944d822b0c0d79f535658d",
+      "source": "asset-work/target-style/enemies/enemy-fallen-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fourthDimensional-bomber",
-      "bytes": 203068,
+      "bytes": 320248,
       "triangles": 2999,
       "height": 0.9046,
-      "sha256": "8ba1def349b786e8395422e8d9a5a3c77f3ec66a6990859469d101a69627bf8d",
-      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.3777,
+      "walkSeconds": 2.3333,
+      "sha256": "cb14d816fa255f6e7d51d636f68374463dcac364e111d8c700d915be02960bbe",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fourthDimensional-brute",
-      "bytes": 230944,
+      "bytes": 353556,
       "triangles": 3000,
       "height": 0.9327,
-      "sha256": "e53422ac4dfb9e30694efa1d5f17e91478b1fe85ea8c85f5f30441bc423c9f1d",
-      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.4704,
+      "walkSeconds": 2.3333,
+      "sha256": "5ba26a591978c1e592389bda5fca974f7d365fbbaf78dcc908b0c6e15b9e6596",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fourthDimensional-grunt",
-      "bytes": 196908,
+      "bytes": 297648,
       "triangles": 3000,
       "height": 0.971,
-      "sha256": "57265f880290e134c1641ddd7da21c04ec79d54e78b163e9370dfd7356228d62",
-      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 22,
+      "walkSpeed": 0.1206,
+      "walkSeconds": 2.5417,
+      "sha256": "e6d0ef2af72856bfd327b5937db81323ec5707216599df932b88e79c20dbe60e",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fourthDimensional-harvester",
-      "bytes": 186600,
+      "bytes": 297840,
       "triangles": 3000,
       "height": 0.7804,
-      "sha256": "cf3f1bc571044c23cdc9601786547fc5f104ba8095ee0f4662cc0b68be26809b",
-      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 27,
+      "walkSpeed": 0.05,
+      "walkSeconds": 2.5417,
+      "sha256": "705a30b139e894fd668fba95df6b0670a9787abe68e6ccaeb712c02237772924",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fourthDimensional-runner",
-      "bytes": 152036,
+      "bytes": 248436,
       "triangles": 3000,
       "height": 1.2319,
-      "sha256": "9df07d2d5e4f1078716eb44876db1345f6e56ef5c42f92e9385b3194b4360341",
-      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 21,
+      "walkSpeed": 0.2185,
+      "walkSeconds": 2.3333,
+      "sha256": "7d4927369d04fb102acc96efb9f9566565eadc3b971b309021ca769a56d6ab03",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-fourthDimensional-shooter",
-      "bytes": 182668,
+      "bytes": 289068,
       "triangles": 3000,
       "height": 1.0201,
-      "sha256": "cf55102deb528cab8d67c43bee2947ad55445d1746e543f374623083a248114f",
-      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.3227,
+      "walkSeconds": 2.3333,
+      "sha256": "7375b41e142bc12207e03b327284aef76dca9905a508e1b4e9291e7f67dd6c37",
+      "source": "asset-work/target-style/enemies/enemy-fourthDimensional-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-golem-bomber",
-      "bytes": 216124,
+      "bytes": 337564,
       "triangles": 3000,
       "height": 0.879,
-      "sha256": "b5b4f97c958cf59294d4826488e614ffc9e5c995f0d64267dd03d64a77ec046f",
-      "source": "asset-work/target-style/enemies/enemy-golem-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.5758,
+      "walkSeconds": 2.3333,
+      "sha256": "f4a551e0cd41a448f9bd189e5cf107a8e7ee37bc40414605b9e6f8228724d0a3",
+      "source": "asset-work/target-style/enemies/enemy-golem-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-golem-brute",
-      "bytes": 220000,
+      "bytes": 340240,
       "triangles": 2999,
       "height": 0.8922,
-      "sha256": "e1cf69f7b5dffeba81ca8d5f2dd00c5439c320aee5d739dfca287e85b31657e3",
-      "source": "asset-work/target-style/enemies/enemy-golem-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.6368,
+      "walkSeconds": 2.3333,
+      "sha256": "8aa200e74236a4fbeb74aa613830dfeac12c8501183c36f423c13239d1be377b",
+      "source": "asset-work/target-style/enemies/enemy-golem-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-golem-grunt",
-      "bytes": 198916,
+      "bytes": 312068,
       "triangles": 3000,
       "height": 0.7857,
-      "sha256": "5569d94d1bc00a57fb5b7067e062acd7075be0dee9387718d6185bdd7e2cabe5",
-      "source": "asset-work/target-style/enemies/enemy-golem-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.4895,
+      "walkSeconds": 2.3333,
+      "sha256": "c543fd23092cf3a7ea9b3823e4283240810d644cffb8f1dee2c6cf37013a1642",
+      "source": "asset-work/target-style/enemies/enemy-golem-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-golem-harvester",
-      "bytes": 209716,
+      "bytes": 328032,
       "triangles": 3000,
       "height": 0.6935,
-      "sha256": "6bea42ef9228b76513aea99b23a2d90012592920562f90c6d011f1a6dd5eb82f",
-      "source": "asset-work/target-style/enemies/enemy-golem-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 28,
+      "walkSpeed": 0.05,
+      "walkSeconds": 2.5417,
+      "sha256": "c2a1509c22934949d23620cd32524ea996d4c6c2558852018c913e799f4bd2dc",
+      "source": "asset-work/target-style/enemies/enemy-golem-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-golem-runner",
-      "bytes": 202784,
+      "bytes": 316220,
       "triangles": 3000,
       "height": 1.1739,
-      "sha256": "47f950f5205e6e0c7444eff1f98a94316ae888eeb0d0e5df133d4582fbe83948",
-      "source": "asset-work/target-style/enemies/enemy-golem-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.4942,
+      "walkSeconds": 2.3333,
+      "sha256": "2647f1e9ee6abf8e18f357c8b2918288ba7b55c66c2a098be4d7167d6981bd85",
+      "source": "asset-work/target-style/enemies/enemy-golem-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-golem-shooter",
-      "bytes": 207312,
+      "bytes": 325720,
       "triangles": 3000,
       "height": 1.1069,
-      "sha256": "71b80b9459c2bbe91e80f5def4db6f2a57ac8924990cb93613dd74ad943a0ff3",
-      "source": "asset-work/target-style/enemies/enemy-golem-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.7315,
+      "walkSeconds": 2.3333,
+      "sha256": "0d8171258ceba490e8de481ce8fa55aa4d9529d287e4812f285e38908520b4e9",
+      "source": "asset-work/target-style/enemies/enemy-golem-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-grunt",
-      "bytes": 206864,
+      "bytes": 321436,
       "triangles": 3000,
       "height": 0.8806,
-      "sha256": "e7a8a43f88443fc9d018316af7a7f29bf2da99b0a1120a1bc4772c6a185e9f1d",
-      "source": "asset-work/target-style/enemies/enemy-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 24,
+      "walkSpeed": 0.1102,
+      "walkSeconds": 2.5417,
+      "sha256": "72f66b96553769f6d3f792856beecc7f505a5a4c4c187526f21fa4aff1ab2860",
+      "source": "asset-work/target-style/enemies/enemy-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-holyGuardian-bomber",
-      "bytes": 230012,
+      "bytes": 348432,
       "triangles": 2999,
       "height": 1.0481,
-      "sha256": "808a7cddc3ef1aa5dbdbc459944d4fd9befae800c4ba3633f308d3120bc933e3",
-      "source": "asset-work/target-style/enemies/enemy-holyGuardian-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.6049,
+      "walkSeconds": 2.3333,
+      "sha256": "48ff7d8da27b7442c7e0fcc752f8f0adb1ec63a4a3c01a2118125631b7eb3feb",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-holyGuardian-brute",
@@ -181,51 +244,69 @@
     },
     {
       "key": "enemy-holyGuardian-grunt",
-      "bytes": 219640,
+      "bytes": 338592,
       "triangles": 3000,
       "height": 1.0585,
-      "sha256": "0b1a28f297184fc4443e5c77c475b10fbf7edd43a5223265057ee71019a6af84",
-      "source": "asset-work/target-style/enemies/enemy-holyGuardian-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.6525,
+      "walkSeconds": 2.3333,
+      "sha256": "eb87eca820eb09301e5deb7b7e77b5dcc3d87662174aa1384d10c369829d0dff",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-holyGuardian-harvester",
-      "bytes": 229168,
+      "bytes": 350328,
       "triangles": 3000,
       "height": 0.9604,
-      "sha256": "3033e367f3c6fff9602740b9bdea596febe4d8abc6dd83316b6f96658d4ac4d5",
-      "source": "asset-work/target-style/enemies/enemy-holyGuardian-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 30,
+      "walkSpeed": 0.05,
+      "walkSeconds": 2.5417,
+      "sha256": "8cc400ff5b6846d113a46df7cc9e0a1cb5509fa85dabe38d91b3d9a5b26bb0f9",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-holyGuardian-runner",
-      "bytes": 222872,
+      "bytes": 337160,
       "triangles": 3000,
       "height": 1.2213,
-      "sha256": "5353f22b428dbf0d7a3eb1fa8286d67fccce8bf31781a42ff84279b882ef626a",
-      "source": "asset-work/target-style/enemies/enemy-holyGuardian-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.4536,
+      "walkSeconds": 2.3333,
+      "sha256": "1dfccae2fb6e28162dd6ca4b889f889e0a73dee563e4ca71defb6cd5cc045a45",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-holyGuardian-shooter",
-      "bytes": 210544,
+      "bytes": 317876,
       "triangles": 3000,
       "height": 1.0362,
-      "sha256": "e63f98f8ebc86c0ac37d8639ee0aecf5bd88e142d38a330c2896b9648df9437b",
-      "source": "asset-work/target-style/enemies/enemy-holyGuardian-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.6151,
+      "walkSeconds": 2.3333,
+      "sha256": "c6adbac866985ad40a03cacbff965f4f412340bba3c710758bdd157f9a74f2bf",
+      "source": "asset-work/target-style/enemies/enemy-holyGuardian-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-meka-bomber",
-      "bytes": 216960,
+      "bytes": 338756,
       "triangles": 3000,
       "height": 0.9866,
-      "sha256": "25d6509c98105f7f3c1b82ad2d3d87b2680850f45c432bc6d76df37bd2458ee4",
-      "source": "asset-work/target-style/enemies/enemy-meka-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.6715,
+      "walkSeconds": 2.3333,
+      "sha256": "bb852210bc1f2327b7a7aaa6e0f1891350d84bfc6e338f1e17123a9105cde955",
+      "source": "asset-work/target-style/enemies/enemy-meka-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-meka-harvester",
-      "bytes": 196576,
+      "bytes": 311836,
       "triangles": 3000,
       "height": 0.5986,
-      "sha256": "384235809a6c2eec76ede4e41bda25f2cf7bcd9ce9446c07c983a1002fb741ca",
-      "source": "asset-work/target-style/enemies/enemy-meka-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 23,
+      "walkSpeed": 0.05,
+      "walkSeconds": 2.5417,
+      "sha256": "945bfb34a6fb2a1f2192bc91fa2ee7f39c7bd7ec2d8ee0f4380b6fb591155430",
+      "source": "asset-work/target-style/enemies/enemy-meka-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-runner",
@@ -237,59 +318,80 @@
     },
     {
       "key": "enemy-shooter",
-      "bytes": 215740,
+      "bytes": 338628,
       "triangles": 3000,
       "height": 0.8471,
-      "sha256": "b2d51fcdc8e606133e3a979050368abbf1a09f1b279b87f4c6706697ad12c0c7",
-      "source": "asset-work/target-style/enemies/enemy-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 20,
+      "walkSpeed": 0.8262,
+      "walkSeconds": 2.3333,
+      "sha256": "9bd966cd67cbe098eda2c371f1f89dab73c7c623a685f2e40a78a4dad9f5330f",
+      "source": "asset-work/target-style/enemies/enemy-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-spaceBug-bomber",
-      "bytes": 202392,
+      "bytes": 312436,
       "triangles": 2999,
       "height": 0.8363,
-      "sha256": "b9cb97cbaf07e9dc2b3ecc04935236a6bdc4f241699a77a89d00983ea9e7ffda",
-      "source": "asset-work/target-style/enemies/enemy-spaceBug-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 22,
+      "walkSpeed": 0.05,
+      "walkSeconds": 2.5417,
+      "sha256": "306930e0658f9d0d2453cf42590b73051ae830e2e005872f4dc55a3d4f3f1600",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-bomber/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-spaceBug-brute",
-      "bytes": 220020,
+      "bytes": 331812,
       "triangles": 2999,
       "height": 0.6713,
-      "sha256": "b33633818bd7d88eca60fcb1efcef030e6f967b9ea6e317b7883e8f8dbbfc2bb",
-      "source": "asset-work/target-style/enemies/enemy-spaceBug-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 30,
+      "walkSpeed": 0.0642,
+      "walkSeconds": 2.5417,
+      "sha256": "3755f24c6b7ce546e2f646af3494b390419cc2749dbf5bd2494948eb6f89e633",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-brute/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-spaceBug-grunt",
-      "bytes": 195560,
+      "bytes": 308044,
       "triangles": 3000,
       "height": 0.7033,
-      "sha256": "92ca73ff7fad190e970fe239b1e1a1f3f86c6ddf59044dfc0eb6c58e4ff0c4ba",
-      "source": "asset-work/target-style/enemies/enemy-spaceBug-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 27,
+      "walkSpeed": 0.05,
+      "walkSeconds": 2.5417,
+      "sha256": "ea4b1cb8f1d40aad8ff7d8f5cce864264f155ee85a04ea20be60caf06078ddcd",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-grunt/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-spaceBug-harvester",
-      "bytes": 217096,
+      "bytes": 330820,
       "triangles": 3000,
       "height": 0.6622,
-      "sha256": "39825152831522269fa1dc5dc789699e3a6731a2fdb6407ec4f34d50be8c85fe",
-      "source": "asset-work/target-style/enemies/enemy-spaceBug-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 22,
+      "walkSpeed": 0.056,
+      "walkSeconds": 2.5417,
+      "sha256": "67ee416ab9d16f75180d5246ff9e5a4f318f6d1e8c8f18672ce6b94e4216109f",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-harvester/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-spaceBug-runner",
-      "bytes": 219088,
+      "bytes": 394312,
       "triangles": 3000,
       "height": 1.0363,
-      "sha256": "f6ae7a72c9827ce74ff718fb63a3c8669f4b58237501f92fd126975e6d1f8663",
-      "source": "asset-work/target-style/enemies/enemy-spaceBug-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 69,
+      "walkSpeed": 0.05,
+      "walkSeconds": 2.5417,
+      "sha256": "89a9f9be0456c8c539e0e91d6f1230f4700485646a0602f5183b554892fe558b",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-runner/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     },
     {
       "key": "enemy-spaceBug-shooter",
-      "bytes": 209648,
+      "bytes": 331072,
       "triangles": 3000,
       "height": 1.039,
-      "sha256": "e4c5a68748594c12469c2b1e3cc16e83d87883d55ac9da75e61fe703a7524a72",
-      "source": "asset-work/target-style/enemies/enemy-spaceBug-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours)"
+      "joints": 28,
+      "walkSpeed": 0.1259,
+      "walkSeconds": 2.5417,
+      "sha256": "ab89e63218d6b919713a3083ca2fd19bcf4b18514a869f507f0a6311195ad3da",
+      "source": "asset-work/target-style/enemies/enemy-spaceBug-shooter/raw-meshopt.glb (Tripo H3.1, target style, native colours; Tripo rig + walk preset, build-enemy-rig.py)"
     }
   ]
 }

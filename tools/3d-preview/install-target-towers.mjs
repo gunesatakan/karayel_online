@@ -16,7 +16,9 @@ function describe(path) {
   const bytes = readFileSync(path);
   const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString("utf8"));
   const triangles = json.meshes.reduce((sum, mesh) => sum + mesh.primitives.reduce((s, p) => s + json.accessors[p.indices].count / 3, 0), 0);
-  return { bytes: bytes.length, triangles, height: json.nodes.find((node) => node.extras?.height)?.extras.height, sha256: createHash("sha256").update(bytes).digest("hex") };
+  const root = json.nodes.find((node) => node.extras?.height)?.extras ?? {};
+  const walk = root.walkSpeed ? { joints: json.skins?.[0]?.joints.length ?? 0, walkSpeed: root.walkSpeed, walkSeconds: root.walkSeconds } : {};
+  return { bytes: bytes.length, triangles, height: root.height, ...walk, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 if (process.argv[3] === "enemies") {
@@ -26,10 +28,12 @@ if (process.argv[3] === "enemies") {
   for (const file of readdirSync(buildDir).filter((name) => /^enemy-[a-zA-Z-]+\.glb$/.test(name)).sort()) {
     const key = file.replace(/\.glb$/, "");
     copyFileSync(join(buildDir, file), join(enemiesDir, file));
-    models.push({ key, ...describe(join(enemiesDir, file)), source: `asset-work/target-style/enemies/${key}/raw-meshopt.glb (Tripo H3.1, target style, native colours)` });
+    const info = describe(join(enemiesDir, file));
+    const rig = info.walkSpeed ? "; Tripo rig + walk preset, build-enemy-rig.py" : "";
+    models.push({ key, ...info, source: `asset-work/target-style/enemies/${key}/raw-meshopt.glb (Tripo H3.1, target style, native colours${rig})` });
   }
   writeFileSync(join(modelsDir, "enemies-manifest.json"), JSON.stringify({
-    note: "Game copies of the Tripo enemy models (target style: tools/3d-preview/build-target-tower.py --structure unit --palette native). Key = the Phaser texture key. Not included in the itch.io package.",
+    note: "Game copies of the Tripo enemy models (target style: tools/3d-preview/build-target-tower.py --structure unit --palette native; with walkSpeed: Tripo rig and walk preset merged by build-enemy-rig.py). Key = the Phaser texture key. Not included in the itch.io package.",
     targetTriangles: 3000,
     textureSize: 256,
     models

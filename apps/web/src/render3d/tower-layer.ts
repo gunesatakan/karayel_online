@@ -25,6 +25,7 @@
  */
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import {
   ANGLED_ELEVATION_DEGREES,
@@ -57,7 +58,8 @@ import {
   type OrbitView,
   type TowerTier
 } from "./tower-math";
-import { createShotFx, type ShotFx } from "./shot-fx";
+import { createShotFx, type DeathFxInput, type ShotFx } from "./shot-fx";
+import { createOverlay3d, type OverlayAnchor, type OverlayMode, type Overlay3dSurface } from "./overlay-3d";
 import { createTierFx } from "./tower-tiers";
 import { setAngledRenderScale } from "./renderer-mode";
 import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START, createQualityGovernor, stepQualityGovernor } from "./resolution";
@@ -135,12 +137,25 @@ export type Enemy3dInput = {
   extraLift: number;
   /** 3D modelin en genis yeri (dunya birimi, ezilmesiz; modeli olan dokuda). */
   modelSize: number;
+  /** Golem taslasmasi (0-1): modelin cevresinde tas levhalar. */
+  petrify?: number;
   /** Can cubugu (2D'deki `drawEnemyHealthBar`in aynisi, panonun basinin ustunde). */
   bar?: EnemyBar;
   /** Ayaktaki golgenin yaricapi ve opakligi. */
   shadowRadius: number;
   shadowAlpha: number;
 };
+
+/** Olen dusman (egik gorunum): patlamanin konumu, boyu ve malzemesinin renkleri. */
+export type EnemyDeath3dInput = Omit<DeathFxInput, "x" | "z" | "y" | "size"> & {
+  x: number;
+  y: number;
+  /** 2D resmin boyu (dunya): modeli yoksa patlamanin boyu bundan. */
+  size: number;
+};
+
+/** Yerlestirme hayaleti: kurulacak kulenin modeli, uygunsa yesil, degilse kirmizi, yari saydam. */
+export type Ghost3dInput = Tower3dInput & { valid: boolean; alpha: number };
 
 export type EnemyBar = {
   /** Can ve kalkan orani (0-1); kalkan yoksa -1. */
@@ -230,7 +245,14 @@ const TIER_GLOW = { 1: 0.55, 2: 1, 3: 1.05 } as const;
  * Dusmanin 3D modeli: kopya malzemeler (ton ve saydamlik dusman basina), vurus
  * flasi icin ayni geometride duz renk ortu. `stride` yurunen yol (adim sallantisi).
  */
-type EnemyModel = { key: string; root: THREE.Object3D; body: THREE.Object3D; materials: THREE.MeshStandardMaterial[]; flash: THREE.Mesh[]; flashMaterial: THREE.MeshBasicMaterial; height: number; yaw: number; stride: number; x: number; z: number; at: number };
+type EnemyModel = {
+  key: string; root: THREE.Object3D; body: THREE.Object3D; materials: THREE.MeshStandardMaterial[]; flash: THREE.Mesh[]; flashMaterial: THREE.MeshBasicMaterial;
+  height: number; yaw: number; stride: number; x: number; z: number; at: number;
+  /** Iskeletli model (build-enemy-rig.py): yurume klibi, klibin adim hizi (model birimi / sn) ve yumusatilmis gercek hiz. */
+  mixer?: THREE.AnimationMixer; walk?: THREE.AnimationAction; walkSpeed: number; pace: number;
+  /** Taslasma levhalari (kokun cocugu) ve su anki levha sayisi; kimlikten sabit tohum. */
+  plates?: THREE.Group; plateCount: number; seed: number;
+};
 /**
  * Dusman: modeli yuklenmisse 3D model (pano gizli), yoksa kameraya donuk pano.
  * `mesh.position` her iki halde govdenin ortasi (atis hedefi); `headY` ve
@@ -319,8 +341,17 @@ const STARFIELD_RADIUS = 6000;
 export type TowerLayer = {
   /** Snapshot'in kuleleri. Donen kume: modeli yuklenmis ve gorunen kuleler (2D govdeleri gizlenebilir). */
   sync(towers: readonly Tower3dInput[]): ReadonlySet<string>;
-  /** Egik gorunumde ayakta cizilecek dusmanlar (bos liste: hepsi kalkar). */
-  syncEnemies(enemies: readonly Enemy3dInput[]): void;
+  /** Egik gorunumde ayakta cizilecek dusmanlar (bos liste: hepsi kalkar). Donen kume: 3D modeliyle cizilenler. */
+  syncEnemies(enemies: readonly Enemy3dInput[]): ReadonlySet<string>;
+  /** Olen dusmanin 3D patlamasi (egik gorunum): model cokuyor, kirintilar sacilyor. */
+  enemyDeath(id: string, death: EnemyDeath3dInput): void;
+  /** Yerlestirme hayaletleri (surukleme ve yoldaki istek); bos liste: hepsi kalkar. */
+  syncGhosts(ghosts: readonly Ghost3dInput[]): void;
+  /**
+   * Egik gorunumun 3D cizim yuzeyi (render3d/overlay-3d): kule isaretleri, bag
+   * cizgileri, operatorun is isini ve mac sonu isini 2D cagrilarla buraya ciziyor.
+   */
+  overlaySurface(name: string, mode: OverlayMode, additive?: boolean): Overlay3dSurface;
   /**
    * Efekt duzlemi bu boydaki (piyade) bir panonun merkez yuksekliginde: mermi
    * ve vuruslar ayakta duran govdeye denk gelsin. Yukseklik kamera egimiyle degisiyor.
@@ -648,6 +679,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   const loader = new GLTFLoader();
   const requested = new Set<string>();
   const loaded = new Map<string, THREE.Object3D>();
+  /** Model anahtari -> GLB'deki animasyonlar (iskeletli dusmanlarin `walk` klibi). */
+  const clips = new Map<string, THREE.AnimationClip[]>();
   const instances = new Map<string, Instance>();
   /** Model anahtari -> en genis yeri ve boyu (model biriminde, yuklenince olculuyor). */
   const modelSizes = new Map<string, { width: number; height: number }>();
@@ -728,6 +761,57 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     aimAt: (x, z, target) => lockAim(x, z, target)
   });
 
+  const overlay = createOverlay3d(scene, {
+    cellSize: () => terrain?.cellSize ?? 34,
+    groundHeight: (x, z) => zoneHeight(x, z),
+    bodyHeight: () => standeeCenterHeight(airBodySize || (terrain?.cellSize ?? 34) * 0.6, orbit.elevation),
+    anchorAt
+  });
+
+  /**
+   * (x, z) yakinindaki govdenin ortasi: once dusman, sonra operator, sonra kule
+   * (govdesinin ust kismi, namlunun boyu). Isaret (`mark`) yalnizca tam ustundekini
+   * aliyor; bag ucu (`link`) biraz daha genis ariyor (snapshot ile cizim arasi kayma).
+   */
+  function anchorAt(x: number, z: number, kind: "link" | "mark"): OverlayAnchor | undefined {
+    const cell = terrain?.cellSize ?? 34;
+    const reach = (kind === "mark" ? 0.42 : 0.75) * cell;
+    let best = reach * reach;
+    let found: OverlayAnchor | undefined;
+    for (const standee of standees.values()) {
+      const p = standee.mesh.position;
+      const gap = (p.x - x) ** 2 + (p.z - z) ** 2;
+      if (gap < best) {
+        best = gap;
+        found = { x: p.x, y: p.y, z: p.z };
+      }
+    }
+    if (found) return found;
+    best = (kind === "mark" ? 0.42 : 0.6) ** 2 * cell * cell;
+    for (const operator of operators.values()) {
+      const p = operator.root.position;
+      const gap = (p.x - x) ** 2 + (p.z - z) ** 2;
+      if (gap < best) {
+        best = gap;
+        const path = OPERATOR_MODEL_PATHS[operator.characterId];
+        found = { x: p.x, y: p.y + operator.root.scale.y * (modelSizes.get(path)?.height ?? 1) * 0.55, z: p.z };
+      }
+    }
+    if (found) return found;
+    best = Infinity;
+    for (const instance of instances.values()) {
+      const p = instance.root.position;
+      const span = Math.max(1, instance.span);
+      const limit = (kind === "mark" ? 0.42 : 0.6) * cell * span;
+      const gap = (p.x - x) ** 2 + (p.z - z) ** 2;
+      if (gap < limit * limit && gap < best) {
+        best = gap;
+        found = { x: p.x, y: p.y + (modelSizes.get(instance.key)?.height ?? 1) * instance.root.scale.y * 0.62, z: p.z };
+      }
+    }
+    return found;
+  }
+
   /** Namlularin geri tepmesi: atista geriye, ~60 ms'de yerine yay gibi. */
   function updateRecoils(now: number) {
     for (const instance of instances.values()) {
@@ -747,7 +831,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   function request(key: string) {
     if (requested.has(key)) return;
     requested.add(key);
-    loader.loadAsync(options.resolveUrl(key)).then((gltf: { scene: THREE.Object3D }) => {
+    loader.loadAsync(options.resolveUrl(key)).then((gltf: { scene: THREE.Object3D; animations?: THREE.AnimationClip[] }) => {
       if (disposed) return;
       gltf.scene.traverse((node: THREE.Object3D) => {
         if ((node as THREE.Mesh).isMesh) node.castShadow = node.receiveShadow = true;
@@ -765,6 +849,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
           });
         }
       }
+      if (gltf.animations?.length) clips.set(key, gltf.animations);
       loaded.set(key, gltf.scene);
       options.onModelReady();
     }).catch((error: unknown) => {
@@ -1419,6 +1504,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     const model = standee.model;
     if (!model) return;
     scene.remove(model.root);
+    model.mixer?.stopAllAction();
+    model.mixer?.uncacheRoot(model.body);
     model.materials.forEach((material) => material.dispose());
     model.flashMaterial.dispose();
     standee.model = undefined;
@@ -1426,7 +1513,12 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   function createEnemyModel(source: THREE.Object3D, key: string, x: number, z: number): EnemyModel {
     const root = new THREE.Group();
-    const body = source.clone(true);
+    let skinned = false;
+    source.traverse((node: THREE.Object3D) => {
+      if ((node as THREE.SkinnedMesh).isSkinnedMesh) skinned = true;
+    });
+    // Iskeletli govdenin kemikleri de kopyalanmali (`Object3D.clone` derisi eski iskelete bagli birakir).
+    const body = skinned ? cloneSkinned(source) : source.clone(true);
     root.add(body);
     const materials: THREE.MeshStandardMaterial[] = [];
     const flash: THREE.Mesh[] = [];
@@ -1443,14 +1535,30 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       material.userData.baseColor = material.color.clone();
       mesh.material = material;
       materials.push(material);
-      const overlay = new THREE.Mesh(mesh.geometry, flashMaterial);
+      // Flas ortusu ayni iskelete bagli: yururken govdeyle birlikte egiliyor.
+      const skin = mesh as THREE.SkinnedMesh;
+      const overlay = skin.isSkinnedMesh ? new THREE.SkinnedMesh(mesh.geometry, flashMaterial) : new THREE.Mesh(mesh.geometry, flashMaterial);
+      if (skin.isSkinnedMesh) overlay.bind(skin.skeleton, skin.bindMatrix);
       overlay.visible = false;
       overlay.renderOrder = 2;
       mesh.add(overlay);
       flash.push(overlay);
     });
     const height = modelSizes.get(key)?.height ?? 1;
-    return { key, root, body, materials, flash, flashMaterial, height, yaw: Number.NaN, stride: 0, x, z, at: performance.now() };
+    const clip = skinned ? clips.get(key)?.find((candidate) => candidate.name === "walk") : undefined;
+    let mixer: THREE.AnimationMixer | undefined;
+    let walk: THREE.AnimationAction | undefined;
+    if (clip) {
+      mixer = new THREE.AnimationMixer(body);
+      walk = mixer.clipAction(clip);
+      walk.play();
+      // Kalabalik ayni adimda yurumesin.
+      walk.time = Math.random() * clip.duration;
+    }
+    const walkSpeed = Number(body.getObjectByName(key)?.userData?.walkSpeed) || 0.5;
+    let seed = 0;
+    for (const char of key + x.toFixed(1) + z.toFixed(1)) seed = (seed * 31 + char.charCodeAt(0)) >>> 0;
+    return { key, root, body, materials, flash, flashMaterial, height, yaw: Number.NaN, stride: 0, x, z, at: performance.now(), mixer, walk, walkSpeed, pace: 0, plateCount: 0, seed };
   }
 
   /** Modelin bu karesi: konum, yone donus, adim sallantisi, ezilme, ton, saydamlik ve vurus flasi. */
@@ -1473,12 +1581,24 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     const scale = enemy.modelSize;
     model.root.scale.set(scale * Math.sqrt(squash), scale / Math.sqrt(squash), scale * Math.sqrt(squash));
     const flying = enemy.extraLift > 0;
+    if (model.mixer && model.walk) {
+      // Iskeletli model: yurume klibi dusmanin gercek hiziyla (ayak kaymiyor); durunca ayakta duruyor.
+      // Ucan dusman bacaklarini hafifce sallayarak suzuluyor.
+      const speed = dt > 0 && moved < enemy.modelSize * 2 ? moved / dt / Math.max(1e-3, scale) : 0;
+      model.pace += (speed - model.pace) * Math.min(1, dt * 6);
+      const ratio = model.pace / model.walkSpeed;
+      // Oyunda dusmanlar klibin adimindan 3-4,5 kat hizli: bacaklar telas etmesin diye hiz oranini sikistiriyor
+      // (biraz kayma pahasina, 3 kat hiza ~2,3 kat oynatma).
+      model.walk.timeScale = flying ? 0.6 : Math.min(2.8, Math.pow(ratio, 0.75));
+      model.walk.weight = flying ? 0.35 : Math.min(1, ratio * 3);
+      model.mixer.update(dt);
+    }
     const step = Math.sin(model.stride * Math.PI);
-    const bob = flying ? Math.sin(now / 420 + model.stride * 0.3) * scale * 0.05 : Math.abs(step) * scale * 0.06;
+    const bob = flying ? Math.sin(now / 420 + model.stride * 0.3) * scale * 0.05 : model.walk ? 0 : Math.abs(step) * scale * 0.06;
     model.root.position.set(enemy.x, ground + enemy.extraLift + bob, enemy.y);
     model.root.rotation.y = model.yaw;
-    // Yurudukce yana yalpa (model ileri +X: X ekseni etrafinda).
-    model.body.rotation.x = flying ? 0 : step * 0.07;
+    // Iskeletsiz modelde yurudukce yana yalpa (model ileri +X: X ekseni etrafinda).
+    model.body.rotation.x = flying || model.walk ? 0 : step * 0.07;
     const tint = enemy.tint;
     const r = ((tint >> 16) & 255) / 255;
     const g = ((tint >> 8) & 255) / 255;
@@ -1497,7 +1617,206 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     }
   }
 
+  // Taslasma levhalari: ortak kutu ve tas malzemesi; modelin biriminde (en genis yer 1).
+  const plateGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const plateMaterial = new THREE.MeshStandardMaterial({ color: 0x8b8378, roughness: 0.92, metalness: 0.04 });
+
+  /** Yiginla artan levhalar: 12 yuvadan karma sirayla (2D cizimle ayni dil), govdenin yarisinda. */
+  function updatePlates(model: EnemyModel, strength: number) {
+    const t = Math.max(0, Math.min(1, strength));
+    const count = t > 0 ? 3 + Math.round(t * 9) : 0;
+    if (count === model.plateCount) return;
+    model.plateCount = count;
+    if (!model.plates) {
+      model.plates = new THREE.Group();
+      model.root.add(model.plates);
+    }
+    const group = model.plates;
+    while (group.children.length > 0) group.remove(group.children[0]);
+    const step = (Math.PI * 2) / 12;
+    const turn = (model.seed % 628) / 100;
+    for (let index = 0; index < count; index += 1) {
+      const slot = (index * 5 + (model.seed % 12)) % 12;
+      const angle = turn + slot * step + step * 0.5;
+      const plate = new THREE.Mesh(plateGeometry, plateMaterial);
+      // Kalinlik disa (x), boy yukari, en teget; ust kenari hafifce disa yatik.
+      plate.scale.set(0.07 + 0.07 * t, model.height * (0.3 + 0.25 * t), 0.26 + ((model.seed >> (index % 8)) & 3) * 0.03);
+      plate.position.set(Math.cos(angle) * 0.48, model.height * (0.24 + 0.08 * (index % 3)), Math.sin(angle) * 0.48);
+      plate.rotation.set(0, -angle, 0.14);
+      group.add(plate);
+    }
+  }
+
+  // Olen dusman: model birakilip olum olayini bekliyor (cokus), gelmezse (sizinti) hizla kuculup kayboluyor.
+  type Corpse = { model: EnemyModel; at: number; sx: number; sy: number; sz: number; y: number; height: number; width: number; dying?: { at: number; tilt: number } };
+  const corpses = new Map<string, Corpse>();
+  const CORPSE_WAIT_MS = 450;
+  const CORPSE_COLLAPSE_MS = 420;
+
+  function disposeModel(model: EnemyModel) {
+    scene.remove(model.root);
+    model.mixer?.stopAllAction();
+    model.mixer?.uncacheRoot(model.body);
+    model.materials.forEach((material) => material.dispose());
+    model.flashMaterial.dispose();
+  }
+
+  function tickCorpses(now: number) {
+    for (const [id, corpse] of corpses) {
+      const root = corpse.model.root;
+      if (corpse.dying) {
+        const t = (now - corpse.dying.at) / CORPSE_COLLAPSE_MS;
+        if (t >= 1) {
+          disposeModel(corpse.model);
+          corpses.delete(id);
+          continue;
+        }
+        // Cokus: basiliyor, yayiliyor, yana yatip zemine gomuluyor; ilk anda irkin renginde parliyor.
+        const e = t * t * (3 - 2 * t);
+        root.scale.set(corpse.sx * (1 + 0.35 * e), corpse.sy * (1 - 0.8 * e), corpse.sz * (1 + 0.35 * e));
+        root.position.y = corpse.y - corpse.height * 0.15 * e;
+        corpse.model.body.rotation.z = corpse.dying.tilt * e;
+        corpse.model.flashMaterial.opacity = 0.85 * Math.max(0, 1 - t * 1.6);
+        const fade = Math.max(0, (t - 0.65) / 0.35);
+        if (fade > 0) {
+          for (const material of corpse.model.materials) {
+            material.transparent = true;
+            material.depthWrite = false;
+            material.opacity = 1 - fade;
+          }
+        }
+        continue;
+      }
+      const wait = now - corpse.at - CORPSE_WAIT_MS;
+      if (wait <= 0) continue;
+      const t = wait / 160;
+      if (t >= 1) {
+        disposeModel(corpse.model);
+        corpses.delete(id);
+        continue;
+      }
+      root.scale.set(corpse.sx * (1 - t), corpse.sy * (1 - t), corpse.sz * (1 - t));
+    }
+  }
+
+  function enemyDeath(id: string, input: EnemyDeath3dInput) {
+    if (disposed || view !== "angled") return;
+    const corpse = corpses.get(id);
+    const cell = terrain?.cellSize ?? 34;
+    let x = input.x;
+    let z = input.y;
+    let y = zoneHeight(x, z) + standeeCenterHeight(input.size * 0.5, orbit.elevation) + (input.air ? cell * 0.45 : 0);
+    let size = input.size * 0.62;
+    if (corpse && !corpse.dying) {
+      corpse.dying = { at: performance.now(), tilt: (Math.random() - 0.5) * 0.7 };
+      corpse.model.mixer?.stopAllAction();
+      for (const flashMesh of corpse.model.flash) flashMesh.visible = true;
+      corpse.model.flashMaterial.color.setHex(input.edge);
+      x = corpse.model.root.position.x;
+      z = corpse.model.root.position.z;
+      y = corpse.y + corpse.height * 0.5;
+      size = corpse.width;
+    }
+    shots.death({ ...input, x, z, y, size });
+  }
+
+  // Yerlestirme hayaletleri: kurulacak kulenin kopyasi (kendi saydam malzemesi) ve altinda kare.
+  const ghosts = new Map<string, { key: string; root: THREE.Object3D; materials: THREE.MeshStandardMaterial[]; tile: THREE.Mesh; span: number; accent: number | undefined }>();
+  const ghostTileGeometry = new THREE.PlaneGeometry(1, 1);
+  const GHOST_VALID = new THREE.Color(0x86efac);
+  const GHOST_INVALID = new THREE.Color(0xf87171);
+
+  function removeGhost(id: string) {
+    const ghost = ghosts.get(id);
+    if (!ghost) return;
+    scene.remove(ghost.root);
+    scene.remove(ghost.tile);
+    ghost.materials.forEach((material) => material.dispose());
+    (ghost.tile.material as THREE.Material).dispose();
+    ghosts.delete(id);
+  }
+
+  function syncGhosts(list: readonly Ghost3dInput[]) {
+    const active = new Set<string>();
+    if (view === "angled" && !disposed) {
+      for (const input of list) {
+        const key = input.modelPath ?? towerModelPath(input.definitionId, input.tier);
+        const source = loaded.get(key);
+        if (!source) {
+          request(key);
+          continue;
+        }
+        active.add(input.id);
+        let ghost = ghosts.get(input.id);
+        if (ghost && ghost.key !== key) {
+          removeGhost(input.id);
+          ghost = undefined;
+        }
+        if (!ghost) {
+          const root = source.clone(true);
+          const materials: THREE.MeshStandardMaterial[] = [];
+          root.traverse((node: THREE.Object3D) => {
+            const mesh = node as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            mesh.castShadow = false;
+            mesh.receiveShadow = false;
+            const material = (mesh.material as THREE.MeshStandardMaterial).clone();
+            material.transparent = true;
+            material.depthWrite = false;
+            mesh.material = material;
+            materials.push(material);
+          });
+          let span = 1;
+          source.traverse((node: THREE.Object3D) => {
+            const cells = node.userData?.footprintCells;
+            if (typeof cells === "number") span = Math.round(Math.sqrt(cells));
+          });
+          const tile = new THREE.Mesh(ghostTileGeometry, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false }));
+          tile.rotation.x = -Math.PI / 2;
+          tile.renderOrder = 2;
+          ghost = { key, root, materials, tile, span, accent: targetStyleAccent(source) };
+          ghosts.set(input.id, ghost);
+          scene.add(root);
+          scene.add(tile);
+        }
+        // Kurulmus kuleyle ayni boy ve yukseklik (seviye 1, kaidenin ustu).
+        const cell = terrain?.cellSize ?? 34;
+        const size = modelSizes.get(key);
+        const grows = !input.modelPath && ghost.span > 0 && ghost.accent !== undefined && size !== undefined && size.width > 0;
+        const fit = size ? Math.max(size.width, size.height / 1.7) : 1;
+        const scale = grows ? input.scale * ((MODEL_BODY_DIAMETER_CELLS * ghost.span) / fit) * towerLevelGrowth(1) : input.scale;
+        const base = ghost.accent !== undefined && ghost.span > 0 ? PLINTH_HEIGHT_CELLS * cell : 0;
+        ghost.root.position.set(input.x, base, input.y);
+        ghost.root.scale.set(scale, scale * (input.heightScale ?? 1), scale);
+        if (input.fixedYaw !== undefined) ghost.root.rotation.y = input.fixedYaw;
+        const tint = input.valid ? GHOST_VALID : GHOST_INVALID;
+        for (const material of ghost.materials) {
+          material.opacity = input.alpha * 0.85;
+          material.emissive?.copy(tint);
+          material.emissiveIntensity = 0.35;
+        }
+        const tileMaterial = ghost.tile.material as THREE.MeshBasicMaterial;
+        tileMaterial.color.copy(tint);
+        tileMaterial.opacity = input.alpha * 0.32;
+        ghost.tile.position.set(input.x, 0.8, input.y);
+        ghost.tile.scale.setScalar(cell * Math.max(1, ghost.span) * 0.94);
+      }
+    }
+    for (const id of [...ghosts.keys()]) if (!active.has(id)) removeGhost(id);
+  }
+
   function removeStandee(id: string, standee: Standee) {
+    if (standee.model && view === "angled" && !disposed) {
+      // Model olum olayini bekliyor (cokus); gelmezse kendisi kayboluyor.
+      const root = standee.model.root;
+      const previous = corpses.get(id);
+      if (previous) disposeModel(previous.model);
+      corpses.set(id, {
+        model: standee.model, at: performance.now(), sx: root.scale.x, sy: root.scale.y, sz: root.scale.z, y: root.position.y,
+        height: standee.model.height * root.scale.y, width: root.scale.x
+      });
+      standee.model = undefined;
+    }
     removeEnemyModel(standee);
     scene.remove(standee.mesh);
     scene.remove(standee.shadow);
@@ -1508,8 +1827,11 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     standees.delete(id);
   }
 
+  const modelShown = new Set<string>();
+
   function syncEnemies(enemies: readonly Enemy3dInput[]) {
     const active = new Set<string>();
+    modelShown.clear();
     for (const enemy of enemies) {
       active.add(enemy.id);
       let standee = standees.get(enemy.id);
@@ -1590,6 +1912,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       standee.mesh.visible = !model;
       if (model) {
         poseEnemyModel(model, enemy, ground);
+        updatePlates(model, enemy.petrify ?? 0);
+        modelShown.add(enemy.id);
         const height = model.height * model.root.scale.y;
         standee.mesh.position.set(enemy.x, model.root.position.y + height / 2, enemy.y);
         standee.headY = model.root.position.y + height;
@@ -1622,6 +1946,11 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       standee.shadow.material.opacity = enemy.shadowAlpha;
     }
     for (const [id, standee] of standees) if (!active.has(id)) removeStandee(id, standee);
+    if (view !== "angled") {
+      for (const corpse of corpses.values()) disposeModel(corpse.model);
+      corpses.clear();
+    }
+    return modelShown;
   }
 
   function captureBoard() {
@@ -1828,6 +2157,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       air.visible = false;
       boardCaptured = false;
       shots.setVisible(false);
+      overlay.setVisible(false);
       tierFx.tick(performance.now(), false);
       renderer.setClearColor(0x000000, 0);
       const scaleX = canvasRect.width / Math.max(1, viewport.gameWidth);
@@ -1899,8 +2229,11 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     updateAim(now);
     updatePulse(now);
     tierFx.tick(now, true);
+    tickCorpses(now);
     shots.setVisible(true);
     shots.update(now);
+    overlay.setVisible(true);
+    overlay.update(angledCamera);
     // Parlama: isikli seritler, kaide halkalari ve vuruslar (1'den parlaklar) yayiliyor.
     // `?bloom3d=off` kapatir (yavas cihaz ya da ariza ayiklama).
     if (bloomOff) {
@@ -1928,6 +2261,13 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   function dispose() {
     disposed = true;
     shots.dispose();
+    overlay.dispose();
+    for (const corpse of corpses.values()) disposeModel(corpse.model);
+    corpses.clear();
+    for (const id of [...ghosts.keys()]) removeGhost(id);
+    ghostTileGeometry.dispose();
+    plateGeometry.dispose();
+    plateMaterial.dispose();
     for (const instance of instances.values()) removeInstance(instance);
     instances.clear();
     tierFx.dispose();
@@ -1981,7 +2321,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   }
 
   return {
-    sync, syncEnemies, captureBoard, render, clientToWorld, worldToClient, dispose,
+    sync, syncEnemies, enemyDeath, syncGhosts, captureBoard, render, clientToWorld, worldToClient, dispose,
+    overlaySurface: (name, mode, additive) => overlay.surface(name, mode, additive),
     rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, captureAir, syncUprights, syncMines, syncWorkers, syncOperators, hasGround: groundReady,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
     shots,
@@ -1994,6 +2335,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         syncMines([]);
         syncWorkers([]);
         syncOperators([]);
+        syncGhosts([]);
+        overlay.clear();
       }
     },
     getView: () => view

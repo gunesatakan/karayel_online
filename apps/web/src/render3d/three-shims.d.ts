@@ -32,6 +32,7 @@ declare module "three" {
   export const SpriteMaterial: any;
   export const BufferGeometry: any; export type BufferGeometry = any;
   export const Float32BufferAttribute: any;
+  export const BufferAttribute: any; export type BufferAttribute = any;
   export const RepeatWrapping: number;
   export const MirroredRepeatWrapping: number;
   export const TextureLoader: any;
@@ -74,10 +75,19 @@ declare module "three" {
   export const Points: any; export type Points = any;
   export const PointsMaterial: any;
   export const Box3: any; export type Box3 = any;
+  // Iskeletli dusmanlar (yurume klibi).
+  export const SkinnedMesh: any; export type SkinnedMesh = any;
+  export const AnimationMixer: any; export type AnimationMixer = any;
+  export type AnimationAction = any;
+  export type AnimationClip = any;
 }
 
 declare module "three/addons/loaders/GLTFLoader.js" {
   export const GLTFLoader: any;
+}
+
+declare module "three/addons/utils/SkeletonUtils.js" {
+  export const clone: any;
 }
 
 declare module "three/addons/environments/RoomEnvironment.js" {

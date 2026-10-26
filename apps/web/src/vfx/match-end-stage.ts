@@ -23,7 +23,8 @@ import {
 import type { FlashSink } from "./flash-pool";
 import type { VfxLod } from "./lod";
 import { MatchEndVfx } from "./match-end-vfx";
-import { fnvHash } from "./kit";
+import { fnvHash, type VfxGraphics } from "./kit";
+import { SwitchSurface } from "./switch-surface";
 
 /** Sahnenin katman derinlikleri: yer izi dusmanlarin altinda, govde kulelerin ustunde. */
 export const MATCH_END_DEPTHS = Object.freeze({ ground: 7.38, body: 13.3, glow: 13.32 });
@@ -43,6 +44,8 @@ export type MatchEndStageDeps = {
   shake?: (px: number, durationMs: number) => void;
   /** "Geç" katmaninin eklenecegi yer; yoksa document.body. */
   overlayParent?: HTMLElement;
+  /** Zafer isininin 3D yuzeyi (egik gorunum); yoksa duz govde ve parlama. */
+  beamSurface?: (layer: "body" | "glow") => (VfxGraphics & { clear(): unknown; setAnchor(x: number, y: number): void }) | undefined;
 };
 
 export type MatchEndEnemy = { id: string; x: number; y: number; size: number };
@@ -81,7 +84,10 @@ export class MatchEndStage {
     const body = scene.add.graphics().setDepth(MATCH_END_DEPTHS.body);
     const glow = scene.add.graphics().setDepth(MATCH_END_DEPTHS.glow).setBlendMode(Phaser.BlendModes.ADD);
     this.surfaces = [ground, body, glow];
-    this.vfx = new MatchEndVfx(ground, body, glow, { flash: deps.flash, lod: deps.lod, reducedMotion: deps.reducedMotion });
+    const beam = deps.beamSurface
+      ? { body: new SwitchSurface(body, () => deps.beamSurface?.("body")), glow: new SwitchSurface(glow, () => deps.beamSurface?.("glow")) }
+      : undefined;
+    this.vfx = new MatchEndVfx(ground, body, glow, { flash: deps.flash, lod: deps.lod, reducedMotion: deps.reducedMotion, beam });
   }
 
   get active() {

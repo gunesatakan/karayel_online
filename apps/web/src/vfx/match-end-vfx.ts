@@ -95,7 +95,14 @@ export type MatchEndVfxOptions = {
   flash?: FlashSink;
   lod?: VfxLod;
   reducedMotion?: () => boolean;
+  /**
+   * Zafer isininin yuzeyleri (govde ve ADD kilif). Egik 3D gorunumde nexus'tan
+   * yukari dik (render3d/overlay-3d `upright`, taban `setAnchor`); yoksa govde ve parlama.
+   */
+  beam?: { body: BeamSurface; glow: BeamSurface };
 };
+
+type BeamSurface = VfxGraphics & { clear(): unknown; setAnchor?(x: number, y: number): void };
 
 const easeOut = (t: number) => 1 - (1 - t) * (1 - t);
 
@@ -215,6 +222,8 @@ export class MatchEndVfx {
     ground.clear();
     body.clear();
     glow.clear();
+    this.options.beam?.body.clear();
+    this.options.beam?.glow.clear();
     const still = this.still;
     const lod = this.lod;
     for (const husk of this.husks) this.drawHusk(husk, lod);
@@ -448,8 +457,11 @@ export class MatchEndVfx {
     // Yavas basliyor, sona dogru dolup tepe yapiyor.
     const p = raw * raw * (3 - 2 * raw);
     const { x, y, size, top } = beam;
-    const glow = this.glow;
-    const body = this.body;
+    // Isinin kendisi kendi yuzeyinde (3D'de dik); taban halkalari govdede, yerde.
+    const glow = this.options.beam?.glow ?? this.glow;
+    const body = this.options.beam?.body ?? this.body;
+    this.options.beam?.glow.setAnchor?.(x, y);
+    this.options.beam?.body.setAnchor?.(x, y);
     // Isin yerden yukari uzaniyor: ilk %15'te tavana ulasiyor.
     const reach = still ? 1 : clamp01(raw / 0.15);
     const topY = y + (top - y) * reach;
@@ -474,11 +486,12 @@ export class MatchEndVfx {
     }
     // Taban: sert halkalar (yavas nefes, hareket azaltmada sabit) ve beyaz-sicak cekirdek.
     const breathe = still ? 0 : Math.sin(now / 260) * 0.06;
-    body.lineStyle(2, MATCH_END_COLD, 0.55 + 0.35 * p);
-    strokeRing(body, x, y, size * (0.75 + breathe));
-    body.lineStyle(1.2, MATCH_END_COLD_HOT, 0.35 + 0.5 * p);
-    strokeRing(body, x, y, size * (1.15 + 0.35 * p));
-    body.fillStyle(MATCH_END_COLD_CORE, 0.85);
-    fillDisc(body, x, y, size * (0.12 + 0.16 * p));
+    const base = this.body;
+    base.lineStyle(2, MATCH_END_COLD, 0.55 + 0.35 * p);
+    strokeRing(base, x, y, size * (0.75 + breathe));
+    base.lineStyle(1.2, MATCH_END_COLD_HOT, 0.35 + 0.5 * p);
+    strokeRing(base, x, y, size * (1.15 + 0.35 * p));
+    base.fillStyle(MATCH_END_COLD_CORE, 0.85);
+    fillDisc(base, x, y, size * (0.12 + 0.16 * p));
   }
 }

@@ -395,6 +395,7 @@ test("operator bedenleri: iki karakterin modeli var, yuzu donus 0'da kuzeye baki
 
 test("dusman modelleri: her irkin her turu icin oyun dokusuyla ayni adda model, yuzu yurudugu yone bakiyor", () => {
   assert.equal(ENEMY_MODEL_KEYS.size, 36);
+  let rigged = 0;
   for (const key of ENEMY_MODEL_KEYS) {
     // Anahtar Phaser'in doku anahtari: ayni adda 2D resim var.
     assert.ok(existsSync(new URL(`images/enemies/${key}.png`, publicDir)), `${key}: 2D resim yok`);
@@ -404,10 +405,19 @@ test("dusman modelleri: her irkin her turu icin oyun dokusuyla ayni adda model, 
     assert.ok(existsSync(url), `${path} eksik`);
     const bytes = readFileSync(url);
     const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString("utf8"));
-    assert.ok(json.nodes.some((node) => node.name === key && node.extras?.kind === "enemy"), `${path}: kok dugum`);
+    const root = json.nodes.find((node) => node.name === key && node.extras?.kind === "enemy");
+    assert.ok(root, `${path}: kok dugum`);
     assert.ok(json.images.every((image) => image.mimeType === "image/jpeg"), `${path}: JPEG`);
     assert.ok(bytes.length < 400 * 1024, `${path}: ${bytes.length} bayt`);
+    // Iskeletli model (build-enemy-rig.py): yerinde `walk` klibi ve oyunun hizi eslemesi icin adim hizi; parmaklar katlanmis.
+    if (json.skins?.length) {
+      rigged++;
+      assert.ok(json.animations?.some((clip) => clip.name === "walk"), `${path}: walk klibi`);
+      assert.ok(root.extras.walkSpeed > 0, `${path}: walkSpeed`);
+      assert.ok(json.skins[0].joints.length <= 80, `${path}: ${json.skins[0].joints.length} kemik`);
+    }
   }
+  assert.ok(rigged >= 1, "en az bir dusman yuruyor");
   assert.equal(enemyModelPath("melis-creepy"), undefined);
   // Yuz modelde +X'te. Doguya yuruyen (yon (1, 0), resim donusu -90 derece) +X'e, guneye yuruyen +Z'ye bakiyor.
   const forward = (rotation) => {

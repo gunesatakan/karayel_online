@@ -290,6 +290,12 @@ const DEATH_LOOKS: Record<DeathMaterial, DeathLook> = {
   ash: { body: 0x0f0a0a, debris: 0x1f1414, edge: (accent) => darken(accent, 0.4), sparks: "embers", smoke: 0x27272a, decal: () => SCORCH, chunk: 0.9 }
 };
 
+/** 3D olumun renkleri (render3d/shot-fx `death`): ayni malzeme tablosundan. */
+export function getDeathColors(textureKey: string | undefined, accent: number) {
+  const look = DEATH_LOOKS[getDeathMaterial(textureKey)];
+  return { debris: look.debris, edge: look.edge(accent), sparks: look.sparks, smoke: look.smoke, decal: look.decal(accent) };
+}
+
 /** Korun tonu: sonmekte olan kizil-turuncu, yere indirilmis (sekerleme turuncu degil). */
 const EMBER = groundHue(0xc2410c);
 

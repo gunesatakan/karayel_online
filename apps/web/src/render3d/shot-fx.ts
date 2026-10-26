@@ -85,8 +85,38 @@ export type ShotFxDeps = {
   reducedMotion?(): boolean;
 };
 
+/**
+ * Dusmanin olumu (egik gorunum; 2D patlamanin yerine): govdenin ortasinda
+ * parlama, irkin malzemesinden kirintilar (yere duserek sekiyor), kivilcim ya
+ * da kor, duman; yerdeyse zeminde halka ve yanik izi. Renkler 2D patlamanin
+ * malzeme tablosundan (combat-vfx `getDeathColors`).
+ */
+export type DeathFxInput = {
+  x: number;
+  z: number;
+  /** Govdenin ortasinin yuksekligi (dunya). */
+  y: number;
+  /** Govdenin eni (dunya). */
+  size: number;
+  /** Irkin vurgu rengi (parlama, kenar). */
+  color: number;
+  debris: number;
+  edge: number;
+  sparks: "sparks" | "embers" | "crackle" | "none";
+  /** Duman rengi; 0 duman yok. */
+  smoke: number;
+  decal: number;
+  /** Son vurusun yonu (radyan): kirintilar o yone. */
+  heading?: number;
+  heavy: boolean;
+  air: boolean;
+  /** Takim arkadasinin oldurmesi soluk (2D ile ayni). */
+  intensity: number;
+};
+
 export type ShotFx = {
   event(kind: ShotEventKind, input: ShotEventInput): void;
+  death(input: DeathFxInput): void;
   projectiles(list: readonly ShotProjectileInput[]): void;
   beams(list: readonly ShotBeamInput[]): void;
   /** Her karede cizimden once: parcaciklar ilerliyor ve yukleniyor. */
@@ -920,6 +950,59 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     }
   }
 
+  function death(input: DeathFxInput) {
+    const c = cell();
+    const k = Math.max(0.3, input.intensity);
+    const { x, y, z, size } = input;
+    const ground = deps.groundHeight(x, z);
+    const dirX = input.heading !== undefined ? Math.cos(input.heading) : undefined;
+    const dirZ = input.heading !== undefined ? Math.sin(input.heading) : undefined;
+    flare(x, y, z, size * (input.heavy ? 1.1 : 0.85), input.edge, 110, 0, 2.1 * k, input.color);
+    // Kirintilar: govdenin malzemesi (koyu govde, acik kenar), yonu son vurustan; yere dusup sekiyor.
+    const chips = count((input.heavy ? 14 : 9) * k);
+    for (let index = 0; index < chips; index += 1) {
+      const theta = rand() * Math.PI * 2;
+      let dx = Math.cos(theta);
+      let dz = Math.sin(theta);
+      if (dirX !== undefined && dirZ !== undefined) {
+        dx = dx * 0.45 + dirX * 0.55;
+        dz = dz * 0.45 + dirZ * 0.55;
+      }
+      const v = c * (1.6 + rand() * 2.6) * (input.heavy ? 1.15 : 1);
+      matter.spawn({
+        x: x + dx * size * 0.15, y, z: z + dz * size * 0.15,
+        vx: dx * v, vy: c * (1.8 + rand() * 2.4), vz: dz * v,
+        color: index % 3 === 0 ? input.edge : input.debris,
+        size: size * (0.09 + rand() * 0.08) * (input.heavy ? 1.2 : 1),
+        lifeMs: 900 + rand() * 500,
+        shape: SHAPE.chip,
+        spin: rand() * 6,
+        spinRate: (rand() - 0.5) * 18,
+        gravity: c * 11,
+        drag: 0.5,
+        bounce: !input.air,
+        fade: 2.4
+      });
+    }
+    if (input.sparks === "sparks" || input.sparks === "crackle") {
+      sparkBurst(x, y, z, count(8 * k), 4.2, [whiten(input.edge, 0.55), input.color], { dirX, dirZ, bias: dirX !== undefined ? 0.45 : 0, life: 380, size: 0.07, heat: 1.6 });
+    } else if (input.sparks === "embers") {
+      // Kul: yavas yukselen korlar.
+      for (let index = 0; index < count(9 * k); index += 1) {
+        light.spawn({
+          x: x + (rand() - 0.5) * size * 0.6, y: y + (rand() - 0.3) * size * 0.4, z: z + (rand() - 0.5) * size * 0.6,
+          vx: (rand() - 0.5) * c * 0.6, vy: c * (0.8 + rand() * 0.9), vz: (rand() - 0.5) * c * 0.6,
+          color: 0xff6a2b, heat: 1.7, size: c * 0.05, lifeMs: 600 + rand() * 400, shape: SHAPE.glow, drag: 1.2, fade: 1.4
+        });
+      }
+    }
+    if (input.smoke) smokePuffs(x, y, z, count(input.heavy ? 5 : 3), input.heavy ? 0.6 : 0.42, whiten(input.smoke, 0.35), 0.34);
+    if (!input.air) {
+      groundRing(x, z, size * 0.3, size * (input.heavy ? 1.5 : 1.2), input.color, 360, 0, 0.75 * k);
+      matter.spawn({ x, y: ground + 0.65, z, color: input.decal, alpha: 0.55, size: size * 0.5, sizeTo: size * 0.62, lifeMs: 2400, shape: SHAPE.scorch, fade: 1.3, spin: rand() * Math.PI * 2 });
+    }
+  }
+
   function event(kind: ShotEventKind, input: ShotEventInput) {
     if (!visible) return;
     const recipe = getShotRecipe(input.definitionId, input.tier, input.fallbackColor);
@@ -1234,7 +1317,8 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
   }
 
   return {
-    event, projectiles, beams, update, setVisible, clear, dispose,
+    event,
+    death, projectiles, beams, update, setVisible, clear, dispose,
     stats: () => ({ light: light.count, matter: matter.count, projectiles: flights.size })
   };
 }
