@@ -103,11 +103,11 @@ export function towerModelScale(bodySize: number, span: number) {
  * Hedef stil kulenin seviyeyle buyumesi: modelin en genis yeri 2D govde
  * capinin (`getTowerBodySize`) bu kati. Seviye 1'de kucuk ve sade, her
  * yukseltmede biraz buyuyor, kademe atlayinca (5 ve 10) belirgin sicrama;
- * 10'da hucreyi neredeyse dolduruyor. Modelin kendi olcusunden bagimsiz.
+ * 10'da hucrenin ~0,9'u. Modelin kendi olcusunden bagimsiz.
  */
 export function towerLevelGrowth(level: number) {
   const value = Math.max(1, Math.floor(level));
-  if (value >= 10) return 1.22;
+  if (value >= 10) return 1.15;
   if (value >= 5) return 0.94 + (value - 5) * 0.03;
   return 0.76 + (value - 1) * 0.03;
 }

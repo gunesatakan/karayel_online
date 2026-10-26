@@ -188,7 +188,7 @@ type Instance = {
 };
 
 /** Kademeye gore isima: kademe 1 sade (parlama esiginin altinda), 3 parlak ve nabiz atiyor. */
-const TIER_GLOW = { 1: 0.55, 2: 1, 3: 1.15 } as const;
+const TIER_GLOW = { 1: 0.55, 2: 1, 3: 1 } as const;
 type Standee = { mesh: THREE.Mesh; material: THREE.ShaderMaterial; shadow: THREE.Mesh; bar: THREE.Mesh; barMaterial: THREE.ShaderMaterial; textureKey: string };
 
 // Kameraya donuk pano: merkez modelin konumunda, koseler goruntu duzleminde.
@@ -856,7 +856,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   /** Kademe 3 isimasi nabiz gibi (malzeme o modelin butun kopyalarinda ortak). */
   function updatePulse(now: number) {
     if (pulsing.size === 0) return;
-    const wave = 1 + 0.15 * Math.sin((now / 1000) * 2.6);
+    const wave = 1 + 0.1 * Math.sin((now / 1000) * 2.6);
     for (const [material, base] of pulsing) material.emissiveIntensity = base * wave;
   }
 

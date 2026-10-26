@@ -243,11 +243,11 @@ export function createPlinthFactory() {
       const slab = new THREE.Mesh(parts.slab, slabMaterial);
       slab.castShadow = slab.receiveShadow = true;
       // Halka: 1'de parlama esiginin altinda (sade), 2-3'te yayiliyor.
-      group.add(slab, new THREE.Mesh(parts.ring, glowMaterial(accent, tier === 1 ? 0.8 : tier === 2 ? 2 : 3)));
+      group.add(slab, new THREE.Mesh(parts.ring, glowMaterial(accent, tier === 1 ? 0.8 : tier === 2 ? 2 : 2.3)));
       if (tier >= 2) {
         const corner = parts.half * 0.86 - 0.075 * span;
         for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-          const stud = new THREE.Mesh(parts.stud, glowMaterial(accent, tier === 3 ? 3 : 2));
+          const stud = new THREE.Mesh(parts.stud, glowMaterial(accent, tier === 3 ? 2.3 : 2));
           stud.position.set(sx * corner, 0, sz * corner);
           group.add(stud);
         }
@@ -258,7 +258,7 @@ export function createPlinthFactory() {
         group.add(skirt);
         const corner = parts.half + 0.01;
         for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-          const crystal = new THREE.Mesh(parts.crystal, glowMaterial(accent, 3.4));
+          const crystal = new THREE.Mesh(parts.crystal, glowMaterial(accent, 2.5));
           crystal.position.set(sx * corner, 0, sz * corner);
           crystal.rotation.y = Math.PI / 4;
           group.add(crystal);
