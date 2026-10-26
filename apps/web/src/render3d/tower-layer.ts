@@ -185,6 +185,8 @@ type Instance = {
   scale: number;
   heightScale: number;
   pop?: { at: number; big: boolean };
+  /** Vurusun hedef noktasina kilit (`lockAim`): suresi dolana kadar `facing` yerine. */
+  lock?: { x: number; y: number; z: number; until: number };
 };
 
 /** Kademeye gore isima: kademe 1 sade (parlama esiginin altinda), 3 parlak ve nabiz atiyor. */
@@ -718,7 +720,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       if (!recoil) return;
       recoil.at = performance.now();
       recoil.strength = Math.min(1, strength);
-    }
+    },
+    aimAt: (x, z, target) => lockAim(x, z, target)
   });
 
   /** Namlularin geri tepmesi: atista geriye, ~60 ms'de yerine yay gibi. */
@@ -812,6 +815,10 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     for (const instance of instances.values()) {
       const pitch = instance.pitch;
       if (!pitch || !instance.yaw || !instance.aims) continue;
+      if (instance.lock) {
+        if (now < instance.lock.until && applyLock(instance)) continue;
+        instance.lock = undefined;
+      }
       pitch.getWorldPosition(aimPivot);
       const yaw = instance.yaw.rotation.y + instance.root.rotation.y;
       const dirX = Math.sin(yaw);
@@ -828,15 +835,67 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         nearest = along;
         target = Math.atan2(aimPivot.y - position.y, along);
       }
-      // Arti aci namluyu asagi egiyor (+Z ileri).
-      target = Math.max(-0.35, Math.min(0.5, target));
-      instance.pitchAngle += (target - instance.pitchAngle) * Math.min(1, dt * 9);
+      instance.pitchAngle += (clampPitch(target) - instance.pitchAngle) * Math.min(1, dt * 9);
       pitch.rotation.x = instance.pitchAngle;
-      if (Math.abs(instance.pitchAngle - instance.shadowPitch) > 0.08) {
-        instance.shadowPitch = instance.pitchAngle;
-        shadowDirty = true;
-      }
+      markPitchShadow(instance);
     }
+  }
+
+  /** Arti aci namluyu asagi egiyor (+Z ileri): dibe yakin cukura en cok ~66, yukari ~46 derece. */
+  function clampPitch(angle: number) {
+    return Math.max(-0.8, Math.min(1.15, angle));
+  }
+
+  function markPitchShadow(instance: Instance) {
+    if (Math.abs(instance.pitchAngle - instance.shadowPitch) > 0.08) {
+      instance.shadowPitch = instance.pitchAngle;
+      shadowDirty = true;
+    }
+  }
+
+  /**
+   * Vurusun gercek hedefine kilit: isin ya da mermi cikarken taret o noktaya
+   * donuyor ve namlu ona egiliyor (oyunun `facing`i hedefi geriden izleyebiliyor,
+   * hattaki ilk dusman baska olabiliyor). Kisa sure gecerli; surekli isin her
+   * karede yeniliyor. Namlu ucu bundan sonra okunuyor.
+   */
+  function lockAim(x: number, z: number, target: THREE.Vector3) {
+    const instance = nearestInstance(x, z);
+    if (!instance?.yaw || !instance.aims) return;
+    instance.lock = { x: target.x, y: target.y, z: target.z, until: performance.now() + 260 };
+    applyLock(instance);
+  }
+
+  function applyLock(instance: Instance) {
+    const lock = instance.lock;
+    if (!lock || !instance.yaw) return false;
+    instance.root.updateMatrixWorld(true);
+    instance.yaw.getWorldPosition(aimPivot);
+    instance.yaw.rotation.y = Math.atan2(lock.x - aimPivot.x, lock.z - aimPivot.z) - instance.root.rotation.y;
+    if (instance.pitch) {
+      instance.root.updateMatrixWorld(true);
+      instance.pitch.getWorldPosition(aimPivot);
+      const along = Math.max(1e-3, Math.hypot(lock.x - aimPivot.x, lock.z - aimPivot.z));
+      instance.pitchAngle = clampPitch(Math.atan2(aimPivot.y - lock.y, along));
+      instance.pitch.rotation.x = instance.pitchAngle;
+      // Namlu ucu donus merkezinin hattinda degil: aci uctan hedefe bakacak sekilde
+      // birkac adimda duzeltiliyor (yakin hedefte fark buyuk).
+      const reach = (terrain?.cellSize ?? 34) * 0.25;
+      for (let step = 0; step < 3 && instance.muzzle; step += 1) {
+        instance.root.updateMatrixWorld(true);
+        instance.muzzle.getWorldPosition(aimPivot);
+        const horizontal = Math.hypot(lock.x - aimPivot.x, lock.z - aimPivot.z);
+        if (horizontal < reach) break;
+        const e = instance.pitch.matrixWorld.elements;
+        const have = Math.asin(Math.max(-1, Math.min(1, -e[9] / Math.hypot(e[8], e[9], e[10]))));
+        const want = Math.atan2(aimPivot.y - lock.y, horizontal);
+        instance.pitchAngle = clampPitch(instance.pitchAngle + want - have);
+        instance.pitch.rotation.x = instance.pitchAngle;
+      }
+      markPitchShadow(instance);
+    }
+    instance.root.updateMatrixWorld(true);
+    return true;
   }
 
   /** Sync'teki olcek ve yukseltme "pop"u. */
@@ -1189,7 +1248,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       // uzun namlu yuzunden kucuk kaliyordu).
       const size = modelSizes.get(key);
       const grows = tower.level !== undefined && !tower.modelPath && instance.span > 0 && instance.accent !== undefined && size !== undefined && size.width > 0;
-      const scale = grows ? tower.scale * ((MODEL_BODY_DIAMETER_CELLS * instance.span) / size.width) * towerLevelGrowth(tower.level ?? 1) : tower.scale;
+      // Ince uzun model (boyu eninin 1,7 katindan fazla) boyuna gore olculuyor: arkasini ortmesin.
+      const fit = size ? Math.max(size.width, size.height / 1.7) : 1;
+      const scale = grows ? tower.scale * ((MODEL_BODY_DIAMETER_CELLS * instance.span) / fit) * towerLevelGrowth(tower.level ?? 1) : tower.scale;
       const base = onPlinth ? PLINTH_HEIGHT_CELLS * cell : 0;
       instance.scale = scale;
       instance.heightScale = tower.heightScale ?? 1;

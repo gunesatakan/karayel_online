@@ -77,6 +77,11 @@ export type ShotFxDeps = {
   bodyAt(x: number, z: number): number | undefined;
   /** Kulenin namlusunu geri tep (0-1). */
   kick?(x: number, z: number, strength: number): void;
+  /**
+   * (x, z)'deki kulenin tareti ve namlusu vurusun hedef noktasina (dunya)
+   * kilitleniyor; namlu ucu ondan sonra okunuyor: vurus namlunun hattinda cikiyor.
+   */
+  aimAt?(x: number, z: number, target: THREE.Vector3): void;
   reducedMotion?(): boolean;
 };
 
@@ -518,6 +523,7 @@ const PATH_STEP = 0.2;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const TMP_DIR = new THREE.Vector3();
+const TMP_TARGET = new THREE.Vector3();
 const TMP_Q = new THREE.Quaternion();
 const SPIN_Q = new THREE.Quaternion();
 
@@ -936,7 +942,12 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
       let flight = flights.get(projectile.id);
       if (!flight) {
         const root = makeBody(recipe);
-        // Namlu ucunda doguyor: sunucunun dogum noktasi 2D'nin, 3D namlu baska yerde.
+        // Namlu once hedefe donup egiliyor, mermi onun ucunda doguyor (sunucunun dogum noktasi 2D'nin).
+        if (deps.aimAt) {
+          const heading = Math.atan2(projectile.vy ?? 0, projectile.vx ?? 1);
+          const aim = deps.aim(projectile.x, projectile.y, Math.cos(heading), Math.sin(heading));
+          if (aim) deps.aimAt(projectile.x, projectile.y, TMP_TARGET.set(projectile.x + Math.cos(heading) * aim.distance, aim.y, projectile.y + Math.sin(heading) * aim.distance));
+        }
         const tip = muzzlePoint(projectile.x, projectile.y);
         flight = {
           id: projectile.id, recipe, root, material: bodyMaterial(root),
@@ -1135,9 +1146,15 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     for (const beam of list) {
       const recipe = getShotRecipe(beam.definitionId, beam.tier, beam.color);
       const look = recipe.beamLook;
+      const bounces = beam.b ?? [];
+      // Taret ve namlu isinin ilk hedefine kilitleniyor: isin namlunun ucundan, onun hattinda.
+      if (deps.aimAt) {
+        const tx = bounces.length >= 2 ? bounces[0] : beam.x2;
+        const tz = bounces.length >= 2 ? bounces[1] : beam.y2;
+        deps.aimAt(beam.x1, beam.y1, TMP_TARGET.set(tx, targetHeight(tx, tz), tz));
+      }
       const start = muzzlePoint(beam.x1, beam.y1);
       const points: THREE.Vector3[] = [start];
-      const bounces = beam.b ?? [];
       for (let index = 0; index + 1 < bounces.length; index += 2) points.push(new THREE.Vector3(bounces[index], targetHeight(bounces[index], bounces[index + 1]), bounces[index + 1]));
       points.push(new THREE.Vector3(beam.x2, targetHeight(beam.x2, beam.y2), beam.y2));
       const flicker = 1 + Math.sin(time * 61 + hash01(beam.id) * 9) * look.flicker;

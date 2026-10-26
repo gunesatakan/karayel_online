@@ -1,5 +1,5 @@
 {
-  "note": "Game copies of the tower models. Target style (Endless Defense look): tools/3d-preview/build-target-tower.py from Tripo H3.1 sources. Not included in the itch.io package.",
+  "note": "Game copies of the tower models. Target style (Endless Defense look): tools/3d-preview/build-target-tower.py from Tripo H3.1 sources (AttackLord tiers 2-3: H3.0). Not included in the itch.io package.",
   "targetTriangles": 6000,
   "textureSize": 512,
   "models": [
@@ -12,17 +12,17 @@
     },
     {
       "key": "warrior-1-tier-2",
-      "bytes": 436836,
-      "triangles": 6000,
-      "sha256": "9502da48ee642afba9e2d9b49c6820c059f2c423b3fc91e6473e1420358834df",
-      "source": "asset-work/target-style/warrior-1/tier-2-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 352248,
+      "triangles": 5999,
+      "sha256": "63990b79f55caca6dd297e8fb1071eed2a4e07ffe4b781d5dfe41962234242ca",
+      "source": "asset-work/target-style/warrior-1-v2/tier-2-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-1-tier-3",
-      "bytes": 455844,
+      "bytes": 423256,
       "triangles": 5999,
-      "sha256": "aa0ec2a884b27c6e3ff5d36cd67a7656c6be711ee3cf842b22ce86a32b8021f8",
-      "source": "asset-work/target-style/warrior-1/tier-3-meshopt.glb (Tripo H3.1, target style)"
+      "sha256": "645df179ec2e1ef9d267fbd0b6fbf7868acfc01d5b81aefd0c1ef9f889778ba6",
+      "source": "asset-work/target-style/warrior-1-v2/tier-3-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-2-tier-1",
@@ -33,17 +33,17 @@
     },
     {
       "key": "warrior-2-tier-2",
-      "bytes": 463496,
-      "triangles": 6000,
-      "sha256": "e52335a0e40455a5101a0cc0ed40c342c8761e17979a228a6b2ef73ece86d92c",
-      "source": "asset-work/target-style/warrior-2/tier-2-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 447968,
+      "triangles": 5998,
+      "sha256": "b1cc65b22aaf4acc59ad4f26352ce56da637a60de6b35ae58f4b5dcb3d321c4a",
+      "source": "asset-work/target-style/warrior-2-v2/tier-2-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-2-tier-3",
-      "bytes": 465056,
-      "triangles": 5986,
-      "sha256": "39baca4b1a340073ca059abb6c44f532dec80abc1a608fe982b1661088c9c43d",
-      "source": "asset-work/target-style/warrior-2/tier-3-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 430588,
+      "triangles": 6000,
+      "sha256": "183f81794da60b8e08b01a6b42097658e7bf24f7ae43ad516b7fa98856990b36",
+      "source": "asset-work/target-style/warrior-2-v2/tier-3-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-3-tier-1",
@@ -54,17 +54,17 @@
     },
     {
       "key": "warrior-3-tier-2",
-      "bytes": 452952,
-      "triangles": 5999,
-      "sha256": "6c804106d1f5a3488d9cfce9d8770c338dfc7243b778e0abb5bf03544f7a587b",
-      "source": "asset-work/target-style/warrior-3/tier-2-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 373992,
+      "triangles": 6000,
+      "sha256": "a837e6efc042ce66530fa8f988167350dd2cfc21bc744dfd8f4ad02ea8743269",
+      "source": "asset-work/target-style/warrior-3-v2/tier-2-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-3-tier-3",
-      "bytes": 459840,
-      "triangles": 6000,
-      "sha256": "62721db23056e2e9d278fc83a2c96b97dff6094ab1bae8c59011187ab74bcae4",
-      "source": "asset-work/target-style/warrior-3/tier-3-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 490608,
+      "triangles": 5998,
+      "sha256": "927be3270d304bb05f462a8a937a88c72f0cd3963af9574570a5215527ca854f",
+      "source": "asset-work/target-style/warrior-3-v2/tier-3-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-4-tier-1",
@@ -75,17 +75,17 @@
     },
     {
       "key": "warrior-4-tier-2",
-      "bytes": 400884,
-      "triangles": 6000,
-      "sha256": "21d5f635a88369469485d62d61ec0c940b5399fd0f3de75bc42a563b28306faf",
-      "source": "asset-work/target-style/warrior-4/tier-2-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 367732,
+      "triangles": 5999,
+      "sha256": "4a6422adb59d03927354553147c4aa7ba9f289a553295e447410a2effa412c30",
+      "source": "asset-work/target-style/warrior-4-v2/tier-2-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-4-tier-3",
-      "bytes": 397452,
-      "triangles": 5999,
-      "sha256": "10144476f922589b6418ae3af6bfc446ba761757e14c66387cba2c96d36b80ce",
-      "source": "asset-work/target-style/warrior-4/tier-3-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 446428,
+      "triangles": 5994,
+      "sha256": "61503d7c12786a389f06e0f05678e6ea934d5a423caa4ebe38eaad1670ee8554",
+      "source": "asset-work/target-style/warrior-4-v2/tier-3-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-5-tier-1",
@@ -96,17 +96,17 @@
     },
     {
       "key": "warrior-5-tier-2",
-      "bytes": 439772,
+      "bytes": 457820,
       "triangles": 6000,
-      "sha256": "6ecaa970390903020cd00a0079d5aa9b5a433a1ef9af10398cb8f4eeeb998dac",
-      "source": "asset-work/target-style/warrior-5/tier-2-meshopt.glb (Tripo H3.1, target style)"
+      "sha256": "bcd358dc1d4214fea27db44177b31f224baac19c4a019df7383b902029541f21",
+      "source": "asset-work/target-style/warrior-5-v2/tier-2-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-5-tier-3",
-      "bytes": 439368,
-      "triangles": 6000,
-      "sha256": "fa3f48ba27be6a9d24a8c0c3f17998d2639aac149fdf11d1ae51f53336ab2a5c",
-      "source": "asset-work/target-style/warrior-5/tier-3-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 490972,
+      "triangles": 5999,
+      "sha256": "1d1412a0363281e464f4af0634fffb41ca58b689f364b14edae1f0b64f0e6ce7",
+      "source": "asset-work/target-style/warrior-5-v2/tier-3-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-6-tier-1",
@@ -117,17 +117,17 @@
     },
     {
       "key": "warrior-6-tier-2",
-      "bytes": 392448,
-      "triangles": 5998,
-      "sha256": "c7be7f4b193a9fba47bfa612f80a25300c747936720eb71a4abe2aaf21aae112",
-      "source": "asset-work/target-style/warrior-6/tier-2-meshopt.glb (Tripo H3.1, target style)"
+      "bytes": 398252,
+      "triangles": 5999,
+      "sha256": "cc74aaf4f649c0ac38791201c4f8e3c2c347aff3aa68ab2ff3e080579238fd80",
+      "source": "asset-work/target-style/warrior-6-v2/tier-2-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "warrior-6-tier-3",
-      "bytes": 453692,
+      "bytes": 506612,
       "triangles": 5999,
-      "sha256": "693f92f450873fae19e59f74f4bac56cedf7a0c73c8b6c5ea73c20edb1a5be76",
-      "source": "asset-work/target-style/warrior-6/tier-3-meshopt.glb (Tripo H3.1, target style)"
+      "sha256": "56a5e52649404aa8b0a66d7b57e1414dc2a2075f15c37609e1183c586d354f9a",
+      "source": "asset-work/target-style/warrior-6-v2/tier-3-meshopt.glb (Tripo H3.0, target style)"
     },
     {
       "key": "zeynep-1-tier-1",
