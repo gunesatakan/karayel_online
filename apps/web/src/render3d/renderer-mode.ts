@@ -1,3 +1,5 @@
+import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START } from "./resolution";
+
 /**
  * Kule gorunumu: "2d" (bugunku oyun), "top" (3D kuleler, tepeden kamera) ya da
  * "angled" (3D kuleler ve egik tahta, render3d/tower-layer.ts).
@@ -13,10 +15,19 @@ const STORAGE_KEY = "karayel_towers_3d";
 export const TOWERS_3D_CHANGED_EVENT = "karayel:towers-3d";
 /**
  * Egik gorunumde Phaser tuvalinin dunya birimi basina en cok cihaz pikseli
- * (2D'de telefonda 2'ye kadar). Tuval 3D'ye doku olarak kopyalaniyor; 1,25'te
- * telefonda kopya ~2,5 kat kucuk. Bedeli yaklasinca biraz yumusak bir zemin.
+ * (2D'de telefonda 2'ye kadar). Tuval 3D'ye doku olarak kopyalaniyor (karede
+ * iki kez) ve bedeli piksel sayisiyla buyuyor: deger kalite basamagindan
+ * (render3d/resolution.ts), 3D katman kare suresine gore degistiriyor.
  */
-export const ANGLED_MAX_RENDER_SCALE = 1.25;
+let angledBoardScale: number | undefined;
+
+export function getAngledRenderScale(finePointer: boolean) {
+  return angledBoardScale ?? (finePointer ? DESKTOP_QUALITY[DESKTOP_QUALITY_START] : TOUCH_QUALITY[TOUCH_QUALITY_START]).boardScale;
+}
+
+export function setAngledRenderScale(scale: number) {
+  angledBoardScale = scale;
+}
 /** Oyun ici menu: egik kamerayi acilis haline (45 derece, kuzey yukarida, harita sigiyor) dondur. */
 export const TOWERS_3D_CAMERA_RESET_EVENT = "karayel:towers-3d-camera-reset";
 

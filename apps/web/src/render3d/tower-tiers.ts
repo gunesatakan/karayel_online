@@ -133,14 +133,14 @@ export function createTierFx(scene: THREE.Scene) {
 
   function build(tier: TowerTier, accent: number): Aura {
     const group = new THREE.Group();
-    const runeMesh = new THREE.Mesh(runeGeometry, shared(`rune:${accent}:${tier}`, () => glow({ map: rune, color: hdr(accent, tier === 3 ? 1.1 : 0.8) })));
+    const runeMesh = new THREE.Mesh(runeGeometry, shared(`rune:${accent}:${tier}`, () => glow({ map: rune, color: hdr(accent, tier === 3 ? 0.75 : 0.55) })));
     runeMesh.renderOrder = 2;
     group.add(runeMesh);
     const aura: Aura = { tier, group, rune: runeMesh, seed: Math.random() };
     if (tier === 3) {
-      const halo = new THREE.Mesh(haloGeometry, shared(`halo:${accent}`, () => new THREE.MeshBasicMaterial({ color: hdr(accent, 1.6) })));
+      const halo = new THREE.Mesh(haloGeometry, shared(`halo:${accent}`, () => new THREE.MeshBasicMaterial({ color: hdr(accent, 1.1) })));
       halo.rotation.order = "YXZ";
-      const crystalMaterial = shared(`crystal:${accent}`, () => new THREE.MeshBasicMaterial({ color: hdr(accent, 1.5) }));
+      const crystalMaterial = shared(`crystal:${accent}`, () => new THREE.MeshBasicMaterial({ color: hdr(accent, 1.05) }));
       for (let index = 0; index < 3; index += 1) {
         const crystal = new THREE.Mesh(crystalGeometry, crystalMaterial);
         const angle = (index / 3) * Math.PI * 2;
@@ -157,7 +157,7 @@ export function createTierFx(scene: THREE.Scene) {
       const points = new THREE.Points(geometry, shared("motes", () => new THREE.PointsMaterial({ map: dot, size: 1, sizeAttenuation: true, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
       points.frustumCulled = false;
       group.add(points);
-      aura.motes = { points, positions: geometry.getAttribute("position").array, colors: geometry.getAttribute("color").array, color: hdr(accent, 1.1) };
+      aura.motes = { points, positions: geometry.getAttribute("position").array, colors: geometry.getAttribute("color").array, color: hdr(accent, 0.75) };
     }
     scene.add(group);
     return aura;

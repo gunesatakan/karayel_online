@@ -35,11 +35,12 @@ export const TARGET_LIGHT = {
   bloomStrength: 0.5,
   bloomRadius: 0.35,
   bloomThreshold: 1.05,
-  /** Hedef stil kulelerin isiyan seritleri: renk doygun kalsin, beyaza patlamasin. */
-  towerGlow: 1.15
+  /** Hedef stil kulelerin isiyan seritleri: renk doygun, parlama esiginin altinda (kule yayilmiyor, kaide halkasi hafifce). */
+  towerGlow: 0.85
 } as const;
 
 /** Karo zemin: hucre basina piksel ve arenanin cevresindeki bos pay (hucre). */
+/** Karo dokusunun hucre basina pikseli (varsayilan); masaustu 128 istiyor. */
 const TILE_PIXELS = 64;
 const TILE_PAD_CELLS = 1;
 
@@ -50,11 +51,14 @@ export type TileBoard = { texture: THREE.Texture; uv: (x: number, z: number) => 
  * ustte ciziliyor, altlari yalnizca koyu dolgu. Arenanin disi bos pay rengi;
  * doku kenara kenetli oldugu icin tahtanin otesi de o renk.
  */
-export function createTileBoard(input: { cols: number; rows: number; cellSize: number; originX: number; originY: number; zoneCells: readonly number[] }): TileBoard {
+export function createTileBoard(input: { cols: number; rows: number; cellSize: number; originX: number; originY: number; zoneCells: readonly number[]; pixels?: number }): TileBoard {
   const { cols, rows, cellSize, originX, originY } = input;
+  const tile = input.pixels ?? TILE_PIXELS;
+  // Cizgi kalinliklari ve koseler 64 piksellik hucreye gore; yogunlukla olcekleniyor.
+  const k = tile / TILE_PIXELS;
   const canvas = document.createElement("canvas");
-  canvas.width = (cols + TILE_PAD_CELLS * 2) * TILE_PIXELS;
-  canvas.height = (rows + TILE_PAD_CELLS * 2) * TILE_PIXELS;
+  canvas.width = (cols + TILE_PAD_CELLS * 2) * tile;
+  canvas.height = (rows + TILE_PAD_CELLS * 2) * tile;
   const context = canvas.getContext("2d");
   if (context) {
     context.fillStyle = "#0d0f13";
@@ -71,20 +75,20 @@ export function createTileBoard(input: { cols: number; rows: number; cellSize: n
     };
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
-        const x = (col + TILE_PAD_CELLS) * TILE_PIXELS;
-        const y = (row + TILE_PAD_CELLS) * TILE_PIXELS;
+        const x = (col + TILE_PAD_CELLS) * tile;
+        const y = (row + TILE_PAD_CELLS) * tile;
         if (zones.has(row * cols + col)) {
           context.fillStyle = "#121418";
-          context.fillRect(x, y, TILE_PIXELS, TILE_PIXELS);
+          context.fillRect(x, y, tile, tile);
           continue;
         }
         context.fillStyle = "#14161b";
-        context.fillRect(x, y, TILE_PIXELS, TILE_PIXELS);
-        radius(x + 3, y + 3, TILE_PIXELS - 6, TILE_PIXELS - 6, 7);
+        context.fillRect(x, y, tile, tile);
+        radius(x + 3 * k, y + 3 * k, tile - 6 * k, tile - 6 * k, 7 * k);
         context.fillStyle = "#1e222a";
         context.fill();
-        radius(x + 8, y + 8, TILE_PIXELS - 16, TILE_PIXELS - 16, 5);
-        context.lineWidth = 2;
+        radius(x + 8 * k, y + 8 * k, tile - 16 * k, tile - 16 * k, 5 * k);
+        context.lineWidth = 2 * k;
         context.strokeStyle = "rgba(150, 163, 182, 0.42)";
         context.stroke();
       }
@@ -243,11 +247,11 @@ export function createPlinthFactory() {
       const slab = new THREE.Mesh(parts.slab, slabMaterial);
       slab.castShadow = slab.receiveShadow = true;
       // Halka: 1'de parlama esiginin altinda (sade), 2-3'te yayiliyor.
-      group.add(slab, new THREE.Mesh(parts.ring, glowMaterial(accent, tier === 1 ? 0.8 : tier === 2 ? 2 : 2.3)));
+      group.add(slab, new THREE.Mesh(parts.ring, glowMaterial(accent, tier === 1 ? 0.55 : tier === 2 ? 1.3 : 1.5)));
       if (tier >= 2) {
         const corner = parts.half * 0.86 - 0.075 * span;
         for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-          const stud = new THREE.Mesh(parts.stud, glowMaterial(accent, tier === 3 ? 2.3 : 2));
+          const stud = new THREE.Mesh(parts.stud, glowMaterial(accent, tier === 3 ? 1.5 : 1.3));
           stud.position.set(sx * corner, 0, sz * corner);
           group.add(stud);
         }
@@ -258,7 +262,7 @@ export function createPlinthFactory() {
         group.add(skirt);
         const corner = parts.half + 0.01;
         for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-          const crystal = new THREE.Mesh(parts.crystal, glowMaterial(accent, 2.5));
+          const crystal = new THREE.Mesh(parts.crystal, glowMaterial(accent, 1.6));
           crystal.position.set(sx * corner, 0, sz * corner);
           crystal.rotation.y = Math.PI / 4;
           group.add(crystal);
@@ -308,7 +312,9 @@ export function targetStyleAccent(model: THREE.Object3D): number | undefined {
  * Parlama gecisi: sahne HDR hedefe, 1'den parlaklar yayiliyor, ton esleme ve sRGB,
  * en sonda FXAA kenar yumusatmasi. Cok ornekli (MSAA) HDR hedef kullanilmiyor:
  * Chrome/ANGLE'da cozumu bozuluyordu ("texture format / sampler type" hatasi,
- * vuruslar baslayinca ekran karariyordu). Parlama yarim (telefonda ceyrek) cozunurlukte.
+ * vuruslar baslayinca ekran karariyordu). Yuksek piksel oraninda (`antialias`
+ * kapali) FXAA atlaniyor: kenarlar zaten ince, goruntu daha keskin ve ucuz.
+ * Parlama ekranin CSS boyutunun yarisinda (telefonda ceyregi), piksel oraniyla buyumuyor.
  */
 export function createBloom(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Object3D, coarsePointer: boolean) {
   const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
@@ -318,19 +324,21 @@ export function createBloom(renderer: THREE.WebGLRenderer, scene: THREE.Scene, c
   composer.addPass(renderPass);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
-  composer.addPass(new FXAAPass());
+  const fxaa = new FXAAPass();
+  composer.addPass(fxaa);
   let size = "";
   return {
-    render(width: number, height: number) {
+    render(width: number, height: number, antialias = true) {
       const key = `${width}x${height}@${renderer.getPixelRatio()}`;
       if (key !== size) {
         size = key;
         composer.setPixelRatio(renderer.getPixelRatio());
         composer.setSize(width, height);
-        // Parlama yayilimi yumusak: yarim (telefonda ceyrek) cozunurluk yetiyor.
+        // Parlama yayilimi yumusak: CSS boyutunun yarisi (telefonda ceyregi) yetiyor.
         const scale = coarsePointer ? 0.25 : 0.5;
-        bloom.setSize(Math.max(1, Math.round(width * renderer.getPixelRatio() * scale)), Math.max(1, Math.round(height * renderer.getPixelRatio() * scale)));
+        bloom.setSize(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
       }
+      fxaa.enabled = antialias;
       composer.render();
     },
     dispose() {

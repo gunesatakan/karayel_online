@@ -57,6 +57,8 @@ import {
 } from "./tower-math";
 import { createShotFx, type ShotFx } from "./shot-fx";
 import { createTierFx } from "./tower-tiers";
+import { setAngledRenderScale } from "./renderer-mode";
+import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START, createQualityGovernor, stepQualityGovernor } from "./resolution";
 import { createZoneHeight, edgeSlopeHeight, terrainShade, type TerrainInput } from "./terrain";
 import { PLINTH_HEIGHT_CELLS, TARGET_LIGHT, createBloom, createPlinthFactory, createRockFrame, createTileBoard, targetStyleAccent, tuneTargetMaterials, type TileBoard } from "./target-look";
 
@@ -190,7 +192,7 @@ type Instance = {
 };
 
 /** Kademeye gore isima: kademe 1 sade (parlama esiginin altinda), 3 parlak ve nabiz atiyor. */
-const TIER_GLOW = { 1: 0.55, 2: 1, 3: 1 } as const;
+const TIER_GLOW = { 1: 0.55, 2: 1, 3: 1.05 } as const;
 type Standee = { mesh: THREE.Mesh; material: THREE.ShaderMaterial; shadow: THREE.Mesh; bar: THREE.Mesh; barMaterial: THREE.ShaderMaterial; textureKey: string };
 
 // Kameraya donuk pano: merkez modelin konumunda, koseler goruntu duzleminde.
@@ -343,6 +345,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   options.host.appendChild(canvas);
 
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "high-performance" });
+  const coarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Isik hedef gorunusten (target-look): aydinlik gok, yumusak sicak gunes, hafif kenar isigi.
@@ -370,7 +373,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   const sunLength = Math.hypot(-6, 14, 8);
   const sunDirection = { x: -6 / sunLength, y: 14 / sunLength, z: 8 / sunLength };
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  // Masaustunde keskin golge (harita yalnizca kuleler degisince ciziliyor); telefonda 1024.
+  sun.shadow.mapSize.set(coarsePointer ? 1024 : 2048, coarsePointer ? 1024 : 2048);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.6;
   sun.shadow.camera.near = 1;
@@ -507,8 +511,9 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     tileBoard = undefined;
     if (terrain) {
       // Karolar dunya izgarasina birebir; arenanin disi dokunun kenar rengi (bos pay).
-      tileBoard = createTileBoard(terrain);
-      tileBoard.texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      // Hucre basina 128 piksel (telefonda 96): yakinlasinca karo cizgileri keskin kaliyor.
+      tileBoard = createTileBoard({ ...terrain, pixels: coarsePointer ? 96 : 128 });
+      tileBoard.texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
       groundMaterial.map = tileBoard.texture;
       groundMaterial.needsUpdate = true;
       const margin = cell * 10;
@@ -915,7 +920,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   /** Kademe 3 isimasi nabiz gibi (malzeme o modelin butun kopyalarinda ortak). */
   function updatePulse(now: number) {
     if (pulsing.size === 0) return;
-    const wave = 1 + 0.1 * Math.sin((now / 1000) * 2.6);
+    const wave = 1 + 0.08 * Math.sin((now / 1000) * 2.6);
     for (const [material, base] of pulsing) material.emissiveIntensity = base * wave;
   }
 
@@ -1420,7 +1425,18 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   let width = 0;
   let height = 0;
-  const coarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  /**
+   * Kalite basamagi (resolution.ts): 3D piksel orani (cihazinkini, en cok 2'yi
+   * gecmiyor) ve egik gorunumde Phaser tuvalinin olcegi; kare suresine gore
+   * iniyor ya da cikiyor. `?res3d=1.5` 3D oranini sabitliyor, basamak degismiyor (deneme).
+   */
+  const forcedRatio = Number(new URLSearchParams(location.search).get("res3d")) || 0;
+  const maxRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const ladder = coarsePointer ? TOUCH_QUALITY : DESKTOP_QUALITY;
+  const quality = createQualityGovernor(coarsePointer ? TOUCH_QUALITY_START : DESKTOP_QUALITY_START, performance.now());
+  let pixelRatio = forcedRatio || Math.min(ladder[quality.level].pixelRatio, maxRatio);
+  let boardScale = ladder[quality.level].boardScale;
+  setAngledRenderScale(boardScale);
   let shadowDirty = true;
   let shadowSignature = "";
   let frame = 0;
@@ -1452,9 +1468,26 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     if (nextWidth !== width || nextHeight !== height) {
       width = nextWidth;
       height = nextHeight;
-      // On izleme gibi en cok 1,5; telefonda 1,25 (tam ekran MSAA ve golgeli malzemeler pahali).
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarsePointer ? 1.25 : 1.5));
+      renderer.setPixelRatio(pixelRatio);
       renderer.setSize(width, height, true);
+    }
+  }
+
+  /** Kare suresine gore kalite basamagi: 3D piksel orani ve Phaser tuvalinin olcegi. */
+  function governQuality(now: number) {
+    if (forcedRatio) return;
+    const level = ladder[stepQualityGovernor(quality, now, ladder.length)];
+    const ratio = Math.min(level.pixelRatio, maxRatio);
+    if (ratio !== pixelRatio) {
+      pixelRatio = ratio;
+      renderer.setPixelRatio(pixelRatio);
+      if (width > 0 && height > 0) renderer.setSize(width, height, true);
+    }
+    if (level.boardScale !== boardScale) {
+      boardScale = level.boardScale;
+      setAngledRenderScale(boardScale);
+      // Phaser tuvali yeni olcege main.ts'in boyut dinleyicisiyle kuruluyor.
+      if (view === "angled") window.dispatchEvent(new Event("resize"));
     }
   }
 
@@ -1564,6 +1597,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
 
   function render(canvasRect: DOMRect, viewport: PhaserViewport, worldView: WorldView) {
     if (disposed) return;
+    governQuality(performance.now());
     placeSun(worldView);
     if (view === "top") {
       lastRect = undefined;
@@ -1659,7 +1693,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       return;
     }
     bloom ??= createBloom(renderer, scene, angledCamera, coarsePointer);
-    bloom.render(width, height);
+    // 1,75 ve ustu oranda FXAA gereksiz: kenarlar ince, goruntu keskin.
+    bloom.render(width, height, pixelRatio < 1.75);
   }
 
   function clientToWorld(clientX: number, clientY: number) {

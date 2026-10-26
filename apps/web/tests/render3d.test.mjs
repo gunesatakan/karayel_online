@@ -40,6 +40,7 @@ import {
 import { EDGE_SLOPE, createZoneHeight, edgeSlopeHeight } from "../src/render3d/terrain.ts";
 import { getBuildZoneReliefs } from "@karayel/shared";
 import { SHOT_TOWER_IDS, getShotRecipe, shotTowerId } from "../src/render3d/shot-recipes.ts";
+import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START, createQualityGovernor, stepQualityGovernor } from "../src/render3d/resolution.ts";
 import { findForbidden, readDeployPaths } from "../../../tools/check-client-only.mjs";
 import { TOWER_MODELS_DIR } from "../../../tools/build-itch.mjs";
 
@@ -88,6 +89,35 @@ test("yukseltme pop'u kucukten basliyor, asiyor ve tam olcekte bitiyor", () => {
     assert.equal(upgradePopFactor(1, big), 1);
   }
   assert.ok(upgradePopFactor(0, true) < upgradePopFactor(0, false), "kademe atlayisi daha derin");
+});
+
+test("kalite basamagi: yavas karede iner, rahatsa 30 sn sonra cikar, her inis beklemeyi uzatir", () => {
+  for (const ladder of [DESKTOP_QUALITY, TOUCH_QUALITY]) {
+    for (let index = 1; index < ladder.length; index += 1) {
+      assert.ok(ladder[index].pixelRatio >= ladder[index - 1].pixelRatio && ladder[index].boardScale >= ladder[index - 1].boardScale);
+    }
+  }
+  assert.ok(DESKTOP_QUALITY[DESKTOP_QUALITY_START].pixelRatio === 2);
+  assert.ok(TOUCH_QUALITY[TOUCH_QUALITY_START].boardScale === 1.25);
+  const levels = DESKTOP_QUALITY.length;
+  const run = (state, from, frames, step) => { let now = from; for (let k = 0; k < frames; k += 1) { now += step; stepQualityGovernor(state, now, levels); } return now; };
+  const state = createQualityGovernor(DESKTOP_QUALITY_START, 0);
+  let now = run(state, 0, 120, 25);
+  assert.ok(state.level < DESKTOP_QUALITY_START, "yavas karelerle iniyor");
+  now = run(state, now, 200, 16.7);
+  const low = state.level;
+  now = run(state, now, 600, 16.7);
+  assert.equal(state.level, low, "inisten hemen sonra cikmiyor");
+  // Uc inisten sonra bekleme 2 dakikaya cikti: rahat karelerle ondan sonra geri cikiyor.
+  now = run(state, now, 9000, 16.7);
+  assert.ok(state.level > low, "rahat karelerle geri cikiyor");
+  const fast = createQualityGovernor(1, 0);
+  run(fast, 0, 9000, 8.3);
+  assert.equal(fast.level, levels - 1, "120 Hz ekranda en ust basamak");
+  const paused = createQualityGovernor(DESKTOP_QUALITY_START, 0);
+  stepQualityGovernor(paused, 100, levels);
+  stepQualityGovernor(paused, 5000, levels);
+  assert.equal(paused.level, DESKTOP_QUALITY_START, "sekme arkadaydi: uzun ara kare sayilmiyor");
 });
 
 test("kenar rayi hucre boyunca, dikeyde 90 derece donuk", () => {

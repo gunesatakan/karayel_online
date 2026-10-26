@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH, getRenderScale } from "@karayel/shared";
-import { ANGLED_MAX_RENDER_SCALE, getActiveTowerView } from "./render3d/renderer-mode";
+import { getActiveTowerView, getAngledRenderScale } from "./render3d/renderer-mode";
 
 /**
  * Cihazin birincil isaretcisi hassas mi (fare, izleme yuzeyi).
@@ -19,15 +19,16 @@ function hasFinePointer() {
  * de o kadar pikseli olmasi gerekiyor. Boyut degistiginde yeniden okunmali.
  */
 export function getRenderScaleNow() {
+  const finePointer = hasFinePointer();
   const scale = getRenderScale({
     hostWidth: getHostSize().width,
     devicePixelRatio: window.devicePixelRatio || 1,
-    finePointer: hasFinePointer()
+    finePointer
   });
   // Egik 3D gorunumde Phaser tuvali gorunmuyor: karesi her karede iki kez 3D
-  // katmanina doku olarak kopyalaniyor ve bedeli piksel sayisiyla buyuyor.
-  // 2D'de (ve tepeden 3D'de) olcek bugunku gibi.
-  return getActiveTowerView() === "angled" ? Math.min(scale, ANGLED_MAX_RENDER_SCALE) : scale;
+  // katmanina doku olarak kopyalaniyor ve bedeli piksel sayisiyla buyuyor; sinir
+  // kalite basamagindan (render3d/resolution.ts). 2D'de (ve tepeden 3D'de) olcek bugunku gibi.
+  return getActiveTowerView() === "angled" ? Math.min(scale, getAngledRenderScale(finePointer)) : scale;
 }
 
 /**
