@@ -741,6 +741,10 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     cellSize: () => terrain?.cellSize ?? 34,
     groundHeight: (x, z) => zoneHeight(x, z),
     bodyHeight: () => standeeCenterHeight(airBodySize || (terrain?.cellSize ?? 34) * 0.6, orbit.elevation),
+    sourceAt: (x, z) => {
+      const instance = nearestInstance(x, z);
+      return Boolean(instance && Math.hypot(instance.root.position.x - x, instance.root.position.z - z) <= (terrain?.cellSize ?? 34) * 0.35);
+    },
     muzzle: (x, z) => {
       const instance = nearestInstance(x, z);
       if (!instance?.muzzle) return undefined;

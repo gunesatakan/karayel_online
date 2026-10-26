@@ -106,6 +106,12 @@ export type ShotRecipe = {
    * lazer de okunsun), titreme, akan nabiz.
    */
   beamLook: { core: number; glow: number; coreMin: number; glowMin: number; flicker: number; pulses: number };
+  /**
+   * Isik hatti (Zeynep: Gosteri, Taht'in ayna isini, Abarti): hale isabet
+   * bandinin eni kadar ve soluk, govde ve cekirdek ince, uclarda kucuk parlama;
+   * ton sunucunun (2D ile ayni, sekmeden sonra leylak).
+   */
+  band: boolean;
 };
 
 type TowerSeed = {
@@ -117,6 +123,10 @@ type TowerSeed = {
   accent: number;
   heavy?: boolean;
   arc?: number;
+  /** Isik hatti (`ShotRecipe.band`). */
+  band?: boolean;
+  /** Parlaklik ve parlama boyu carpani (Zeynep'in vuruslari daha soluk ve kucuk). */
+  dim?: number;
 };
 
 /** Tonlar 2D profillerinden (vfx-profiles `base`, warrior-5 rampasi). */
@@ -127,11 +137,11 @@ const TOWERS: Readonly<Record<string, TowerSeed>> = {
   "warrior-4": { shape: "gaze", impact: "collapse", colors: [0xcb79ff, 0xcb79ff, 0xdda0ff], accent: 0xff4fd8 },
   "warrior-5": { shape: "orb", impact: "burst", beam: "laser", colors: [0xef4444, 0x60a5fa, 0xe0f2fe], accent: 0xffffff },
   "warrior-6": { shape: "arc", impact: "storm", colors: [0xadf765, 0xadf765, 0xd4ff9a], accent: 0x67e8f9, heavy: true },
-  "zeynep-1": { shape: "lance", impact: "pierce", colors: [0xec4899, 0xec4899, 0xf472b6], accent: 0xfde68a },
-  "zeynep-2": { shape: "orb", impact: "burst", beam: "spot", colors: [0xf9a8d4, 0xf9a8d4, 0xfbcfe8], accent: 0xffffff },
-  "zeynep-3": { shape: "lance", impact: "pierce", colors: [0xf0abfc, 0xf0abfc, 0xfacc15], accent: 0xfde047 },
-  "zeynep-6": { shape: "orb", impact: "burst", beam: "wave", colors: [0xdc466d, 0xdc466d, 0xf05a83], accent: 0xffc2d4 },
-  "zeynep-8": { shape: "orb", impact: "burst", beam: "plain", colors: [0x7c3aed, 0x7c3aed, 0x9f67ff], accent: 0xe9d5ff }
+  "zeynep-1": { shape: "lance", impact: "pierce", colors: [0xec4899, 0xec4899, 0xf472b6], accent: 0xfde68a, dim: 0.65 },
+  "zeynep-2": { shape: "orb", impact: "burst", beam: "spot", colors: [0xf9a8d4, 0xf9a8d4, 0xfbcfe8], accent: 0xffffff, band: true, dim: 0.6 },
+  "zeynep-3": { shape: "lance", impact: "pierce", colors: [0xf0abfc, 0xf0abfc, 0xfacc15], accent: 0xfde047, band: true, dim: 0.6 },
+  "zeynep-6": { shape: "orb", impact: "burst", beam: "wave", colors: [0xdc466d, 0xdc466d, 0xf05a83], accent: 0xffc2d4, dim: 0.75 },
+  "zeynep-8": { shape: "orb", impact: "burst", beam: "plain", colors: [0x7c3aed, 0x7c3aed, 0x9f67ff], accent: 0xe9d5ff, band: true, dim: 0.65 }
 };
 
 /** Profil kimliginin kok kulesi: "zeynep-3-copy", "zeynep-3-kin-wave" -> "zeynep-3". */
@@ -171,6 +181,7 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
   const heavy = seed.heavy ? 1.25 : 1;
   // Kademenin gucu: 1, 1,55, 2,3 (parcacik sayisi ve boy); kademe 3'te yeni katmanlar.
   const power = [1, 1.55, 2.3][index];
+  const dim = seed.dim ?? 1;
   const color = seed.colors[index];
   // Taht'in ikili mizragi kademe 3'te altin; kopyalanan Hiza mizragi da Taht'in.
   const recipe: ShotRecipe = {
@@ -185,7 +196,7 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
     accent: seed.accent,
     // Kademe yukseldikce daha sicak: cekirdek 2,4 -> 3,2 (parliyor, beyazlaniyor);
     // hale ~1 (doygun renk; ACES 1'in cok ustunu beyaza kaciriyor).
-    heat: { core: [2.4, 2.8, 3.2][index], halo: [0.95, 1.05, 1.15][index] },
+    heat: { core: [2.4, 2.8, 3.2][index] * dim, halo: [0.95, 1.05, 1.15][index] * dim },
     // Kucuk, okunur govde (dusmandan belirgin kucuk): mermi 0,1-0,25 hucre, ortasi beyaz-sicak.
     body: {
       length: { tracer: 0.19, packet: 0.15, cell: 0.13, gaze: 0.12, arc: 0.13, lance: 0.24, orb: 0.11 }[seed.shape] * (1 + index * 0.1),
@@ -203,10 +214,10 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
     },
     arc: seed.arc ?? 0,
     // Namlu: sert parlama ve az ama iri kivilcim; duman yok.
-    muzzle: { flash: 0.22 * power * heavy, sparks: Math.round(3 * power), smoke: 0, ring: index >= 1 },
+    muzzle: { flash: 0.22 * power * heavy * dim, sparks: Math.round(3 * power * dim), smoke: 0, ring: index >= 1 },
     hit: {
-      flash: 0.42 * power * heavy,
-      sparks: Math.round(6 * power * heavy),
+      flash: 0.42 * power * heavy * dim,
+      sparks: Math.round(6 * power * heavy * dim),
       speed: 3.6 + index,
       debris: seed.impact === "burst" || seed.impact === "uplink" || seed.impact === "lock" ? Math.round(3 * power) : Math.round(1.5 * power),
       embers: index === 0 ? 0 : Math.round(3 * power),
@@ -216,7 +227,7 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
       rings: index === 2 ? 2 : 1,
       pillar: index === 2,
       scorch: index >= 1 || Boolean(seed.heavy),
-      groundGlow: (1 + index * 0.5) * heavy
+      groundGlow: (1 + index * 0.5) * heavy * dim
     },
     // Lazer: cekirdek 0,045/0,055/0,065, hale 0,16/0,19/0,22 hucre (en azi); titreme az.
     beamLook: {
@@ -226,7 +237,8 @@ export function getShotRecipe(definitionId: string | undefined, tier: number | u
       glowMin: [0.16, 0.19, 0.22][index],
       flicker: [0.05, 0.07, 0.09][index],
       pulses: index
-    }
+    },
+    band: Boolean(seed.band)
   };
   recipeCache.set(cacheKey, recipe);
   return recipe;

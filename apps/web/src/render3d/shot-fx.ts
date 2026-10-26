@@ -66,6 +66,12 @@ export type ShotBeamInput = {
 
 export type ShotFxDeps = {
   cellSize(): number;
+  /**
+   * Nokta bir kulenin ortasinda mi (hucrenin ~1/3'u): isin oradan basliyorsa
+   * namlunun ucundan cikiyor ve kuleyi donduruyor; yoksa (yolda ilerleyen ayna
+   * isini, kuleden uzak hat) kendi yerinden, govde yuksekliginde duz.
+   */
+  sourceAt?(x: number, z: number): boolean;
   /** Arazinin yuksekligi (tepe arti, cukur eksi). */
   groundHeight(x: number, z: number): number;
   /** Ayakta duran piyadenin govde ortasinin yerden yuksekligi. */
@@ -1304,9 +1310,17 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
   function beamStarts(list: readonly ShotBeamInput[]) {
     const groups = new Map<string, ShotBeamInput[]>();
     const starts = new Map<ShotBeamInput, THREE.Vector3>();
+    flatBeams.clear();
     for (const beam of list) {
       if (beam.definitionId === ENEMY_SHOT_BEAM) {
         starts.set(beam, new THREE.Vector3(beam.x1, targetHeight(beam.x1, beam.y1), beam.y1));
+        continue;
+      }
+      // Kuleden baslamayan isin (ilerleyen ayna isininin kuyrugu): yakindaki bir
+      // kulenin namlusuna yapismadan, govde yuksekliginde duz.
+      if (deps.sourceAt && !deps.sourceAt(beam.x1, beam.y1)) {
+        starts.set(beam, new THREE.Vector3(beam.x1, flatHeight(beam.x1, beam.y1), beam.y1));
+        flatBeams.add(beam);
         continue;
       }
       const key = `${Math.round(beam.x1)}|${Math.round(beam.y1)}`;
@@ -1334,6 +1348,14 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
     return starts;
   }
 
+  /** Kuleden baslamayan isinlar (bu karede): butun noktalari govde yuksekliginde duz. */
+  const flatBeams = new Set<ShotBeamInput>();
+
+  /** Zeminin ustunde piyade govdesinin ortasi (yolda ilerleyen isin duz gitsin). */
+  function flatHeight(x: number, z: number) {
+    return deps.groundHeight(x, z) + deps.bodyHeight();
+  }
+
   function beams(list: readonly ShotBeamInput[]) {
     if (!visible) return;
     const c = cell();
@@ -1345,42 +1367,52 @@ export function createShotFx(scene: THREE.Scene, deps: ShotFxDeps): ShotFx {
       const look = recipe.beamLook;
       const bounces = beam.b ?? [];
       const start = starts.get(beam)!.clone();
+      const flat = flatBeams.has(beam);
+      const height = (x: number, z: number) => (flat ? flatHeight(x, z) : targetHeight(x, z));
       const points: THREE.Vector3[] = [start];
-      for (let index = 0; index + 1 < bounces.length; index += 2) points.push(new THREE.Vector3(bounces[index], targetHeight(bounces[index], bounces[index + 1]), bounces[index + 1]));
-      points.push(new THREE.Vector3(beam.x2, targetHeight(beam.x2, beam.y2), beam.y2));
+      for (let index = 0; index + 1 < bounces.length; index += 2) points.push(new THREE.Vector3(bounces[index], height(bounces[index], bounces[index + 1]), bounces[index + 1]));
+      points.push(new THREE.Vector3(beam.x2, height(beam.x2, beam.y2), beam.y2));
       const flicker = 1 + Math.sin(time * 61 + hash01(beam.id) * 9) * look.flicker;
       // Uc katman: genis renkli hale, dolgun renkli govde, ince beyaz-sicak
       // cekirdek (parlama esigini yalnizca o geciyor; kalin olursa rengi siliyor).
       // Ince lazer de en az `coreMin`/`glowMin` hucre. Kin dalgasi genis yumusak
       // bant: sicak cekirdek yok, katmanlar soluk (yoksa koni beyaz bir lekeye donuyor).
       const soft = recipe.beam === "wave";
+      const band = recipe.band;
       const heat = recipe.heat;
-      const coreWidth = Math.min(Math.max(beam.width * look.core, c * look.coreMin), c * 0.2);
-      const glowWidth = Math.min(Math.max(beam.width * look.glow, c * look.glowMin), c * (soft ? 2.4 : 0.9)) * flicker;
-      const bodyWidth = coreWidth + (glowWidth - coreWidth) * 0.45;
+      // Isik hatti: ton sunucunun (2D ile ayni), cekirdegi onun acigi.
+      const tone = band ? beam.color : recipe.color;
+      const coreTone = band ? whiten(beam.color, 0.55) : recipe.core;
+      const coreWidth = band
+        ? Math.min(Math.max(beam.width * 0.1, c * 0.03), c * 0.07)
+        : Math.min(Math.max(beam.width * look.core, c * look.coreMin), c * 0.2);
+      // Isik hattinin halesi isabet bandi kadar (vurdugu alan) ama soluk; govde ince.
+      const glowWidth = band ? beam.width * flicker : Math.min(Math.max(beam.width * look.glow, c * look.glowMin), c * (soft ? 2.4 : 0.9)) * flicker;
+      const bodyWidth = band ? Math.max(coreWidth * 1.8, beam.width * 0.28) : coreWidth + (glowWidth - coreWidth) * 0.45;
       const flow = soft ? 0.7 : recipe.beam === "laser" ? 1 + recipe.tier * 0.3 : 0.5;
       for (let index = 0; index + 1 < points.length; index += 1) {
         const a = points[index];
         const b = points[index + 1];
-        light.spawn({ x: a.x, y: a.y, z: a.z, ex: b.x, ey: b.y, ez: b.z, color: recipe.color, heat: soft ? heat.halo * 0.7 : heat.halo, alpha: soft ? 0.35 : 0.5, size: glowWidth, lifeMs: 0, shape: SHAPE.beam, stretch: flow });
-        light.spawn({ x: a.x, y: a.y, z: a.z, ex: b.x, ey: b.y, ez: b.z, color: recipe.color, heat: soft ? heat.halo * 0.8 : fillHeat(recipe), alpha: soft ? 0.4 : 0.85, size: bodyWidth, lifeMs: 0, shape: SHAPE.beam });
-        light.spawn({ x: a.x, y: a.y, z: a.z, ex: b.x, ey: b.y, ez: b.z, color: recipe.core, heat: soft ? heat.halo * 1.2 : heat.core * 0.85, alpha: soft ? 0.6 : 1, size: coreWidth, lifeMs: 0, shape: SHAPE.beam });
+        light.spawn({ x: a.x, y: a.y, z: a.z, ex: b.x, ey: b.y, ez: b.z, color: tone, heat: soft ? heat.halo * 0.7 : heat.halo, alpha: soft ? 0.35 : band ? 0.22 : 0.5, size: glowWidth, lifeMs: 0, shape: SHAPE.beam, stretch: flow });
+        light.spawn({ x: a.x, y: a.y, z: a.z, ex: b.x, ey: b.y, ez: b.z, color: tone, heat: soft ? heat.halo * 0.8 : fillHeat(recipe), alpha: soft ? 0.4 : band ? 0.6 : 0.85, size: bodyWidth, lifeMs: 0, shape: SHAPE.beam });
+        light.spawn({ x: a.x, y: a.y, z: a.z, ex: b.x, ey: b.y, ez: b.z, color: coreTone, heat: soft ? heat.halo * 1.2 : heat.core * (band ? 0.7 : 0.85), alpha: soft ? 0.6 : band ? 0.85 : 1, size: coreWidth, lifeMs: 0, shape: SHAPE.beam });
         // Akan nabizlar: kademeyle artiyor (Kin'de dalga, lazerde isi).
         const pulses = soft ? 3 + look.pulses : look.pulses;
         for (let k = 0; k < pulses; k += 1) {
           const t = (time * (soft ? 1.4 : 2.6) + k / Math.max(1, pulses)) % 1;
-          light.spawn({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, color: k % 2 ? recipe.accent : recipe.core, heat: soft ? heat.halo : fillHeat(recipe), size: Math.min(glowWidth * (soft ? 0.6 : 0.8), c * 1.2), lifeMs: 0, shape: SHAPE.glow, alpha: soft ? 0.45 : 0.7 });
+          light.spawn({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, color: k % 2 ? recipe.accent : coreTone, heat: soft ? heat.halo : fillHeat(recipe), size: band ? coreWidth * 2.2 : Math.min(glowWidth * (soft ? 0.6 : 0.8), c * 1.2), lifeMs: 0, shape: SHAPE.glow, alpha: soft ? 0.45 : band ? 0.6 : 0.7 });
         }
       }
       const end = points[points.length - 1];
       // Uclar: namluda ve temasta beyaz-sicak parlama (boyu sinirli); Spot'ta
-      // temas havuzu genis; kademe 3'te temas cevresinde donen halka.
-      const pool = recipe.beam === "spot" ? 1.4 : 1;
-      light.spawn({ x: start.x, y: start.y, z: start.z, color: recipe.core, heat: heat.core, size: Math.min(Math.max(coreWidth * 4, c * 0.3), c * 0.6) * flicker, lifeMs: 0, shape: SHAPE.glow, alpha: 0.95 });
-      light.spawn({ x: end.x, y: end.y, z: end.z, color: recipe.color, heat: heat.halo * 1.2, size: Math.min(glowWidth * 1.6, c * 1.1) * pool, lifeMs: 0, shape: SHAPE.glow, alpha: 0.85 });
-      light.spawn({ x: end.x, y: end.y, z: end.z, color: 0xffffff, heat: heat.core, size: Math.min(Math.max(coreWidth * 3.5, c * 0.28), c * 0.6) * flicker, lifeMs: 0, shape: SHAPE.flare, alpha: 0.9, spin: time * 3 });
-      light.spawn({ x: end.x, y: deps.groundHeight(end.x, end.z) + 0.7, z: end.z, color: recipe.color, heat: heat.halo, size: c * (0.7 + recipe.tier * 0.25) * pool, lifeMs: 0, shape: SHAPE.groundGlow, alpha: 0.55 });
-      if (recipe.tier >= 3) light.spawn({ x: end.x, y: deps.groundHeight(end.x, end.z) + 0.8, z: end.z, color: recipe.accent, heat: heat.halo * 1.3, size: c * 0.75, lifeMs: 0, shape: SHAPE.groundRing, alpha: 0.75, spin: time * 2 });
+      // temas havuzu genis; kademe 3'te temas cevresinde donen halka. Isik
+      // hattinin uclari kucuk: hattin ustundeki dusmanlar gorunsun.
+      const pool = recipe.beam === "spot" && !band ? 1.4 : 1;
+      if (!flat) light.spawn({ x: start.x, y: start.y, z: start.z, color: coreTone, heat: heat.core, size: band ? coreWidth * 3 : Math.min(Math.max(coreWidth * 4, c * 0.3), c * 0.6) * flicker, lifeMs: 0, shape: SHAPE.glow, alpha: band ? 0.8 : 0.95 });
+      light.spawn({ x: end.x, y: end.y, z: end.z, color: tone, heat: heat.halo * 1.2, size: band ? Math.min(beam.width * 1.1, c * 0.55) : Math.min(glowWidth * 1.6, c * 1.1) * pool, lifeMs: 0, shape: SHAPE.glow, alpha: band ? 0.6 : 0.85 });
+      light.spawn({ x: end.x, y: end.y, z: end.z, color: 0xffffff, heat: heat.core, size: band ? coreWidth * 3 : Math.min(Math.max(coreWidth * 3.5, c * 0.28), c * 0.6) * flicker, lifeMs: 0, shape: SHAPE.flare, alpha: band ? 0.7 : 0.9, spin: time * 3 });
+      light.spawn({ x: end.x, y: deps.groundHeight(end.x, end.z) + 0.7, z: end.z, color: tone, heat: heat.halo, size: band ? c * 0.35 : c * (0.7 + recipe.tier * 0.25) * pool, lifeMs: 0, shape: SHAPE.groundGlow, alpha: band ? 0.4 : 0.55 });
+      if (recipe.tier >= 3) light.spawn({ x: end.x, y: deps.groundHeight(end.x, end.z) + 0.8, z: end.z, color: recipe.accent, heat: heat.halo * 1.3, size: band ? c * 0.45 : c * 0.75, lifeMs: 0, shape: SHAPE.groundRing, alpha: band ? 0.5 : 0.75, spin: time * 2 });
     }
   }
 
