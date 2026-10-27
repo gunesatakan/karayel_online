@@ -475,7 +475,8 @@ import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } 
 import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../telemetry";
 import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
-import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT } from "../render3d/renderer-mode";
+import { getActiveTowerView, TOWERS_3D_CAMERA_RESET_EVENT, TOWERS_3D_CHANGED_EVENT, towerLayerView } from "../render3d/renderer-mode";
+import { battleSizeBoost, planBattleCamera, type BattlePhase, type CameraPose } from "../render3d/battle-camera";
 import { EDGE_MODEL_IDS, ENEMY_MODEL_SIZE_SCALE, MINE_KINDS, OPERATOR_SIZE_SCALE, STANDEE_SIZE_SCALE, WORKER_SIZE_SCALE, WALL_MODEL_ID, WALL_MODEL_PATH, buildingModelPath, edgeModelTransform, hasTowerModel, towerModelScale } from "../render3d/tower-math";
 import type { Enemy3dInput, EnemyBar, Ghost3dInput, Mine3dInput, Operator3dInput, Tower3dInput, TowerLayer, Upright3dInput, Worker3dInput } from "../render3d/tower-layer";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
@@ -7969,6 +7970,7 @@ export class GameScene extends Phaser.Scene {
     // `renderHud` asagida alt barin durumunu yayinliyor; kadro o durumda.
     this.workerRosterSource = snapshot;
     this.renderSetupPhase(snapshot);
+    this.syncBattleCamera(Boolean(snapshot.setupPhase));
     this.zeynepCommandEffects = snapshot.zeynepCommands;
     this.noteZeynepCommands(snapshot.zeynepCommands, snapshot.bodies);
     let sectionStart = performance.now();
@@ -10914,24 +10916,44 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private angledAirContent = false;
   /** Egik gorunumun iki parmak / fare jestleri (render3d/camera-gestures). */
   private detachCameraGestures?: () => void;
+  /**
+   * Savas kamerasinin son evresi, sunucunun son bildirdigi evre, oyuncunun
+   * kamerayi bu dalgada elle oynatip oynatmadigi ve oynattiysa son acisi (mac boyunca).
+   */
+  private battleCameraPhase?: BattlePhase;
+  private battleSetupPhase = true;
+  private battleCameraTouched = false;
+  private battleCameraPose?: CameraPose;
+  /** 3D govde carpanlari (savas kamerasinda buyuk; render3d/battle-camera `battleSizeBoost`). */
+  private sizeBoost3d = battleSizeBoost(false);
 
   private setupTowerLayer3d() {
     let lastView = getActiveTowerView();
     const apply = () => {
       const view = getActiveTowerView();
+      const layerView = towerLayerView(view);
+      this.sizeBoost3d = battleSizeBoost(view === "battle");
       // Egik gorunume girip cikarken Phaser tuvalinin cozunurlugu degisiyor
       // (rendering.getRenderScaleNow): olcek main.ts'in boyut dinleyicisiyle tazeleniyor.
-      if ((view === "angled") !== (lastView === "angled")) window.dispatchEvent(new Event("resize"));
+      if ((layerView === "angled") !== (towerLayerView(lastView) === "angled")) window.dispatchEvent(new Event("resize"));
+      const leftBattle = lastView === "battle" && view !== "battle";
       lastView = view;
-      if (view === "2d") {
+      if (!layerView) {
         this.disableTowerLayer3d();
         return;
       }
-      if (this.towerLayer3d) this.applyTowerLayerView(view);
-      else void this.enableTowerLayer3d();
+      if (!this.towerLayer3d) {
+        void this.enableTowerLayer3d();
+        return;
+      }
+      this.applyTowerLayerView(layerView);
+      // Savas kamerasindan serbest egige: tepeden aci serbest egimin disinda, acilis acisina.
+      if (leftBattle) this.towerLayer3d.resetCamera();
+      this.battleCameraPhase = undefined;
+      this.syncBattleCamera();
     };
     window.addEventListener(TOWERS_3D_CHANGED_EVENT, apply);
-    const resetCamera = () => this.towerLayer3d?.resetCamera();
+    const resetCamera = () => this.resetTowerCamera();
     window.addEventListener(TOWERS_3D_CAMERA_RESET_EVENT, resetCamera);
     this.game.events.on(Phaser.Core.Events.POST_RENDER, this.renderTowerLayer3d, this);
     this.game.events.on(Phaser.Core.Events.PRE_RENDER, this.prepareAngledFrame, this);
@@ -10957,24 +10979,28 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.towerLayer3dLoading = true;
     try {
       const { attachCameraGestures, createTowerLayer } = await import("../render3d/tower-layer");
-      const view = getActiveTowerView();
-      if (view === "2d" || !this.sys.isActive()) return;
+      const view = towerLayerView(getActiveTowerView());
+      if (!view || !this.sys.isActive()) return;
       const layer = createTowerLayer({ host, source: this.game.canvas, view, resolveUrl: assetUrl, onModelReady: () => this.refreshTowers3d() });
       this.towerLayer3d = layer;
       this.syncTerrain3d();
       // Tek parmak oyunun; iki parmak egik kameranin. Ikinci parmak inince birincinin oyun jesti geri aliniyor.
+      // Oyuncunun elle oynattigi kamera savas kamerasinda sonraki dalgaya tasiniyor.
+      const touched = () => { this.battleCameraTouched = true; };
       this.detachCameraGestures = attachCameraGestures(host, this.game.canvas, {
         active: () => layer.getView() === "angled",
         onStart: (pointerId) => {
           this.dropMapSkillGesturePointer(pointerId);
           this.abandonMapGesture();
         },
-        rotate: (radians, x, y) => layer.rotateCamera(radians, x, y),
-        tilt: (degrees) => layer.tiltCamera(degrees),
-        zoom: (factor, x, y) => layer.zoomCamera(factor, x, y),
-        pan: (fromX, fromY, toX, toY) => layer.panCamera(fromX, fromY, toX, toY)
+        rotate: (radians, x, y) => { touched(); layer.rotateCamera(radians, x, y); },
+        tilt: (degrees) => { touched(); layer.tiltCamera(degrees); },
+        zoom: (factor, x, y) => { touched(); layer.zoomCamera(factor, x, y); },
+        pan: (fromX, fromY, toX, toY) => { touched(); layer.panCamera(fromX, fromY, toX, toY); }
       });
       this.applyTowerLayerView(view);
+      this.battleCameraPhase = undefined;
+      this.syncBattleCamera();
       this.refreshTowers3d();
     } catch (error) {
       // Katman kurulamadi (WebGL, ag): oyun 2D devam ediyor.
@@ -10985,7 +11011,42 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
   }
 
+  /**
+   * Savas kamerasi ("battle" gorunumu, render3d/battle-camera): kurulum
+   * evresinde tahta tepeden, dalga baslayinca egik aciya iniyor, dalga
+   * temizlenince kalkiyor. Evre sunucudan (`setupPhase`); katman yoksa ya da
+   * gorunum baska ise yalnizca evre aklinda tutuluyor.
+   */
+  private syncBattleCamera(setupPhase = this.battleSetupPhase) {
+    this.battleSetupPhase = setupPhase;
+    const layer = this.towerLayer3d;
+    if (!layer || getActiveTowerView() !== "battle") {
+      this.battleCameraPhase = undefined;
+      return;
+    }
+    const plan = planBattleCamera(this.battleCameraPhase, setupPhase, this.battleCameraPose, this.feedback?.reducedMotion ?? false);
+    if (!plan) return;
+    // Dalgadan cikarken oyuncu kamerayi oynattiysa acisi saklaniyor: sonraki
+    // dalga oradan basliyor. Oynatmadiysa her dalga ekrana gore yeniden doluyor.
+    if (this.battleCameraPhase === "wave" && this.battleCameraTouched) this.battleCameraPose = layer.getCameraPose();
+    if (plan.phase === "wave") this.battleCameraTouched = false;
+    this.battleCameraPhase = plan.phase;
+    layer.moveCamera(plan.pose, plan.duration);
+  }
+
+  /** Oyun ici menunun "Kamerayi sifirla"si: savas kamerasinda evrenin acilis pozu, saklanan aci unutuluyor. */
+  private resetTowerCamera() {
+    if (getActiveTowerView() !== "battle") {
+      this.towerLayer3d?.resetCamera();
+      return;
+    }
+    this.battleCameraPose = undefined;
+    this.battleCameraPhase = undefined;
+    this.syncBattleCamera();
+  }
+
   private disableTowerLayer3d() {
+    this.battleCameraPhase = undefined;
     this.applyTowerLayerView("top");
     this.detachCameraGestures?.();
     this.detachCameraGestures = undefined;
@@ -11117,7 +11178,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (!sprite.active || !sprite.visible || sprite.alpha <= 0) continue;
       const frame = sprite.frame;
       // Ezilme alani koruyor: ayak yuksekligi ezilmeyle sallanmasin.
-      const size = Math.sqrt(Math.abs(sprite.displayWidth * sprite.displayHeight)) * STANDEE_SIZE_SCALE;
+      const standeeScale = STANDEE_SIZE_SCALE * this.sizeBoost3d.unit;
+      const size = Math.sqrt(Math.abs(sprite.displayWidth * sprite.displayHeight)) * standeeScale;
       enemies.push({
         id,
         textureKey: sprite.texture.key,
@@ -11125,15 +11187,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         frame: { x: frame.cutX, y: frame.cutY, width: frame.cutWidth, height: frame.cutHeight, sourceWidth: frame.source.width, sourceHeight: frame.source.height },
         x: sprite.x,
         y: sprite.y,
-        width: Math.abs(sprite.displayWidth) * STANDEE_SIZE_SCALE,
-        height: Math.abs(sprite.displayHeight) * STANDEE_SIZE_SCALE,
+        width: Math.abs(sprite.displayWidth) * standeeScale,
+        height: Math.abs(sprite.displayHeight) * standeeScale,
         rotation: sprite.rotation,
         alpha: sprite.alpha,
         tint: sprite.tintTopLeft,
         fill: sprite.tintFill,
         size,
         extraLift: mover.air ? cellSize * ANGLED_AIR_ENEMY_LIFT_CELLS : 0,
-        modelSize: (size / STANDEE_SIZE_SCALE) * ENEMY_MODEL_SIZE_SCALE,
+        modelSize: (size / standeeScale) * ENEMY_MODEL_SIZE_SCALE * this.sizeBoost3d.unit,
         petrify: mover.petrifyRatio,
         shield: mover.shieldRatio,
         slow: mover.slowTier ? { tier: mover.slowTier, color: getZeynepSlowTint(mover.slowTier) } : undefined,
@@ -11172,7 +11234,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         x: sprite.x,
         y: sprite.y,
         rotation: sprite.rotation,
-        size: Math.max(cellSize * 0.34, (this.droneBodyWidths3d.get(drone.id) ?? Math.abs(sprite.displayWidth)) * 1.15) * (drone.advanced ? 1.15 : 1) * WORKER_SIZE_SCALE,
+        size: Math.max(cellSize * 0.34, (this.droneBodyWidths3d.get(drone.id) ?? Math.abs(sprite.displayWidth)) * 1.15) * (drone.advanced ? 1.15 : 1) * WORKER_SIZE_SCALE * this.sizeBoost3d.unit,
         color: look?.color ?? (drone.mode === "attack" ? 0xef4444 : 0x22d3ee),
         role: lookRole ?? "drone",
         carrying: (drone.cargo ?? 0) > 0
@@ -11186,7 +11248,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     for (const body of this.operatorBodyView?.bodies() ?? []) {
       if (!body.image.active) continue;
       operatorImages.set(body.id, body.image);
-      operatorInputs.push({ id: body.id, characterId: body.characterId, x: body.x, y: body.y, rotation: body.rotation, size: body.width || Math.abs(body.image.displayWidth), down: body.down });
+      operatorInputs.push({ id: body.id, characterId: body.characterId, x: body.x, y: body.y, rotation: body.rotation, size: (body.width || Math.abs(body.image.displayWidth)) * this.sizeBoost3d.unit, down: body.down });
     }
     for (const id of layer.syncOperators(operatorInputs)) {
       const image = operatorImages.get(id);
@@ -11254,12 +11316,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const hp = drone.hp ?? maxHp;
       const sprite = this.drones.get(drone.id);
       if (!sprite?.active || !this.workers3dShown.has(drone.id) || maxHp <= 0 || hp >= maxHp) continue;
-      const body = Math.max(cellSize * 0.34, this.droneBodyWidths3d.get(drone.id) ?? Math.abs(sprite.displayWidth)) * WORKER_SIZE_SCALE;
+      const body = Math.max(cellSize * 0.34, this.droneBodyWidths3d.get(drone.id) ?? Math.abs(sprite.displayWidth)) * WORKER_SIZE_SCALE * this.sizeBoost3d.unit;
       bar(`w${drone.id}`, hp / maxHp, sprite.x, sprite.y, Math.max(12, body * 1.4), body * 1.25 + 3);
     }
     for (const body of this.operatorBodyView?.bodies() ?? []) {
       if (!body.image.active || body.down || body.hp >= 0.999) continue;
-      const size = (body.width || Math.abs(body.image.displayWidth)) * OPERATOR_SIZE_SCALE;
+      const size = (body.width || Math.abs(body.image.displayWidth)) * OPERATOR_SIZE_SCALE * this.sizeBoost3d.unit;
       bar(`o${body.id}`, body.hp, body.x, body.y, Math.max(14, size * 1.4), size * 1.1 + 4);
     }
     // Yarali kulenin can cubugu: 3D modelin ustunde (2D cubuk tahtaya yatik kaliyordu).
@@ -11270,7 +11332,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const maxHp = tower.maxHp ?? 0;
       if (maxHp <= 0 || (tower.hp ?? maxHp) >= maxHp) continue;
       const span = getTowerGridSpan(tower.definitionId);
-      bar(`t${id}`, (tower.hp ?? 0) / maxHp, tower.x, tower.y, Math.max(22, cellSize * span * 0.88), cellSize * span * 1.15);
+      bar(`t${id}`, (tower.hp ?? 0) / maxHp, tower.x, tower.y, Math.max(22, cellSize * span * 0.88), cellSize * span * 1.15 * this.sizeBoost3d.towerHeight);
     }
     // Hasatcinin yuk cubugu: can cubugunun ustunde, dusmanin basina bagli.
     for (const [id, mover] of this.enemies) {
@@ -11454,12 +11516,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       if (EDGE_MODEL_IDS.has(tower.definitionId)) {
         const edge = edgeModelTransform(cellSize, TOWER_VISUAL_SCALE, tower.orientation);
-        inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, scale: edge.scale, fixedYaw: edge.yaw });
+        inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, scale: edge.scale, fixedYaw: edge.yaw, heightScale: this.sizeBoost3d.towerHeight });
         continue;
       }
       const span = getTowerGridSpan(tower.definitionId);
       const bodySize = getTowerBodySize(tower.definitionId, cellSize * span);
-      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span), flame: this.getTowerFlame(tower, bodySize), command: this.getTowerCommand3d(tower, bodySize) });
+      inputs.push({ id: tower.id, definitionId: tower.definitionId, tier, level: tower.level, x: tower.x, y: tower.y, facing: tower.facing, scale: towerModelScale(bodySize, span), heightScale: this.sizeBoost3d.towerHeight, flame: this.getTowerFlame(tower, bodySize), command: this.getTowerCommand3d(tower, bodySize) });
     }
     return inputs;
   }
@@ -13454,7 +13516,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.towerLayer3d.enemyDeath(event.enemyId, {
         x: trace.x,
         y: trace.y,
-        size: trace.size,
+        size: trace.size * this.sizeBoost3d.unit,
         color,
         ...getDeathColors(trace.texture, color),
         heading: recentHit?.angle,

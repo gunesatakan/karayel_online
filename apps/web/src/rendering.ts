@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH, getRenderScale } from "@karayel/shared";
-import { getActiveTowerView, getAngledRenderScale } from "./render3d/renderer-mode";
+import { getActiveTowerView, getAngledRenderScale, towerLayerView } from "./render3d/renderer-mode";
 
 /**
  * Cihazin birincil isaretcisi hassas mi (fare, izleme yuzeyi).
@@ -31,7 +31,7 @@ export function getRenderScaleNow() {
   // yerine cihazin orani: kule paneli, dugmeler ve seri afisi 3 kat ekranda
   // 2'de cizilip buyutulunce bulaniyordu; kare yetmezse basamak iniyor.
   // 2D'de (ve tepeden 3D'de) olcek bugunku gibi.
-  if (getActiveTowerView() !== "angled") return scale;
+  if (towerLayerView(getActiveTowerView()) !== "angled") return scale;
   const touchScale = Math.max(1, window.devicePixelRatio || 1);
   return Math.min(finePointer ? scale : touchScale, getAngledRenderScale(finePointer));
 }

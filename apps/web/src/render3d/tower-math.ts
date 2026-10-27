@@ -288,6 +288,38 @@ export function angledPerspectiveFit(view: { width: number; height: number }, as
 }
 
 /**
+ * Egik kameranin "doldur" yakinlasmasi (savas kamerasi). Acilis kesiti
+ * (`angledPerspectiveFit`) Phaser'in dunya gorunumunu sigdiriyor; tahta onun
+ * icinde, ustunde ve altinda arayuz payi var. Kamera tahtanin ortasina
+ * bakarken: tahtanin orta satiri ekranin enine otursun (yakin kenarin
+ * koseleri disari tasabilir), uzak kenar (kule payiyla) ve yakin kenar ust
+ * cubuk ile alt tepsinin arasina sigsin (`edge`, NDC). Dik telefonda alcak
+ * acida tahta ortada ince bir serit kaliyordu; yatay ekranda boy zaten dar.
+ */
+export function angledFillZoom(world: { width: number; height: number }, board: { x: number; z: number; width: number; height: number }, aspect: number, elevationDegrees: number, headroom = 0, maxZoom = 2, edge = 0.86) {
+  const fit = angledPerspectiveFit(world, aspect, elevationDegrees, headroom);
+  const target = { x: board.x + board.width / 2, z: board.z + board.height / 2 };
+  const sides = [board.x, board.x + board.width];
+  const fits = (zoom: number) => {
+    const orbit = { target, yaw: 0, frustum: { sin: fit.sin, cos: fit.cos, halfWidth: fit.halfWidth / zoom, halfHeight: fit.halfHeight / zoom }, distance: fit.distance / zoom };
+    const across = sides.every((x) => Math.abs(angledGroundToScreen(x, target.z, 0, orbit).x) <= 1);
+    const depth = [[board.z, headroom], [board.z + board.height, 0]].every(([z, height]) =>
+      sides.every((x) => Math.abs(angledGroundToScreen(x, z, height, orbit).y) <= edge));
+    return across && depth;
+  };
+  if (!fits(1)) return 1;
+  let low = 1;
+  let high = maxZoom;
+  if (fits(high)) return high;
+  for (let step = 0; step < 24; step += 1) {
+    const mid = (low + high) / 2;
+    if (fits(mid)) low = mid;
+    else high = mid;
+  }
+  return low;
+}
+
+/**
  * Kameranin ekseni. Kameradan hedefe bakis `forward` = -(sin a cos e, sin e,
  * cos a cos e); ekranin sagi `right` = (cos a, 0, -sin a); ekranin yukarisi
  * `up` = right x forward. three.js'in `lookAt`i (yukari +Y) ayni ekseni kuruyor.
@@ -403,9 +435,14 @@ export function recenterWhileRotating(target: { x: number; z: number }, center: 
  * Ayakta duran panonun (dusman) merkez yuksekligi: kameraya donuk pano ekranda
  * tam boyunda; merkezi `boy / 2` ekran yukari ciksin ki alt kenari ayagina
  * (zemindeki noktasina) degsin. Yukseklik ekranda `cos` kadar kisaliyor.
+ * Serbest egimin ustunde (savas kamerasinin tepeden kurulum acisi) kaldirma
+ * 90 dereceye dogru sifira iniyor: tepeden pano 2D'deki gibi yerinde, `1/cos`
+ * sonsuza gitmiyor.
  */
 export function standeeCenterHeight(size: number, elevationDegrees = ANGLED_ELEVATION_DEGREES) {
-  return size / 2 / Math.cos((elevationDegrees * Math.PI) / 180);
+  const limit = ANGLED_ELEVATION_RANGE.max;
+  const fade = elevationDegrees <= limit ? 1 : Math.max(0, (90 - elevationDegrees) / (90 - limit));
+  return (size / 2 / Math.cos((Math.min(elevationDegrees, limit) * Math.PI) / 180)) * fade;
 }
 
 /** Phaser kamerasinin dunya gorunumu -> ortografik kamera merkezi ve kesiti. */

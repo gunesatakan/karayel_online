@@ -1,15 +1,17 @@
 import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START } from "./resolution";
 
 /**
- * Kule gorunumu: "2d" (bugunku oyun), "top" (3D kuleler, tepeden kamera) ya da
- * "angled" (3D kuleler ve egik tahta, render3d/tower-layer.ts).
+ * Kule gorunumu: "2d" (bugunku oyun), "top" (3D kuleler, tepeden kamera),
+ * "angled" (3D kuleler ve egik tahta, render3d/tower-layer.ts) ya da "battle"
+ * (egik tahta, kamerayi evre yonetiyor: kurulumda tepeden, dalgada egik;
+ * render3d/battle-camera.ts).
  *
  * Varsayilan 2D. 3D icin uc sart birden: derleme izin veriyor (`VITE_TOWERS_3D`
  * "off" degil -- itch paketi kapatiyor, tools/build-itch.mjs), oyuncu secmis
  * (oyun ici menu ya da `?towers3d=on|angled|off`) ve cihazda WebGL2 var. Biri
  * tutmazsa oyun bugunku 2D haliyle calisiyor.
  */
-export type TowerView = "2d" | "top" | "angled";
+export type TowerView = "2d" | "top" | "angled" | "battle";
 
 const STORAGE_KEY = "karayel_towers_3d";
 export const TOWERS_3D_CHANGED_EVENT = "karayel:towers-3d";
@@ -56,8 +58,15 @@ export function supportsTowers3d() {
 export function parseTowerView(value: string | null | undefined): TowerView | undefined {
   if (value === "on" || value === "top") return "top";
   if (value === "angled") return "angled";
+  if (value === "battle") return "battle";
   if (value === "off" || value === "2d") return "2d";
   return undefined;
+}
+
+/** 3D katmanin kipi; 2D'de yok. Savas kamerasi egik katmanla ciziliyor. */
+export function towerLayerView(view: TowerView): "top" | "angled" | undefined {
+  if (view === "2d") return undefined;
+  return view === "top" ? "top" : "angled";
 }
 
 /** Depolama kapaliyken (itch iframe'i) oturumun tercihi. */

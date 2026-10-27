@@ -108,6 +108,7 @@ import { describeServerError, localizeServerText } from "./server-text";
 import { dismissTutorialOffer, isFreshPlayer, readTutorialOfferDismissed } from "./tutorial";
 import { CREDIT_GROUPS, CREDITS_DEVELOPER, creditLinkLabel } from "./credits";
 import { installMenuMusic, readMenuMusicMuted } from "./menu-music";
+import { canShowcaseOperator, mountShowcases, operatorShowcaseKey } from "./showcase-mount";
 import {
   getDefaultOperator,
   getLockedOperatorNote,
@@ -306,6 +307,8 @@ export function setupMenuUi(game: Phaser.Game) {
       progressState
     );
     bindUi(view);
+    // Operatorun 3D vitrini: 2D muhur hemen, model inince ustune (showcase-mount).
+    mountShowcases(shellHost);
   };
 
   /**
@@ -1043,6 +1046,20 @@ function renderBackdrop() {
   `;
 }
 
+/**
+ * Operatorun 3D vitrini (modeli varsa ve cihaz destekliyorsa; showcase-mount).
+ * Ana kart: model inene kadar muhur, model inince muhur sonuyor ve model kendi
+ * yer halkasinda donuyor. Dosya: genis sahne, model inene kadar operatorun 2D
+ * resmi. Desteklenmiyorsa ana kartta duz muhur, dosyada sahne yok.
+ */
+function renderOperatorStage(character: CharacterDefinition, variant: "hero" | "dossier") {
+  const sigil = renderSigil(character.id, initials(character.displayName));
+  if (!canShowcaseOperator(character.id)) return variant === "hero" ? sigil : "";
+  const art = characterArt[character.id];
+  const still = art ? `<img class="operator-stage__still" src="${art.src}" alt="" decoding="async" />` : "";
+  return `<div class="operator-stage operator-stage--${variant}" data-showcase="${operatorShowcaseKey(character.id)}">${variant === "hero" ? sigil : still}</div>`;
+}
+
 function renderSigil(characterId: CharacterId, mark: string) {
   const art = characterArt[characterId];
   return `
@@ -1147,7 +1164,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
       </section>` : ""}
 
       <section class="hero frame" style="--accent: ${classColor[selectedCharacter.id]}">
-        ${renderSigil(selectedCharacter.id, initials(selectedCharacter.displayName))}
+        ${renderOperatorStage(selectedCharacter, "hero")}
         <div class="hero__copy">
           <p class="kicker">${t("menu.home.selectedOperator")}</p>
           <h2>${operatorNameHtml(selectedCharacter.displayName)}</h2>
@@ -1988,6 +2005,7 @@ function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem
 
       <section class="dossier-hero frame">
         ${renderSigil(character.id, initials(character.displayName))}
+        ${renderOperatorStage(character, "dossier")}
         <div class="dossier-copy">
           <strong>${escapeHtml(character.role)}</strong>
           <p>${escapeHtml(character.summary)}</p>

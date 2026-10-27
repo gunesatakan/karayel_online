@@ -3271,7 +3271,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       + (supportsTowers3d()
         ? `<p class="game-hud__popup-section">${escapeHudText(t("hud.view.title"))}</p>`
           + `<label>${escapeHudText(t("hud.view.towers3d"))} <select data-tower-view aria-describedby="game-hud-towers3d-note">`
-          + (["2d", "top", "angled"] as const).map((view) => `<option value="${view}"${readTowerViewPreference() === view ? " selected" : ""}>${escapeHudText(t(`hud.view.option.${view}`))}</option>`).join("")
+          + (["2d", "top", "angled", "battle"] as const).map((view) => `<option value="${view}"${readTowerViewPreference() === view ? " selected" : ""}>${escapeHudText(t(`hud.view.option.${view}`))}</option>`).join("")
           + `</select></label>`
           + `<p id="game-hud-towers3d-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("hud.view.towers3dNote"))}</p>`
           + `<p class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("hud.view.cameraHelp"))}</p>`

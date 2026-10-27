@@ -33,6 +33,7 @@ import {
   ANGLED_FOV_DEGREES,
   ANGLED_ZOOM_RANGE,
   angledGroundToScreen,
+  angledFillZoom,
   angledPerspectiveFit,
   angledScreenToGround,
   clampOrbit,
@@ -66,6 +67,7 @@ import { createTierFx } from "./tower-tiers";
 import { setAngledRenderScale } from "./renderer-mode";
 import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START, createQualityGovernor, stepQualityGovernor } from "./resolution";
 import { createZoneHeight, getZoneLayout, terrainShade, type TerrainInput } from "./terrain";
+import { blendPose, easeInOutCubic, type CameraPose, type ResolvedPose } from "./battle-camera";
 import { PLINTH_HEIGHT_CELLS, TARGET_LIGHT, createBloom, createBoardSlab, createPlinthFactory, createStarfield, createTileBoard, createZoneBlocks, targetStyleAccent, tuneTargetMaterials, type TileBoard } from "./target-look";
 
 export type Tower3dInput = {
@@ -389,6 +391,12 @@ export type TowerLayer = {
   panCamera(fromX: number, fromY: number, toX: number, toY: number): void;
   resetCamera(): void;
   getCameraState(): OrbitState;
+  /**
+   * Savas kamerasi (render3d/battle-camera): kamerayi poza `durationMs`te
+   * yumusakca goturuyor (0'da aninda). Oyuncunun iki parmak jesti gecisi kesiyor.
+   */
+  moveCamera(pose: CameraPose, durationMs: number): void;
+  getCameraPose(): CameraPose;
   /**
    * Egik gorunumde, Phaser ana kamerasi zemini cizdikten hemen sonra: tuval o
    * an tahtanin dokusuna aliniyor. Ardindan cizilen (efekt kamerasi) ayri duzleme.
@@ -1382,7 +1390,13 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
       const scale = grows ? tower.scale * ((MODEL_BODY_DIAMETER_CELLS * instance.span) / fit) * towerLevelGrowth(tower.level ?? 1) : tower.scale;
       const base = onPlinth ? PLINTH_HEIGHT_CELLS * cell : 0;
       instance.scale = scale;
-      instance.heightScale = tower.heightScale ?? 1;
+      const heightScale = tower.heightScale ?? 1;
+      // Nisangah kurulurken namlunun olcegini dengeliyor: boy carpani degisirse yeniden kurulsun.
+      if (instance.sight && heightScale !== instance.heightScale) {
+        instance.sight.removeFromParent();
+        instance.sight = undefined;
+      }
+      instance.heightScale = heightScale;
       instance.root.position.set(tower.x, base, tower.y);
       instance.flame = tower.flame ? { ...tower.flame, x: tower.x, z: tower.y, y: base } : undefined;
       instance.command = tower.command ? { ...tower.command, x: tower.x, z: tower.y, y: base, height: size ? size.height * scale * (tower.heightScale ?? 1) : cell } : undefined;
@@ -1398,7 +1412,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
         if (known && tower.level > known.level && view === "angled") {
           const big = tower.tier > known.tier;
           instance.pop = { at: performance.now(), big };
-          if (instance.accent !== undefined) tierFx.celebrate(tower.x, tower.y, base, (size?.height ?? 1) * scale, cell, Math.max(1, instance.span), instance.accent, big);
+          if (instance.accent !== undefined) tierFx.celebrate(tower.x, tower.y, base, (size?.height ?? 1) * scale * heightScale, cell, Math.max(1, instance.span), instance.accent, big);
         }
         levels.set(tower.id, { level: tower.level, tier: tower.tier });
       }
@@ -2195,7 +2209,52 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     if (anchor && moved && after) setTarget({ x: after.target.x + anchor.x - moved.x, z: after.target.z + anchor.z - moved.z });
   }
 
+  /** Savas kamerasinin gecisi: baslangic ve hedef poz (hedef noktasi cozulmus). */
+  let cameraMove: { from: ResolvedPose; to: ResolvedPose; centered: boolean; start: number; duration: number } | undefined;
+
+  function moveCamera(pose: CameraPose, durationMs: number) {
+    const center = lastWorld ? mapCenter(lastWorld) : undefined;
+    let zoom = pose.zoom;
+    let target = pose.target;
+    // Doldur: kamera tahtanin ortasina, yakinlasma ekranin oranina gore.
+    if (pose.fill && lastWorld && lastRect && terrain) {
+      const board = { x: terrain.originX, z: terrain.originY, width: terrain.cols * terrain.cellSize, height: terrain.rows * terrain.cellSize };
+      zoom = angledFillZoom(lastWorld, board, lastRect.width / Math.max(1, lastRect.height), pose.elevation, TOWER_HEADROOM, ANGLED_ZOOM_RANGE.max);
+      target = { x: board.x + board.width / 2, z: board.z + board.height / 2 };
+    }
+    if (durationMs <= 0 || !center) {
+      cameraMove = undefined;
+      orbit.yaw = pose.yaw;
+      orbit.elevation = pose.elevation;
+      orbit.zoom = zoom;
+      orbit.target = target && { ...target };
+      return;
+    }
+    cameraMove = {
+      from: { yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom, target: orbit.target ?? center },
+      to: { yaw: pose.yaw, elevation: pose.elevation, zoom, target: target ?? center },
+      // Hedefsiz poz haritanin merkezi: gecis bitince yine "merkez" (boyut degisirse ortada kalsin).
+      centered: !target,
+      start: performance.now(),
+      duration: durationMs
+    };
+  }
+
+  function stepCameraMove(now: number) {
+    if (!cameraMove) return;
+    const t = Math.min(1, (now - cameraMove.start) / cameraMove.duration);
+    const pose = blendPose(cameraMove.from, cameraMove.to, easeInOutCubic(t));
+    orbit.yaw = pose.yaw;
+    orbit.elevation = pose.elevation;
+    orbit.zoom = pose.zoom;
+    orbit.target = pose.target;
+    if (t < 1) return;
+    if (cameraMove.centered) orbit.target = undefined;
+    cameraMove = undefined;
+  }
+
   function rotateCamera(radians: number, _clientX: number, _clientY: number) {
+    cameraMove = undefined;
     // Donus her zaman haritanin merkezi cevresinde (parmaklarin altinda degil):
     // birkac hareketten sonra da harita ortada toplanabiliyor.
     const current = orbitView();
@@ -2209,14 +2268,18 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   }
 
   function tiltCamera(degrees: number) {
-    orbit.elevation = clampOrbit(orbit.elevation + degrees, ANGLED_ELEVATION_RANGE);
+    cameraMove = undefined;
+    // Savas kamerasinin tepeden acisi serbest egimin ustunde: oradan egerken siniri asagi cekmiyor.
+    orbit.elevation = clampOrbit(orbit.elevation + degrees, { min: ANGLED_ELEVATION_RANGE.min, max: Math.max(ANGLED_ELEVATION_RANGE.max, orbit.elevation) });
   }
 
   function zoomCamera(factor: number, clientX: number, clientY: number) {
+    cameraMove = undefined;
     keepAnchored(clientX, clientY, () => { orbit.zoom = clampOrbit(orbit.zoom * factor, ANGLED_ZOOM_RANGE); });
   }
 
   function panCamera(fromX: number, fromY: number, toX: number, toY: number) {
+    cameraMove = undefined;
     const current = orbitView();
     if (!current) return;
     const from = groundAt(fromX, fromY, current);
@@ -2225,6 +2288,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
   }
 
   function resetCamera() {
+    cameraMove = undefined;
     orbit.yaw = 0;
     orbit.elevation = ANGLED_ELEVATION_DEGREES;
     orbit.zoom = 1;
@@ -2322,6 +2386,7 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     boardCaptured = false;
     airCaptured = false;
 
+    stepCameraMove(performance.now());
     const current = orbitView();
     if (!current?.distance) return;
     const distance = current.distance;
@@ -2462,6 +2527,8 @@ export function createTowerLayer(options: { host: HTMLElement; source: HTMLCanva
     overlaySurface: (name, mode, additive) => overlay.surface(name, mode, additive),
     rotateCamera, tiltCamera, zoomCamera, panCamera, resetCamera, setTerrain, captureAir, syncUprights, syncMines, syncWorkers, syncOperators, hasGround: groundReady,
     getCameraState: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom }),
+    moveCamera,
+    getCameraPose: () => ({ yaw: orbit.yaw, elevation: orbit.elevation, zoom: orbit.zoom, target: orbit.target && { ...orbit.target } }),
     shots,
     shotsActive: () => !disposed && view === "angled",
     setAirBodySize: (size) => { airBodySize = size; },

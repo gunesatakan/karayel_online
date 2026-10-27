@@ -4,10 +4,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   ANGLED_ELEVATION_DEGREES,
   ANGLED_ELEVATION_RANGE,
   ANGLED_FOV_DEGREES,
+  angledFillZoom,
   angledFrustum,
   angledPerspectiveFit,
   classifyTwoFingerGesture,
@@ -19,6 +21,7 @@ import {
   angledScreenToGround,
   EDGE_MODEL_IDS,
   ENEMY_MODEL_KEYS,
+  ENEMY_MODEL_SIZE_SCALE,
   enemyModelPath,
   enemyModelYaw,
   BUILDING_MODEL_KINDS,
@@ -43,8 +46,10 @@ import {
 import { ZONE_BLOCK_CELLS, createZoneHeight, getZoneLayout } from "../src/render3d/terrain.ts";
 import { getBuildZoneReliefs } from "@karayel/shared";
 import { SHOT_TOWER_IDS, getShotRecipe, shotTowerId } from "../src/render3d/shot-recipes.ts";
+import { BATTLE_DESCEND_MS, BATTLE_POSE, BATTLE_RISE_MS, BATTLE_TOWER_HEIGHT_SCALE, BATTLE_UNIT_SCALE, SETUP_POSE, battleSizeBoost, blendPose, easeInOutCubic, planBattleCamera } from "../src/render3d/battle-camera.ts";
 import { DESKTOP_QUALITY, DESKTOP_QUALITY_START, TOUCH_QUALITY, TOUCH_QUALITY_START, createQualityGovernor, stepQualityGovernor } from "../src/render3d/resolution.ts";
 import { findForbidden, readDeployPaths } from "../../../tools/check-client-only.mjs";
+import { build } from "esbuild";
 import { TOWER_MODELS_DIR } from "../../../tools/build-itch.mjs";
 
 const publicDir = new URL("../public/", import.meta.url);
@@ -484,4 +489,168 @@ test("itch paketi 3D'yi derlemede kapatiyor ve modelleri almiyor", () => {
   const script = readFileSync(new URL("../../../tools/build-itch.mjs", import.meta.url), "utf8");
   assert.match(script, /env\.VITE_TOWERS_3D = "off"/);
   assert.match(script, /startsWith\(TOWER_MODELS_DIR\)/);
+});
+
+/**
+ * Istemci modulunu node'da calistirmak: esbuild tek dosyaya paketliyor,
+ * `import.meta.env` verilen derleme ortami. Dinamik importlar pakete girmiyor
+ * (vitrinin three.js'li yarisi); metafile statik bagimlilik agaci.
+ */
+async function bundleWebModule(entry, env) {
+  const result = await build({
+    entryPoints: [fileURLToPath(new URL(entry, import.meta.url))],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    write: false,
+    metafile: true,
+    logLevel: "silent",
+    define: { "import.meta.env": JSON.stringify(env) },
+    plugins: [{
+      name: "dynamic-external",
+      setup(builder) {
+        builder.onResolve({ filter: /.*/ }, (args) => (args.kind === "dynamic-import" ? { path: args.path, external: true } : undefined));
+      }
+    }]
+  });
+  const text = result.outputFiles[0].text;
+  return { text, inputs: Object.keys(result.metafile.inputs), load: () => import(`data:text/javascript;base64,${Buffer.from(text).toString("base64")}`) };
+}
+
+test("vitrin baglayicisi three.js icermiyor: model gorucusu yalnizca dinamik importla iniyor", async () => {
+  const { text, inputs } = await bundleWebModule("../src/showcase-mount.ts", { VITE_TOWERS_3D: "on", BASE_URL: "/" });
+  assert.ok(inputs.every((input) => !/three/.test(input)), inputs.join(", "));
+  assert.ok(!inputs.some((input) => input.endsWith("render3d/showcase.ts")), "showcase.ts statik agacta");
+  assert.match(text, /import\("\.\/render3d\/showcase"\)/);
+  // Menu yalnizca baglayiciyi aliyor; gorucuyu dogrudan almiyor.
+  const menu = readFileSync(new URL("../src/menu-ui.ts", import.meta.url), "utf8");
+  assert.match(menu, /from "\.\/showcase-mount"/);
+  assert.doesNotMatch(menu, /from "\.\/render3d\/showcase"/);
+});
+
+test("vitrin: yalnizca modeli olan operator; 3D kapali derlemede (itch) hic baglanmiyor, 2D kaliyor", async () => {
+  const off = await (await bundleWebModule("../src/showcase-mount.ts", { VITE_TOWERS_3D: "off", BASE_URL: "./" })).load();
+  assert.equal(off.canShowcaseOperator("zeynep"), false);
+  // Kapaliyken sayfayi taramiyor bile.
+  off.mountShowcases({ querySelectorAll() { throw new Error("taradi"); } });
+
+  // Acik derleme, WebGL2'li cihaz: iki operatorun modeli var, digerleri muhurde kaliyor.
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => ({ getContext: (type) => (type === "webgl2" ? {} : null) }) };
+  try {
+    const on = await (await bundleWebModule("../src/showcase-mount.ts", { VITE_TOWERS_3D: "on", BASE_URL: "./" })).load();
+    assert.equal(on.canShowcaseOperator("zeynep"), true);
+    assert.equal(on.canShowcaseOperator("warrior"), true);
+    assert.equal(on.canShowcaseOperator("archer"), false);
+    assert.equal(on.operatorShowcaseKey("warrior"), "operator:warrior");
+    assert.deepEqual(on.showcaseSpecFor("operator:zeynep", " #EC4899"), {
+      url: "./models3d/operator-zeynep.glb",
+      accent: 0xec4899,
+      yawOffset: OPERATOR_MODEL_YAW_OFFSET,
+      float: true
+    });
+    assert.equal(on.showcaseSpecFor("operator:archer", "#38bdf8"), undefined);
+    assert.equal(on.showcaseSpecFor("tower:warrior-1", "#22c55e"), undefined);
+    assert.equal(on.parseAccent("rgb(1, 2, 3)"), 0x94a3b8);
+    assert.equal(on.parseAccent(undefined), 0x94a3b8);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("savas kamerasi: kurulumda tepeden, dalgada egik; acilis ve hareket azaltma gecissiz, evre degismezse karar yok", () => {
+  assert.deepEqual(planBattleCamera(undefined, true, undefined, false), { phase: "setup", pose: SETUP_POSE, duration: 0 });
+  assert.deepEqual(planBattleCamera("setup", false, undefined, false), { phase: "wave", pose: BATTLE_POSE, duration: BATTLE_DESCEND_MS });
+  assert.deepEqual(planBattleCamera("wave", true, undefined, false), { phase: "setup", pose: SETUP_POSE, duration: BATTLE_RISE_MS });
+  assert.equal(planBattleCamera("setup", true, undefined, false), undefined);
+  assert.equal(planBattleCamera("wave", false, undefined, false), undefined);
+  // Oyuncunun dalgadaki acisi sonraki dalgada; kurulum yine tepeden.
+  const mine = { yaw: 0.8, elevation: 30, zoom: 1.6 };
+  assert.equal(planBattleCamera("setup", false, mine, false).pose, mine);
+  assert.equal(planBattleCamera("wave", true, mine, false).pose, SETUP_POSE);
+  assert.equal(planBattleCamera("setup", false, undefined, true).duration, 0);
+  // Tepeden aci serbest egimin ustunde ama tam dik degil (three.js lookAt); dalga serbest egimin icinde.
+  assert.ok(SETUP_POSE.elevation > ANGLED_ELEVATION_RANGE.max && SETUP_POSE.elevation < 90);
+  assert.ok(BATTLE_POSE.elevation >= ANGLED_ELEVATION_RANGE.min && BATTLE_POSE.elevation <= ANGLED_ELEVATION_RANGE.max);
+  // Inis ilk dusmandan (~950 ms) cok sonra bitmiyor.
+  assert.ok(BATTLE_DESCEND_MS <= 1500);
+});
+
+test("savas kamerasi gecisi: uclarda tam poz, donus en kisa yoldan, yumusak ve tekduze artan", () => {
+  const from = { yaw: 6.2, elevation: 86, zoom: 1, target: { x: 0, z: 0 } };
+  const to = { yaw: 0, elevation: 40, zoom: 1.2, target: { x: 10, z: 20 } };
+  assert.deepEqual(blendPose(from, to, 0), from);
+  const end = blendPose(from, to, 1);
+  assert.ok(Math.abs(Math.cos(end.yaw) - 1) < 1e-9 && Math.abs(Math.sin(end.yaw)) < 1e-9, `${end.yaw}`);
+  assert.equal(end.elevation, 40);
+  assert.deepEqual(end.target, to.target);
+  // 6,2 rad'dan 0'a ~0,08 rad ileri (tam tur geri degil).
+  assert.ok(Math.abs(blendPose(from, to, 0.5).yaw - (6.2 + (Math.PI * 2 - 6.2) / 2)) < 1e-9);
+  assert.equal(easeInOutCubic(0), 0);
+  assert.equal(easeInOutCubic(1), 1);
+  assert.equal(easeInOutCubic(0.5), 0.5);
+  let previous = 0;
+  for (let t = 0.05; t <= 1; t += 0.05) {
+    assert.ok(easeInOutCubic(t) >= previous);
+    previous = easeInOutCubic(t);
+  }
+  assert.ok(easeInOutCubic(0.1) < 0.1, "yavas basliyor");
+});
+
+test("tepeye yakin acida pano kaldirmasi 90 derecede sifira iniyor; serbest egimde degismiyor", () => {
+  for (const elevation of [15, 45, 70]) {
+    assert.ok(Math.abs(standeeCenterHeight(20, elevation) - 10 / Math.cos((elevation * Math.PI) / 180)) < 1e-9);
+  }
+  const at70 = standeeCenterHeight(20, 70);
+  assert.ok(standeeCenterHeight(20, 80) < at70 && Number.isFinite(standeeCenterHeight(20, 86)));
+  assert.ok(standeeCenterHeight(20, 86) < standeeCenterHeight(20, 80));
+  assert.equal(standeeCenterHeight(20, 90), 0);
+});
+
+test("savas kamerasinin doldur yakinlasmasi: dik telefonda orta satir eni dolduruyor, yatayda tahta boyu sigiyor", () => {
+  // Dunya gorunumu tahtadan uzun: ustunde ve altinda arayuz payi (Phaser kamerasi).
+  const world = { width: 408, height: 883 };
+  const board = { x: 0, z: 86, width: 408, height: 612 };
+  const viewAt = (aspect, elevation, zoom) => {
+    const fit = angledPerspectiveFit(world, aspect, elevation, 70);
+    return { target: { x: 204, z: 392 }, yaw: 0, frustum: { sin: fit.sin, cos: fit.cos, halfWidth: fit.halfWidth / zoom, halfHeight: fit.halfHeight / zoom }, distance: fit.distance / zoom };
+  };
+  const portrait = 375 / 812;
+  const phoneZoom = angledFillZoom(world, board, portrait, 40, 70, 5);
+  assert.ok(phoneZoom > 1.1, `${phoneZoom}`);
+  const phone = viewAt(portrait, 40, phoneZoom);
+  assert.ok(Math.abs(angledGroundToScreen(408, 392, 0, phone).x - 1) < 1e-4, "orta satir enine oturuyor");
+  for (const [z, height] of [[86, 70], [698, 0]]) {
+    assert.ok(Math.abs(angledGroundToScreen(0, z, height, phone).y) <= 0.86 + 1e-9, `boy ${z}`);
+  }
+  const landscape = 1024 / 768;
+  const deskZoom = angledFillZoom(world, board, landscape, 40, 70, 5);
+  const desk = viewAt(landscape, 40, deskZoom);
+  assert.ok(Math.abs(angledGroundToScreen(408, 392, 0, desk).x) <= 1 + 1e-9);
+  const reach = Math.max(...[[86, 70], [698, 0]].map(([z, height]) => Math.abs(angledGroundToScreen(0, z, height, desk).y)));
+  assert.ok(Math.abs(reach - 0.86) < 1e-4, `yatayda boy sinirliyor: ${reach}`);
+  // Hicbir ekranda acilis kesitinden uzak degil.
+  assert.ok(angledFillZoom(world, board, 3, 40, 70, 5) >= 1);
+});
+
+test("savas kamerasi ayri gorunum secenegi: egik katmanla ciziliyor, kaydi okunuyor", async () => {
+  const { parseTowerView, towerLayerView } = await (await bundleWebModule("../src/render3d/renderer-mode.ts", { VITE_TOWERS_3D: "on", BASE_URL: "/" })).load();
+  assert.equal(parseTowerView("battle"), "battle");
+  assert.equal(towerLayerView("battle"), "angled");
+  assert.equal(towerLayerView("angled"), "angled");
+  assert.equal(towerLayerView("top"), "top");
+  assert.equal(towerLayerView("2d"), undefined);
+  const controls = readFileSync(new URL("../src/game-control-ui.ts", import.meta.url), "utf8");
+  assert.match(controls, /\["2d", "top", "angled", "battle"\]/);
+  const locales = readFileSync(new URL("../src/locales/areas/controls.ts", import.meta.url), "utf8");
+  assert.equal(locales.match(/"hud\.view\.option\.battle":/g)?.length, 2);
+});
+
+test("savas kamerasinda govdeler buyuk: birimler 1,5 kat, kuleler yalnizca boyda; diger gorunumler aynen", () => {
+  assert.deepEqual(battleSizeBoost(false), { unit: 1, towerHeight: 1 });
+  assert.deepEqual(battleSizeBoost(true), { unit: BATTLE_UNIT_SCALE, towerHeight: BATTLE_TOWER_HEIGHT_SCALE });
+  assert.equal(BATTLE_UNIT_SCALE, 1.5);
+  assert.equal(BATTLE_TOWER_HEIGHT_SCALE, 1.3);
+  // Buyuk dusman modeli hala 2D resminin icinde (isabet govdesi sunucuda, degismiyor).
+  assert.ok(ENEMY_MODEL_SIZE_SCALE * BATTLE_UNIT_SCALE <= 1, `${ENEMY_MODEL_SIZE_SCALE * BATTLE_UNIT_SCALE}`);
 });
