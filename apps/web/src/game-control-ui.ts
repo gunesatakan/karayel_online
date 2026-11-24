@@ -1497,10 +1497,11 @@ export function setupGameControlUi(game: Phaser.Game) {
     });
 
     const shown: Entry[] = [];
-    const addGroup = (label: string, entries: Entry[], emptyText?: string) => {
+    const addGroup = (label: string, entries: Entry[], emptyText?: string, items = false) => {
       if (entries.length === 0 && !emptyText) return;
       const group = document.createElement("div");
-      group.className = "tower-effects__group";
+      // Esya grubu iki kat yaziyla (bkz. style.css `tower-effects__group--items`).
+      group.className = items ? "tower-effects__group tower-effects__group--items" : "tower-effects__group";
       const header = document.createElement("span");
       header.className = "tower-items__header";
       header.textContent = label;
@@ -1538,13 +1539,14 @@ export function setupGameControlUi(game: Phaser.Game) {
     addGroup(
       capacity > 0 ? t("controls.towerEffects.itemsCapacity", { count: items.length, capacity }) : t("controls.towerEffects.items"),
       itemEntries,
-      t("controls.towerEffects.noItems")
+      t("controls.towerEffects.noItems"),
+      true
     );
 
     const focused = shown.find((entry) => entry.key === towerEffectFocus);
     if (focused) {
       const detail = document.createElement("p");
-      detail.className = "tower-effects__detail";
+      detail.className = focused.key.startsWith("item:") ? "tower-effects__detail tower-effects__detail--item" : "tower-effects__detail";
       detail.textContent = `${focused.name}: ${focused.description}`;
       section.append(detail);
     }

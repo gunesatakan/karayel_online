@@ -7538,6 +7538,26 @@ button.wave-report:active { transform: scale(0.99); }
   color: #f8fafc;
 }
 
+/*
+ * Esya yazilari iki kat (sahibin istegi 2026-11-24; magaza ve envanterle
+ * ayni): cip 12 -> 24 px, bos yazisi 10 -> 20, aciklama 11 -> 22. Uzun ad
+ * satira sigmazsa kiriliyor, cip panelden tasmiyor. Kart cipleri kompakt.
+ */
+.game-controls .tower-sheet .tower-effects__group--items button.tower-effects__chip {
+  max-width: 100%;
+  padding: 4px 12px;
+  font-size: 24px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.tower-sheet .tower-effects__group--items .tower-items__empty { font-size: 20px; }
+
+.tower-sheet .tower-effects__detail--item {
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+
 /* Ayarlar: etiketli satirlar. */
 .ts-control {
   display: grid;

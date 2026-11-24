@@ -38,6 +38,24 @@ test("magaza karti taban dugme kuralindan ayrilmis: alt alta, sola yasli, ustund
   assert.doesNotMatch(css, /\.gold-shop__offers \{[^}]*grid-auto-rows: minmax/, "satir kutuya bolunuyor");
 });
 
+test("kule panelindeki esya cipleri iki kat; uzun ad kiriliyor, kart cipleri kompakt", () => {
+  const ui = readFileSync(new URL("../apps/web/src/game-control-ui.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const CHIP = ".game-controls .tower-sheet .tower-effects__group--items button.tower-effects__chip";
+  // Eski boylar: cip 12, bos yazisi 10, aciklama 11.
+  assert.equal(fontSize(css, CHIP), 24);
+  assert.equal(fontSize(css, ".tower-sheet .tower-effects__group--items .tower-items__empty"), 20);
+  assert.equal(fontSize(css, ".tower-sheet .tower-effects__detail--item"), 22);
+  const chip = css.match(new RegExp(`${escape(CHIP)} \\{([^}]*)\\}`))?.[1] ?? "";
+  assert.match(chip, /max-width: 100%;/, "cip panelden tasabilir");
+  assert.match(chip, /overflow-wrap: anywhere;/, "uzun ad kirilmiyor");
+  // Kart cipleri ayni boyda kaliyor.
+  assert.match(css, /\.game-controls \.tower-sheet button\.tower-effects__chip \{[^}]*font: 600 12px\/1\.1 Rajdhani/);
+  // Isaretler yalnizca esya grubunda ve esyanin aciklamasinda.
+  assert.match(ui, /addGroup\(\n\s+capacity > 0 \? t\("controls\.towerEffects\.itemsCapacity"[^\n]*\n\s+itemEntries,\n\s+t\("controls\.towerEffects\.noItems"\),\n\s+true\n\s+\);/);
+  assert.match(ui, /group\.className = items \? "tower-effects__group tower-effects__group--items" : "tower-effects__group";/);
+  assert.match(ui, /detail\.className = focused\.key\.startsWith\("item:"\) \? "tower-effects__detail tower-effects__detail--item" : "tower-effects__detail";/);
+});
+
 test("esya yazilari iki kati: magaza (genis ve dar ekran) ve envanter", () => {
   // Eski boylar: genis 9/14/11/14, dar 8/12/9/12, envanter 9/12/10/12.
   assert.deepEqual(["span", "strong", "small", "b"].map((part) => fontSize(css, `${SHOP} > ${part}`)), [18, 28, 22, 28]);

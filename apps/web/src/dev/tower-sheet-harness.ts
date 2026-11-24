@@ -13,7 +13,7 @@
  * `expanded=1|0` (panelin boyunu yerel depoya yazar).
  */
 import type Phaser from "phaser";
-import { towerCatalog, MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, type TowerStatsWire } from "@karayel/shared";
+import { getShopItem, towerCatalog, MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, type TowerStatsWire } from "@karayel/shared";
 import { setupGameControlUi } from "../game-control-ui";
 import type { TowerSheetInput } from "../tower-sheet";
 
@@ -166,7 +166,8 @@ function stateFor(): Record<string, unknown> {
     productionAmmo: towerId === "warrior-7" ? { value: production, canEdit: !readOnly } : undefined,
     logisticsPriority: { value: "normal", canEdit: !readOnly },
     standby: building ? undefined : { active: false, waking: false, canEdit: !readOnly },
-    equippedItems: (block.it ?? []).map((id) => ({ id, name: id, description: "" })),
+    // Oyundaki gibi ad ve aciklama katalogdan (yazi boyu ve tasma gercek metinle sinansin).
+    equippedItems: (block.it ?? []).map((id) => ({ id, name: getShopItem(id)?.name ?? id, description: getShopItem(id)?.description ?? "" })),
     equippedCapacity: MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER,
     towerCards: { targetedCardIds: block.tc ?? [], ownerCardIds: towerId === "warrior-1" ? ["nisan-takimi", "tork-aktarimi"] : ["nisan-takimi"] },
     inventory: { open: false, items: [] },
