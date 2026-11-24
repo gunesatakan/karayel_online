@@ -2086,6 +2086,8 @@ button.wave-report:active { transform: scale(0.99); }
 .game-controls button.worker-row--gatherer { border-left-color: rgba(155, 126, 224, 0.85); }
 .game-controls button.worker-row--carrier { border-left-color: rgba(224, 166, 58, 0.8); }
 .game-controls button.worker-row--repairer { border-left-color: rgba(76, 199, 122, 0.8); }
+/* Tek tip isci: atamasiz (bosta) isci haritadaki gibi gri. */
+.game-controls button.worker-row--idle { border-left-color: rgba(139, 148, 163, 0.85); }
 
 .worker-row__main {
   display: flex;
@@ -2125,7 +2127,7 @@ button.wave-report:active { transform: scale(0.99); }
 
 /*
  * Hedef seridi: isci secilince cekmece buna iniyor. Harita gorunur ve
- * dokunulur kalmali; serit tek satir (tasiyicida urun dugmeleriyle iki).
+ * dokunulur kalmali; serit tek satir (isin adi, yonerge ve Vazgec).
  */
 .game-controls__drawer.worker-pick {
   gap: 3px;
@@ -2166,27 +2168,6 @@ button.wave-report:active { transform: scale(0.99); }
   padding: 4px 10px;
   border-color: rgba(148, 163, 184, 0.5);
   color: #cbd5e1;
-}
-
-.worker-pick__products {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 3px;
-}
-
-.game-controls button.worker-pick__product {
-  padding: 2px;
-  color: #9fb4cc;
-  font-size: clamp(10px, 2.9vw, 12px);
-  line-height: 1.05;
-  overflow-wrap: anywhere;
-}
-
-.game-controls button.worker-pick__product.is-active {
-  border-color: rgba(125, 211, 252, 0.85);
-  color: #f8fafc;
-  background: rgba(14, 116, 144, 0.35);
 }
 
 /* Ise Al: kademe secimi ve tek alim dugmesi. */

@@ -388,8 +388,10 @@ export function createBot(ctx, rawOptions = {}) {
     const base = geometry().cellCenter(ensureLayout().gap, geometry().rows - 1);
     for (const worker of ownWorkers()) {
       if (worker.mode !== "crystalCollector") continue;
-      const kind = worker.id.includes("ammoCollector") ? "gunpowder" : "energy";
+      // Tek tip isci: turu atandigi kaynaktan (alinan iscinin kimliginde rol yok).
       const current = worker.assignment?.nodeId;
+      const assignedNode = economyNodes().find((node) => node.id === current);
+      const kind = assignedNode ? (assignedNode.kind === "energy" ? "energy" : "gunpowder") : worker.id.includes("ammoCollector") ? "gunpowder" : "energy";
       const candidates = safeNodes(kind);
       if (candidates.length === 0) continue;
       const g = geometry();
@@ -407,15 +409,19 @@ export function createBot(ctx, rawOptions = {}) {
     return acted;
   }
 
+  /**
+   * Isci alimi. Tek tip isci: alinan isci bosta doguyor; `role` yalnizca
+   * botun niyeti (kayit ve hemen ardindan verdigi atama).
+   */
   function hire(role) {
     const before = new Set(ownWorkers().map((worker) => worker.id));
     // Gelismis isci: dort kat fiyat, uc kat yuk, 1,5 kat hiz, iki kat toplama.
-    // Alim bedeli her iscide %10 artiyor; altin yetiyorsa her alim gelismis.
+    // Alim bedeli her iscide %5 artiyor; altin yetiyorsa her alim gelismis.
     const advancedCost = getWorkerHireCost(player().hiredWorkers.length, true);
     const advanced = options.advancedWorkers && room.wave >= 3 && player().gold >= advancedCost + 100;
     const cost = advanced ? advancedCost : getWorkerHireCost(player().hiredWorkers.length);
     if (player().gold < cost) return undefined;
-    send("worker:hire", { role, ...(advanced ? { advanced: true } : {}) });
+    send("worker:hire", advanced ? { advanced: true } : {});
     const added = ownWorkers().find((worker) => !before.has(worker.id));
     if (added) {
       hiredExtra += 1;
@@ -425,25 +431,26 @@ export function createBot(ctx, rawOptions = {}) {
   }
 
   function ensureMaterialCarrier(factory) {
-    // Hammadde tasiyicisi: depodan fabrikaya barut. Baslangic dortlusunde yok.
+    // Hammadde tasiyicisi: Hammadde Deposu'na atanmis isci, depodaki barutu
+    // ihtiyaci olan cephaneliklere tasiyor. Baslangic dortlusunde yok.
+    const warehouse = findOwn("warehouse-1")[0];
+    if (!factory || !warehouse) return false;
     for (const id of materialCarrierIds) {
       const worker = room.drones.get(id);
       if (worker) {
-        if (worker.assignment?.sourceTowerId !== factory.id || worker.assignment?.product !== "materials") {
-          send("worker:assign", { workerId: id, sourceTowerId: factory.id, product: "materials" });
-        }
+        if (worker.assignment?.postKind !== "warehouse") send("worker:assign", { workerId: id, sourceTowerId: warehouse.id });
         return false;
       }
       materialCarrierIds.delete(id);
     }
     // Olen isci kurulumda geri geliyor (ayni kimlik); yeni isci ancak hic yoksa.
-    const existing = ownWorkers().find((worker) => worker.assignment?.product === "materials");
+    const existing = ownWorkers().find((worker) => worker.assignment?.postKind === "warehouse");
     if (existing) { materialCarrierIds.add(existing.id); return false; }
     if (hiredExtra >= options.maxExtraWorkers) return false;
-    const worker = hire("ammoTransport");
+    const worker = hire("materials");
     if (!worker) return false;
     materialCarrierIds.add(worker.id);
-    send("worker:assign", { workerId: worker.id, sourceTowerId: factory.id, product: "materials" });
+    send("worker:assign", { workerId: worker.id, sourceTowerId: warehouse.id });
     return true;
   }
 
@@ -467,15 +474,16 @@ export function createBot(ctx, rawOptions = {}) {
     if (player().gold < cost + 80) return false;
     const count = (predicate) => ownWorkers().filter(predicate).reduce((sum, worker) => sum + (worker.advanced ? 3 : 1), 0);
     const scale = options.economyScale;
+    // Tek tip isci: is atandigi yerden (kaynak, enerji binasi, depo, cephanelik).
     const roles = [
-      { role: "crystalCollector", have: count((w) => w.mode === "crystalCollector" && !w.id.includes("ammoCollector") && w.assignment?.nodeId && isEnergyNode(w.assignment.nodeId)), want: Math.ceil(demand.energy / 1.0 * scale), node: () => leastBusyNode("energy", reactor) },
-      { role: "energyTransport", have: count((w) => w.mode === "energyTransport" && w.assignment?.product === "energy"), want: Math.ceil(demand.energy / 2.0 * scale) }
+      { role: "crystalCollector", have: count((w) => w.mode === "crystalCollector" && w.assignment?.nodeId && isEnergyNode(w.assignment.nodeId)), want: Math.ceil(demand.energy / 1.0 * scale), node: () => leastBusyNode("energy", reactor) },
+      { role: "energyTransport", have: count((w) => w.assignment?.postKind === "energy"), want: Math.ceil(demand.energy / 2.0 * scale), assign: { sourceTowerId: reactor.id } }
     ];
     if (factory && warehouse) {
       roles.push(
         { role: "ammoCollector", have: count((w) => w.mode === "crystalCollector" && w.assignment?.nodeId && !isEnergyNode(w.assignment.nodeId)), want: Math.ceil(demand.ammo / 1.2 * scale), node: () => leastBusyNode("gunpowder", warehouse) },
-        { role: "ammoTransport", have: count((w) => w.mode === "energyTransport" && w.assignment?.product === "materials"), want: Math.ceil(demand.ammo / 1.2 * scale), assign: { product: "materials", sourceTowerId: factory.id } },
-        { role: "ammoTransport", have: count((w) => w.mode === "energyTransport" && w.assignment?.product === "bullet"), want: Math.ceil(demand.ammo / 0.6 * scale), assign: { product: "bullet", sourceTowerId: factory.id } }
+        { role: "materials", have: count((w) => w.assignment?.postKind === "warehouse"), want: Math.ceil(demand.ammo / 1.2 * scale), assign: { sourceTowerId: warehouse.id } },
+        { role: "ammoTransport", have: count((w) => w.assignment?.postKind === "factory"), want: Math.ceil(demand.ammo / 0.6 * scale), assign: { sourceTowerId: factory.id } }
       );
     }
     const pick = roles.filter((entry) => entry.have < entry.want).sort((a, b) => a.have / a.want - b.have / b.want)[0];
@@ -527,10 +535,11 @@ export function createBot(ctx, rawOptions = {}) {
     if (lastStarvation.energy > 0.08 && reactor) {
       const reactorFill = providerSamples.reactorFill / samples;
       // Reaktorde enerji birikiyorsa darbogaz tasiyici; bossa toplayici.
-      const carriers = ownWorkers().filter((worker) => worker.mode === "energyTransport" && worker.assignment?.product === "energy").length;
-      const gatherers = ownWorkers().filter((worker) => worker.mode === "crystalCollector" && !worker.id.includes("ammoCollector")).length;
+      const carriers = ownWorkers().filter((worker) => worker.assignment?.postKind === "energy").length;
+      const gatherers = ownWorkers().filter((worker) => worker.mode === "crystalCollector" && worker.assignment?.nodeId && isEnergyNode(worker.assignment.nodeId)).length;
       const role = reactorFill > 0.25 || carriers < gatherers ? "energyTransport" : "crystalCollector";
       const worker = hire(role);
+      if (worker && role === "energyTransport") send("worker:assign", { workerId: worker.id, sourceTowerId: reactor.id });
       if (worker && role === "crystalCollector") {
         const node = leastBusyNode("energy", reactor);
         if (node) send("worker:assign", { workerId: worker.id, nodeId: node.id });
@@ -543,8 +552,8 @@ export function createBot(ctx, rawOptions = {}) {
       const gunpowder = providerSamples.gunpowder / samples;
       let role = "ammoTransport";
       let assign;
-      if (bullets > 6) assign = { product: "bullet", sourceTowerId: factory.id };
-      else if (gunpowder > 15) assign = { product: "materials", sourceTowerId: factory.id };
+      if (bullets > 6) assign = { sourceTowerId: factory.id };
+      else if (gunpowder > 15) { role = "materials"; assign = { sourceTowerId: warehouse.id }; }
       else role = "ammoCollector";
       const worker = hire(role);
       if (worker && assign) send("worker:assign", { workerId: worker.id, ...assign });

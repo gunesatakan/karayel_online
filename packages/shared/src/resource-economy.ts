@@ -25,7 +25,62 @@ export function isResourceKind(value: unknown): value is ResourceKind {
 export function isTransportProduct(value: unknown): value is TransportProduct {
   return value === "materials" || value === "energy" || value === "bullet" || value === "auraCrystal" || value === "powerCrystal";
 }
-export type WorkerAssignment = { nodeId?: string; sourceTowerId?: string; product?: TransportProduct };
+/**
+ * Iscinin gorev yeri.
+ *
+ * Sahibin istegi (2026-11-24): tek tip isci. Uzmanlik ve tasinacak urun
+ * secimi yok; is, iscinin atandigi yerden geliyor:
+ *
+ * - kaynak dugumu (`nodeId`): toplar, en yakin depoya goturur;
+ * - Hammadde Deposu (`warehouse`): depodaki hammaddeyi ihtiyaci olan her
+ *   yere (cephaneliklerin tarifine, Tamir Merkezi'nin demirine) tasir;
+ * - enerji binasi (`energy`): enerjiyi ihtiyaci olan her yapiya tasir;
+ * - cephanelik (`factory`): urettigi her mühimmati kulelere tasir;
+ * - Tamir Merkezi (`repair`): tamirci olur.
+ *
+ * Tasima her seferinde en bos alicidan baslar (doluluk orani, kulenin
+ * onceligi ve bekleme suresi: `deliveryScore`).
+ */
+export type WorkerPostKind = "warehouse" | "energy" | "factory" | "repair";
+export const WORKER_POST_KINDS: readonly WorkerPostKind[] = ["warehouse", "energy", "factory", "repair"];
+
+/**
+ * Atama: dugum ya da bina. `postKind` binanin turu (bina yikilir ya da
+ * satilirsa isci ayni turden en yakin binaya geciyor); `sourceTowerId`
+ * olmayan atama "en yakin bu tur bina" (baslangic iscilerinin varsayilani).
+ */
+export type WorkerAssignment = { nodeId?: string; sourceTowerId?: string; postKind?: WorkerPostKind };
+
+/** Iscinin isi: atamadan turuyor; atamasiz isci bosta. */
+export type WorkerJob = "gather" | "haul" | "repair" | "idle";
+
+/** Binanin gorev yeri turu; isci atanamayan bina (kule, duvar) `undefined`. */
+export function getWorkerPostKind(definition: { id: string; resourceProvider?: string }): WorkerPostKind | undefined {
+  if (definition.id === "warehouse-1") return "warehouse";
+  if (definition.id === "repair-depot-1") return "repair";
+  if (definition.resourceProvider === "energy") return "energy";
+  if (definition.resourceProvider === "ammunition") return "factory";
+  return undefined;
+}
+
+export function isWorkerPostKind(value: unknown): value is WorkerPostKind {
+  return WORKER_POST_KINDS.includes(value as WorkerPostKind);
+}
+
+export function getWorkerJob(assignment: WorkerAssignment | undefined): WorkerJob {
+  if (assignment?.nodeId) return "gather";
+  if (assignment?.postKind === "repair") return "repair";
+  return assignment?.postKind ? "haul" : "idle";
+}
+
+/**
+ * Isin teldeki kipi. Kip eskiden iscinin kalici rolüydü; simdi isinin
+ * aynasi: istemci, gorunus, isci agaci ve eski istemciler onu okumaya devam
+ * ediyor. Bosta isci tasiyici kipinde ama atamasi yok.
+ */
+export function getWorkerJobMode(job: WorkerJob): "crystalCollector" | "energyTransport" | "repairer" {
+  return job === "gather" ? "crystalCollector" : job === "repair" ? "repairer" : "energyTransport";
+}
 export const getWarehouseCapacity = (level: number) => [200, 400, 700, 1100, 1600][Math.max(0, Math.min(4, Math.round(level) - 1))];
 export type EconomyStock = {
   productionAmmo?: AmmoType;

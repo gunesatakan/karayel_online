@@ -19,7 +19,6 @@ export type TutorialActionId =
   | "upgrade"
   | "settings"
   | "hire"
-  | "specialize"
   | "assign"
   | "production"
   | "repair"
@@ -45,7 +44,6 @@ export const TUTORIAL_TRACKED_MESSAGES: Readonly<Record<string, TutorialActionId
   "tower:priority": "settings",
   setTowerMode: "settings",
   "worker:hire": "hire",
-  "worker:specialization": "specialize",
   "worker:assign": "assign",
   "factory:production": "production",
   "structure:repair": "repair",
@@ -62,8 +60,10 @@ export type TutorialProgressMessage = {
   action: TutorialActionId;
   /** `build`: bu istekle kurulan yapilarin tanim kimlikleri. */
   definitionIds?: string[];
-  /** `hire` / `specialize` / `assign`: iscinin rolu (biliniyorsa). */
+  /** `assign`: iscinin isinin kipi (`getWorkerJobMode`). */
   role?: string;
+  /** `assign`: atandigi binanin gorev yeri turu; dugume atandiysa yok. */
+  postKind?: string;
 };
 
 /**

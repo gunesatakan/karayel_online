@@ -45,9 +45,30 @@ const ack = { kind: "ack" };
 /** Oyunun hali: bos bir tabana eklenenler. */
 const facts = (extra = {}) => ({ definitionIds: [], upgraded: false, hired: 0, manualAssignments: 0, repairers: 0, treeUnlocks: 0, ...extra });
 const state = (extra) => ({ kind: "state", facts: facts(extra) });
+/**
+ * Tek tip isci (sahnenin `getTutorialFacts` hali): kip isin aynasi, is
+ * atandigi yerden. Kaynaktaki isci toplar; binadaki isci gorev yeri turuyla
+ * (`postKind`) ve binanin tanim kimligiyle; atamasiz isci bosta.
+ */
 const gatherer = (nodeKind, manual = true) => ({ mode: "crystalCollector", manual, nodeKind });
-const carrier = (product, sourceDefinitionId = "zeynep-9", manual = true) => ({ mode: "energyTransport", manual, product, sourceDefinitionId });
+const POST_BUILDINGS = { warehouse: "warehouse-1", energy: "zeynep-10", factory: "zeynep-9", repair: "repair-depot-1" };
+const modeOfPost = (postKind) => (postKind === "repair" ? "repairer" : "energyTransport");
+/** Elle bir binaya atanmis isci. */
+const posted = (postKind, sourceDefinitionId = POST_BUILDINGS[postKind]) => ({ mode: modeOfPost(postKind), manual: true, postKind, sourceDefinitionId });
+/** Sunucunun baslangic iscisi: varsayilan isi "en yakin bu tur bina", bina kimligi yok. */
+const auto = (postKind) => ({ mode: modeOfPost(postKind), manual: false, postKind });
+/** Yeni alinan isci: atamasi yok, tasiyici kipinde bosta. */
+const idle = () => ({ mode: "energyTransport", manual: false });
 const signalsOf = (value) => (Array.isArray(value) ? value : [value]);
+
+/** Adimin butun metinleri: her sayfa, kapali/acik pencere, her uretim; bos isciyle, teslimattan once ve sonra. */
+function allCopies(id) {
+  const contexts = [{}];
+  for (const production of ["bullet", "auraCrystal", "powerCrystal"]) {
+    for (const ammoDelivered of [false, true]) contexts.push({ facts: facts({ production, ammoDelivered, workers: [auto("energy"), idle()] }) });
+  }
+  return contexts.flatMap((context) => Array.from({ length: getTutorialPageCount(id) }, (_, page) => [false, true].map((open) => getTutorialCopy(id, open, { ...context, page }))).flat());
+}
 
 /** Her adimi tamamlayan sinyal(ler) (ZentaX'in yapilariyla); cok sayfali adimda birden cok ANLADIM. */
 const COMPLETE = {
@@ -57,17 +78,18 @@ const COMPLETE = {
   energy: build("zeynep-10"),
   workerTypes: { kind: "ack" },
   hire: progress("hire"),
+  // Sunucunun atama olcumu: kaynaga atamada isin kipi, binaya atamada kip ve gorev yeri.
   assign: progress("assign", { role: "crystalCollector" }),
   depot: build("warehouse-1"),
   armory: build("zeynep-9"),
   production: progress("production"),
   chain: [ack, ack],
   gatherer: state({ production: "bullet", workers: [gatherer("gunpowder")] }),
-  materials: state({ production: "bullet", workers: [carrier("materials")] }),
-  ammoCarrier: state({ production: "bullet", workers: [carrier("bullet")] }),
+  materials: state({ production: "bullet", workers: [posted("warehouse")] }),
+  ammoCarrier: state({ production: "bullet", workers: [posted("factory")] }),
   delivery: [ack, ack],
   repairDepot: build("repair-depot-1"),
-  repairer: progress("specialize", { role: "repairer" }),
+  repairer: progress("assign", { role: "repairer", postKind: "repair" }),
   xpGold: { kind: "ack" },
   upgrade: progress("upgrade"),
   workerTree: progress("workerTree"),
@@ -137,14 +159,27 @@ test("yapi turu: kule, duvar, enerji, cephanelik, depo, tamir merkezi", () => {
   assert.equal(classifyTutorialBuild("repair-depot-1"), "repairDepot");
 });
 
-test("isci adimlari: alim ya da uzmanlik; tamirci adimi yalnizca onarim rolu ya da altinla onarim", () => {
+test("isci adimlari: alim yalnizca alimla; tamirci adimi Tamir Merkezi'ne atamayla ya da altinla onarimla", () => {
   assert.equal(isTutorialStepCompletedBy("hire", { action: "hire" }), true);
-  assert.equal(isTutorialStepCompletedBy("hire", { action: "specialize", role: "energyTransport" }), true);
-  assert.equal(isTutorialStepCompletedBy("hire", { action: "assign" }), false);
-  assert.equal(isTutorialStepCompletedBy("repairer", { action: "specialize", role: "crystalCollector" }), false);
-  assert.equal(isTutorialStepCompletedBy("repairer", { action: "hire" }), false, "rolsuz alim tamirci degil");
-  assert.equal(isTutorialStepCompletedBy("repairer", { action: "hire", role: "repairer" }), true);
-  assert.equal(isTutorialStepCompletedBy("repairer", { action: "assign", role: "repairer" }), true);
+  assert.equal(isTutorialStepCompletedBy("hire", { action: "assign", role: "energyTransport", postKind: "warehouse" }), false, "atama alim degil");
+  // Uzmanlik secimi kalkti: eski eylem hicbir isci adimini gecirmiyor.
+  for (const id of ["hire", "assign", "repairer"]) {
+    assert.equal(isTutorialStepCompletedBy(id, { action: "specialize", role: "repairer" }), false, `${id} uzmanlikla gecti`);
+  }
+  // Yonetim: her atama sayiliyor (kaynak ya da bina); alim sayilmiyor.
+  assert.equal(isTutorialStepCompletedBy("assign", { action: "assign", role: "crystalCollector" }), true);
+  assert.equal(isTutorialStepCompletedBy("assign", { action: "assign", role: "energyTransport", postKind: "factory" }), true);
+  assert.equal(isTutorialStepCompletedBy("assign", { action: "hire" }), false);
+  // Tamirci: Tamir Merkezi'ne atanan isci tamirci oluyor; alim kimseyi tamirci yapmiyor.
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "assign", role: "repairer", postKind: "repair" }), true);
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "assign", postKind: "repair" }), true, "gorev yeri yetiyor");
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "assign", role: "repairer" }), true, "isin kipi yetiyor");
+  for (const postKind of ["warehouse", "energy", "factory"]) {
+    assert.equal(isTutorialStepCompletedBy("repairer", { action: "assign", role: "energyTransport", postKind }), false, `${postKind} tamirci yapmiyor`);
+  }
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "assign", role: "crystalCollector" }), false, "kaynaga atama");
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "hire" }), false, "alim tamirci degil");
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "hire", role: "repairer" }), false, "alimdaki eski rol yok sayiliyor");
   assert.equal(isTutorialStepCompletedBy("repairer", { action: "repair" }), true);
   assert.equal(isTutorialStepCompletedBy("settings", { action: "settings" }), true);
   assert.equal(isTutorialStepCompletedBy("workerTypes", { action: "hire" }), false, "bilgi adimi eylemle gecmiyor");
@@ -169,10 +204,11 @@ test("istenen her mekanik bir adimda", () => {
 
 test("metinler kisa; bilgi adiminda ANLADIM, kapali pencerede yeniden ac dugmesi", () => {
   for (const id of TUTORIAL_STEPS) {
-    for (const open of [false, true]) {
-      const copy = getTutorialCopy(id, open);
+    for (const copy of allCopies(id)) {
       assert.ok(copy.title.length > 0 && copy.body.length > 0, id);
       assert.ok(copy.body.length <= 170, `${id} kisa kalmali (${copy.body.length})`);
+      // Tek tip isci: uzmanlik, isci turu ya da urun secimi kalmadi.
+      assert.doesNotMatch(copy.body, /uzman|Toplama işçisi|Taşıma işçisi|ürün olarak/, id);
     }
     assert.equal(Boolean(getTutorialCopy(id, true, { facts: facts({ ammoDelivered: true }) }).ack), TUTORIAL_ACK_STEPS.includes(id), `${id} ANLADIM`);
     assert.ok(Array.isArray(TUTORIAL_TARGETS[id]), `${id} hedef tablosunda yok`);
@@ -187,6 +223,9 @@ test("metinler kisa; bilgi adiminda ANLADIM, kapali pencerede yeniden ac dugmesi
   assert.match(getTutorialCopy("energy").body, /Enerji Ocağı/);
   assert.match(getTutorialCopy("armory").body, /Cephane Divanı/);
   assert.match(getTutorialCopy("ultimate").body, /Kurucu Fermanı/);
+  // Is atandigi yerden: tek tip isci; tamirci Tamir Merkezi'ne atanarak oluyor.
+  assert.match(getTutorialCopy("workerTypes").body, /Tek tip işçi/);
+  assert.match(getTutorialCopy("repairer").body, /Tamir Merkezi'ne dokun/);
 });
 
 test("ilk kez gelen oyuncu: hicbir ilerleme yoksa", () => {
@@ -243,8 +282,8 @@ const SATISFIED = {
   repairDepot: { definitionIds: ["repair-depot-1"] },
   repairer: { repairers: 1 },
   gatherer: { production: "bullet", workers: [gatherer("gunpowder")] },
-  materials: { workers: [carrier("materials")] },
-  ammoCarrier: { production: "bullet", workers: [carrier("bullet")] },
+  materials: { workers: [posted("warehouse")] },
+  ammoCarrier: { production: "bullet", workers: [posted("factory")] },
   upgrade: { upgraded: true },
   workerTree: { treeUnlocks: 1 }
 };
@@ -318,8 +357,8 @@ test("ogretici etiketleri: HUD'da sayac yerine Eğitim, kart perdesinde Eğitim 
   assert.match(sceneLocale, /"scene\.card\.tutorialEyebrow": "TRAINING REWARD",/);
 });
 
-test("mühimmat zinciri: yalnizca dogru rol, dogru urun ve dogru bina sayiliyor", () => {
-  // Toplayici: uretimin tarifindeki hammaddenin yatagina, elle.
+test("mühimmat zinciri: yalnizca elle, dogru yere atanmis isci sayiliyor", () => {
+  // Toplama: uretimin tarifindeki hammaddenin yatagina, elle.
   assert.equal(isTutorialStepSatisfied("gatherer", facts({ production: "bullet", workers: [gatherer("gunpowder")] })), true);
   assert.equal(isTutorialStepSatisfied("gatherer", facts({ production: "bullet", workers: [gatherer("mystic")] })), false, "yanlis yatak");
   assert.equal(isTutorialStepSatisfied("gatherer", facts({ production: "bullet", workers: [gatherer("gunpowder", false)] })), false, "otomatik is sayilmiyor");
@@ -327,19 +366,27 @@ test("mühimmat zinciri: yalnizca dogru rol, dogru urun ve dogru bina sayiliyor"
   assert.equal(isTutorialStepSatisfied("gatherer", facts({ production: "auraCrystal", workers: [gatherer("mystic")] })), true);
   assert.equal(isTutorialStepSatisfied("gatherer", facts({ production: "powerCrystal", workers: [gatherer("plasma")] })), true);
   assert.equal(isTutorialStepSatisfied("gatherer", facts({ workers: [gatherer("gunpowder")] })), false, "cephanelik yok");
-  assert.equal(isTutorialStepSatisfied("gatherer", facts({ production: "bullet", workers: [{ ...carrier("materials"), nodeKind: "gunpowder" }] })), false, "tasiyici toplayici degil");
-  // Hammadde tasiyicisi: Hammadde urunuyle cephaneye.
-  assert.equal(isTutorialStepSatisfied("materials", facts({ workers: [carrier("materials")] })), true);
-  assert.equal(isTutorialStepSatisfied("materials", facts({ workers: [carrier("energy")] })), false, "yanlis urun");
-  assert.equal(isTutorialStepSatisfied("materials", facts({ workers: [carrier("materials", "repair-depot-1")] })), false, "tamir merkezine hammadde sayilmiyor");
-  assert.equal(isTutorialStepSatisfied("materials", facts({ workers: [carrier("materials", "zeynep-9", false)] })), false);
-  assert.equal(isTutorialStepSatisfied("materials", facts({ workers: [{ ...carrier("materials"), mode: "crystalCollector" }] })), false);
-  // Cephane tasiyicisi: uretilen muhimmatla cephaneye.
-  assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production: "bullet", workers: [carrier("bullet")] })), true);
-  assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production: "bullet", workers: [carrier("auraCrystal")] })), false, "baska mühimmat");
-  assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production: "bullet", workers: [carrier("materials")] })), false, "hammadde tasiyicisi cephane degil");
-  assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production: "bullet", workers: [carrier("bullet", "zeynep-10")] })), false, "enerji binasi");
-  assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production: "powerCrystal", workers: [carrier("powerCrystal", "warrior-7")] })), true, "baska operatorun cephaneligi de cephanelik");
+  // Kaynaga yeni atanmis ama elindeki yuku teslim etmemis isci (kip henuz tasima) toplamiyor.
+  assert.equal(isTutorialStepSatisfied("gatherer", facts({ production: "bullet", workers: [{ mode: "energyTransport", manual: true, nodeKind: "gunpowder" }] })), false, "kip toplama degil");
+  // Hammadde tasima: Hammadde Deposu'na elle atanmis isci; uretimden bagimsiz.
+  assert.equal(isTutorialStepSatisfied("materials", facts({ workers: [posted("warehouse")] })), true);
+  for (const postKind of ["energy", "factory", "repair"]) {
+    assert.equal(isTutorialStepSatisfied("materials", facts({ production: "bullet", workers: [posted(postKind)] })), false, `${postKind} hammadde tasimiyor`);
+  }
+  assert.equal(isTutorialStepSatisfied("materials", facts({ workers: [auto("warehouse")] })), false, "otomatik is sayilmiyor");
+  assert.equal(isTutorialStepSatisfied("materials", facts({ production: "bullet", workers: [gatherer("gunpowder"), idle()] })), false, "toplayan ve bosta isci");
+  // Kip degil yer sayiliyor: depoya atanip yukunu teslim edince tasimaya gececek isci de.
+  assert.equal(isTutorialStepSatisfied("materials", facts({ workers: [{ ...posted("warehouse"), mode: "crystalCollector" }] })), true, "atandigi yer sayilmadi");
+  // Muhimmat tasima: cephanelige elle atanmis isci; urun secimi yok, cephanelik ne uretiyorsa o.
+  for (const production of ["bullet", "auraCrystal", "powerCrystal"]) {
+    assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production, workers: [posted("factory")] })), true, production);
+  }
+  assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ workers: [posted("factory")] })), false, "cephanelik yok");
+  for (const postKind of ["warehouse", "energy", "repair"]) {
+    assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production: "bullet", workers: [posted(postKind)] })), false, `${postKind} muhimmat tasimiyor`);
+  }
+  assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production: "bullet", workers: [auto("factory")] })), false, "baslangictaki otomatik cephanelik tasiyicisi sayildi");
+  assert.equal(isTutorialStepSatisfied("ammoCarrier", facts({ production: "powerCrystal", workers: [posted("factory", "warrior-7")] })), true, "baska operatorun cephaneligi de cephanelik");
   // Sira: zincir adimlari uretimden sonra, tamir merkezinden once.
   const order = ["production", "chain", "gatherer", "materials", "ammoCarrier", "delivery", "repairDepot"];
   assert.deepEqual(order.map((id) => TUTORIAL_STEPS.indexOf(id)), order.map((_, index) => TUTORIAL_STEPS.indexOf("production") + index));
@@ -347,37 +394,99 @@ test("mühimmat zinciri: yalnizca dogru rol, dogru urun ve dogru bina sayiliyor"
   assert.equal(isTutorialStepSatisfied("delivery", facts({ ammoDelivered: true })), false, "teslimat adimi okunmadan gecmiyor");
 });
 
-test("bosta tasiyici yoksa adim once isci aldiriyor; cephane tasiyicisinda dogru urun dugmesi cerceveleniyor", () => {
-  const busy = facts({ production: "bullet", workers: [carrier("energy", "zeynep-10"), carrier("materials")] });
-  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", busy), true);
-  assert.equal(tutorialNeedsCarrierHire("materials", busy), true);
-  assert.equal(tutorialNeedsCarrierHire("gatherer", busy), false);
-  assert.deepEqual([...getTutorialTargets("ammoCarrier", busy)], [...TUTORIAL_TARGETS.hire]);
-  assert.match(getTutorialCopy("ammoCarrier", true, { facts: busy }).body, /İşe Al/);
-  // Tek otomatik enerji tasiyicisi enerjide kalmali: bosta sayilmiyor.
-  const autoEnergy = { mode: "energyTransport", manual: false, product: "energy" };
-  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", facts({ workers: [carrier("materials"), autoEnergy] })), true, "enerji tasiyicisi alinmamali");
-  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", facts({ workers: [carrier("materials"), autoEnergy, { ...autoEnergy }] })), false, "yeni alinan tasiyici bosta");
-  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", facts({ workers: [carrier("energy", "zeynep-10"), autoEnergy] })), false, "enerji elle kapaliysa otomatik olan bosta");
-  const free = facts({ production: "auraCrystal", workers: [carrier("materials"), autoEnergy, { mode: "energyTransport", manual: false, product: "bullet" }] });
-  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", free), false);
-  assert.equal(getTutorialTargets("ammoCarrier", free)[0], '[data-worker-product="auraCrystal"]:not(.is-active)');
-  assert.equal(getTutorialTargets("materials", free)[0], '[data-worker-product="materials"]:not(.is-active)');
-  // Tek ad (ammoTypeLabels): tasiyicinin urun dugmesi, cephaneligin secicisi ve toplayici adimi "Aura kristali" diyor.
-  assert.match(getTutorialCopy("ammoCarrier", true, { facts: free }).body, /Aura kristali/);
+test("bos isci yoksa tasima adimi once isci aldiriyor; bos: elle atanmamis ve kaynakta degil", () => {
+  // Herkes is basinda: elle atanmis ya da kaynakta (otomatik toplayici da).
+  const busy = facts({ production: "bullet", workers: [posted("energy"), posted("warehouse"), gatherer("gunpowder"), gatherer("energy", false)] });
+  for (const id of ["materials", "ammoCarrier"]) {
+    assert.equal(tutorialNeedsCarrierHire(id, busy), true, id);
+    assert.deepEqual([...getTutorialTargets(id, busy)], [...TUTORIAL_TARGETS.hire], id);
+    assert.match(getTutorialCopy(id, true, { facts: busy }).body, /İşe Al/, id);
+  }
+  for (const id of ["gatherer", "assign", "repairer"]) assert.equal(tutorialNeedsCarrierHire(id, busy), false, `${id} isci aldirdi`);
+  // Tek otomatik enerji tasiyicisi enerjide kalmali: bos sayilmiyor.
+  const autoEnergy = auto("energy");
+  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", facts({ workers: [posted("warehouse"), autoEnergy] })), true, "enerji tasiyani alinmamali");
+  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", facts({ workers: [posted("warehouse"), autoEnergy, idle()] })), false, "yeni alinan isci bos");
+  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", facts({ workers: [posted("energy"), autoEnergy] })), false, "enerji elle kapaliysa otomatik olan bos");
+  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", facts({ workers: [autoEnergy, { ...autoEnergy }] })), false, "ikinci otomatik enerji tasiyicisi bos");
+  // Bos: bosta ya da otomatik tasiyan. Kaynaktaki ve elle atanmis isci is basinda.
+  assert.equal(tutorialNeedsCarrierHire("materials", facts({ workers: [idle()] })), false, "bosta isci enerji tasimiyor, bos");
+  assert.equal(tutorialNeedsCarrierHire("materials", facts({ workers: [autoEnergy, auto("factory")] })), false, "otomatik cephanelik tasiyicisi bos");
+  assert.equal(tutorialNeedsCarrierHire("materials", facts({ workers: [autoEnergy, gatherer("gunpowder", false), gatherer("energy", false)] })), true, "kaynaktaki otomatik isci bos sayildi");
+  assert.equal(tutorialNeedsCarrierHire("materials", facts({ workers: [posted("repair"), posted("factory")] })), true, "elle atanmis isci bos sayildi");
+
+  // Bos isci varken: once secim seridi (secilen ya da yeni alinan isci), sonra liste; urun dugmesi yok.
+  const free = facts({ production: "auraCrystal", workers: [posted("warehouse"), autoEnergy, auto("factory")] });
+  const pickTargets = [".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]'];
+  for (const id of ["materials", "ammoCarrier"]) assert.deepEqual([...getTutorialTargets(id, free)], pickTargets, id);
+  // Tamirci de bir isciyi atatiyor: bos isci olmasa da İşe Al degil, liste ve serit.
+  assert.deepEqual([...getTutorialTargets("repairer", busy)], pickTargets, "tamirci adimi İşe Al'i cerceveliyor");
+  for (const id of TUTORIAL_STEPS) {
+    for (const selector of [...getTutorialTargets(id, free), ...getTutorialTargets(id, busy)]) assert.doesNotMatch(selector, /data-worker-product/, id);
+  }
+  // Metin uretilen muhimmati ve hammaddesini aniyor (tek ad: ammoTypeLabels).
+  const ammoBody = getTutorialCopy("ammoCarrier", true, { facts: free }).body;
+  assert.match(ammoBody, /Cephane Divanı/);
+  assert.match(ammoBody, /Aura kristali/);
+  const materialsBody = getTutorialCopy("materials", true, { facts: free }).body;
+  assert.match(materialsBody, /Hammadde Deposu/);
+  assert.match(materialsBody, /Mistik öz/);
   assert.match(getTutorialCopy("gatherer", true, { facts: free }).body, /Aura kristali için/);
   assert.match(getTutorialCopy("gatherer", true, { facts: free }).body, /Mistik öz/);
-  // Urun dugmesinin sahibi arayuzde; teslimat bilgisi sahneden.
-  assert.match(readSource("apps/web/src/game-control-ui.ts"), /button\.dataset\.workerProduct = product;/);
+  // Hedeflerin sahibi arayuzde: secim seridi ve isci listesi; urun dugmesi kalkti.
+  const ui = readSource("apps/web/src/game-control-ui.ts");
+  assert.match(ui, /strip\.className = "game-controls__drawer worker-pick";/);
+  assert.match(ui, /list\.className = "worker-list";/);
+  assert.doesNotMatch(ui, /dataset\.workerProduct/);
+  // Sahne: iscinin gorev yeri atamadan, alinan isci secili geliyor; teslimat bilgisi.
   const scene = readSource("apps/web/src/scenes/GameScene.ts");
+  assert.match(scene, /postKind: drone\.assignment\?\.postKind,/);
+  assert.match(scene, /this\.workerPick = \{ workerId: message\.workerId \};/);
   assert.match(scene, /if \(progress\?\.action === "ammoDelivered" && !this\.tutorialAmmoDelivered\) \{/);
   assert.match(scene, /ammoDelivered: this\.tutorialAmmoDelivered/);
+});
+
+test("zincir ogretici kadrosuyla: otomatik isci sayilmiyor, bos isci bitince alim, alinan isci cephanelige", () => {
+  // Sunucunun kadrosu: dort baslangic iscisi otomatik (iki toplayici kaynakta,
+  // enerji ve cephanelik tasiyicisi en yakin binada); atama adiminda alinan
+  // isci elle enerji kristaline gitti.
+  const roster = [gatherer("energy", false), auto("energy"), gatherer("gunpowder", false), auto("factory"), gatherer("energy")];
+  const view = () => facts({ definitionIds: ["zeynep-1", "wall-1", "zeynep-10", "warehouse-1", "zeynep-9"], hired: 1, manualAssignments: 1, production: "bullet", workers: [...roster] });
+  let run = at("gatherer");
+  const tick = () => {
+    run = advanceTutorial(run, { kind: "state", facts: view() });
+    return stepOf(run);
+  };
+  // Toplama: barut yatagindaki otomatik isci sayilmiyor; oyuncu onu elle yataga atiyor.
+  assert.equal(tick(), "gatherer");
+  roster[2] = gatherer("gunpowder");
+  assert.equal(tick(), "materials");
+  // Hammadde tasima: otomatik cephanelik tasiyicisi bos (enerji tasiyan kaliyor); oyuncu onu depoya atiyor.
+  assert.equal(tutorialNeedsCarrierHire("materials", view()), false);
+  assert.equal(getTutorialTargets("materials", view())[0], ".game-controls__drawer.worker-pick");
+  assert.equal(tick(), "materials");
+  roster[3] = posted("warehouse");
+  assert.equal(tick(), "ammoCarrier");
+  // Muhimmat tasima: bos yalnizca enerji tasiyan; adim once isci aldiriyor, alim adimi gecirmiyor.
+  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", view()), true);
+  assert.deepEqual([...getTutorialTargets("ammoCarrier", view())], [...TUTORIAL_TARGETS.hire]);
+  const waiting = getTutorialCopy("ammoCarrier", true, { facts: view() }).body;
+  assert.match(waiting, /İşe Al/);
+  run = advanceTutorial(run, progress("hire"));
+  assert.equal(stepOf(run), "ammoCarrier", "alim tasima adimini gecirdi");
+  roster.push(idle());
+  assert.equal(tutorialNeedsCarrierHire("ammoCarrier", view()), false, "yeni isci bos sayilmadi");
+  assert.equal(getTutorialTargets("ammoCarrier", view())[0], ".game-controls__drawer.worker-pick");
+  assert.notEqual(getTutorialCopy("ammoCarrier", true, { facts: view() }).body, waiting);
+  assert.equal(tick(), "ammoCarrier");
+  roster[5] = posted("factory");
+  assert.equal(tick(), "delivery");
 });
 
 test("cok sayfali bilgi: zincir iki sayfa, teslimat once bekler sonra iki sayfa", () => {
   let run = at("chain");
   assert.equal(getTutorialCopy("chain", true, { page: 0 }).ack, "İLERİ");
-  assert.match(getTutorialCopy("chain", true, { page: 0 }).body, /Yatak → Toplayıcı → Hammadde Deposu → Taşıyıcı \(Hammadde\) → Cephanelik → Taşıyıcı \(Cephane\) → Kule/);
+  assert.match(getTutorialCopy("chain", true, { page: 0 }).body, /Yatak → İşçi → Hammadde Deposu → İşçi → Cephanelik → İşçi → Kule/);
   run = advanceTutorial(run, ack);
   assert.equal(stepOf(run), "chain");
   assert.equal(run.page, 1);

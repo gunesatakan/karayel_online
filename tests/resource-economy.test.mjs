@@ -69,7 +69,8 @@ test("repair production stops at energy exhaustion, including fractional reserve
 test("repairer must collect parts and cannot repair past its carried supply", () => {
   const room = createRoom("warrior");
   const target = build(room, "warrior-1"); target.hp /= 2;
-  const unit = worker(room, "repairer", {});
+  // Tamirci, Tamir Merkezi'ne atanmis isci; merkez verilmezse en yakini.
+  const unit = worker(room, "repairer", { postKind: "repair" });
   room.moveLogisticsWorker = () => true;
   const hp = target.hp;
   room.updateRepairWorker(unit, 1);
@@ -126,21 +127,116 @@ test("assignment is owner-only, validates source and preserves in-transit cargo"
   assert.equal(unit.cargo, 3);
 });
 
-test("carrier can only deliver the selected ammunition type", () => {
+test("any worker takes any valid post; its job and mode follow the post", () => {
+  // Tek tip isci: uzmanlik ve urun secimi yok, is atandigi yerden.
+  const room = createRoom("warrior");
+  const warehouse = build(room, "warehouse-1"); const factory = build(room, "warrior-7");
+  const reactor = build(room, "warrior-8"); const depot = build(room, "repair-depot-1");
+  const gun = build(room, "warrior-1");
+  const messages = [];
+  const listener = { sessionId: "p1", send: (type, value) => messages.push({ type, value }) };
+  room.hireWorker(listener, {});
+  const hired = room.drones.get(messages.find((message) => message.type === "worker:hired").value.workerId);
+  const gatherer = room.drones.get("logistics-p1-crystalCollector");
+  const posts = [[warehouse, "warehouse", "energyTransport"], [factory, "factory", "energyTransport"],
+    [reactor, "energy", "energyTransport"], [depot, "repair", "repairer"]];
+  for (const unit of [hired, gatherer]) {
+    for (const [tower, postKind, mode] of posts) {
+      // Mesajdaki eski `product` alani yok sayiliyor.
+      room.assignWorker(client, { workerId: unit.id, sourceTowerId: tower.id, product: "energy" });
+      assert.deepEqual(unit.assignment, { sourceTowerId: tower.id, postKind }, `${unit.id} -> ${tower.definition.id}`);
+      assert.equal(unit.mode, mode, `${unit.id} -> ${tower.definition.id}`);
+      assert.deepEqual(room.workerAssignments.get(unit.id), unit.assignment);
+    }
+    room.assignWorker(client, { workerId: unit.id, nodeId: "iron-1" });
+    assert.deepEqual(unit.assignment, { nodeId: "iron-1" });
+    assert.equal(unit.mode, "crystalCollector");
+  }
+  // Gorev yeri olmayan yapi, baskasinin ya da yikik bina, tukenmis dugum: atama degismiyor.
+  const foreign = { ...reactor, id: "foreign-reactor", ownerId: "p2" }; room.towers.set(foreign.id, foreign);
+  room.assignWorker(client, { workerId: hired.id, sourceTowerId: gun.id });
+  room.assignWorker(client, { workerId: hired.id, sourceTowerId: foreign.id });
+  depot.hp = 0;
+  room.assignWorker(client, { workerId: hired.id, sourceTowerId: depot.id });
+  room.resourceNodeRemaining.set("crystal-1", 0);
+  room.assignWorker(listener, { workerId: hired.id, nodeId: "crystal-1" });
+  assert.deepEqual(hired.assignment, { nodeId: "iron-1" });
+  assert.equal(hired.mode, "crystalCollector");
+  assert.deepEqual([messages.at(-1).type, messages.at(-1).value.key], ["worker:rejected", "worker.nodeDepleted"]);
+});
+
+test("old client's product field: materials at an armory or depot posts the worker at the warehouse", () => {
+  // Yayindaki eski istemci urun seciyor ve hammadde tasiyicisini cephanelige
+  // ya da Tamir Merkezi'ne gonderiyordu. Tek tip iscide bu is Hammadde Deposu'nda.
+  const room = createRoom("warrior");
+  const warehouse = build(room, "warehouse-1"); const factory = build(room, "warrior-7");
+  const depot = build(room, "repair-depot-1"); const reactor = build(room, "warrior-8");
+  room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
+  const unit = worker(room, "energyTransport", undefined);
+  // Oteki urunler binanin kendi isi.
+  room.assignWorker(client, { workerId: unit.id, sourceTowerId: factory.id, product: "bullet" });
+  assert.deepEqual(unit.assignment, { sourceTowerId: factory.id, postKind: "factory" });
+  room.assignWorker(client, { workerId: unit.id, sourceTowerId: reactor.id, product: "energy" });
+  assert.deepEqual(unit.assignment, { sourceTowerId: reactor.id, postKind: "energy" });
+  for (const target of [factory, depot]) {
+    room.assignWorker(client, { workerId: unit.id, sourceTowerId: target.id, product: "materials" });
+    assert.deepEqual(unit.assignment, { postKind: "warehouse" }, target.definition.id);
+    assert.equal(unit.mode, "energyTransport");
+  }
+  // Gorev yeri en yakin depo: depodaki girdiyi isteyen cephanelige tasiyor.
+  const input = AMMO_RECIPES[factory.productionAmmo ?? "bullet"];
+  warehouse.materials = { [input]: 20 };
+  room.updateAssignedWorker(unit, 1);
+  assert.deepEqual([unit.cargoResource, unit.targetTowerId, warehouse.materials[input]], [input, factory.id, 15]);
+});
+
+test("delivery effects see only the cargo left in hand, so nothing is handed out twice", () => {
+  // Aktarma iskelesi teslimattan sonra elde kalani komsu kuleye veriyor; yuk
+  // varis etkilerinden once dusulmeseydi teslim edilen ikinci kez dagitilirdi.
+  const room = createRoom("warrior");
+  const factory = build(room, "warrior-7");
+  const gun = build(room, "warrior-1");
+  room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
+  const unit = worker(room, "energyTransport", { sourceTowerId: factory.id, postKind: "factory" });
+  gun.ammo = gun.maxAmmo - 3;
+  unit.cargo = 5; unit.cargoAmmoType = gun.ammoType; unit.targetTowerId = gun.id;
+  const handed = [];
+  room.applyAmmoTransportArrival = (carrier) => handed.push(carrier.cargo);
+  room.updateAssignedWorker(unit, 1);
+  assert.equal(gun.ammo, gun.maxAmmo);
+  assert.deepEqual(handed, [2], "varis etkisi teslim edilen yuku de goruyor");
+  assert.equal(unit.cargo, 2);
+});
+
+test("factory-posted worker carries only stocked ammunition, only to towers of that type", () => {
   const room = createRoom("warrior");
   const factory = build(room, "warrior-7");
   const gun = build(room, "warrior-1"); gun.ammo = 0;
-  factory.ammoStock = { auraCrystal: 8, bullet: 4 }; factory.ammo = 12;
+  const aura = build(room, "warrior-3"); aura.ammo = 0;
+  assert.deepEqual([gun.ammoType, aura.ammoType], ["bullet", "auraCrystal"]);
+  factory.ammoStock = { powerCrystal: 8 }; factory.ammo = 8;
   room.moveLogisticsWorker = () => true;
-  const unit = worker(room, "energyTransport", { product: "auraCrystal", sourceTowerId: factory.id });
+  // Herhangi bir isci: burada dugumdeki bir toplayici cephanelige ataniyor.
+  const unit = worker(room, "crystalCollector", { nodeId: "crystal-1" });
+  room.assignWorker(client, { workerId: unit.id, sourceTowerId: factory.id });
+  assert.deepEqual(unit.assignment, { sourceTowerId: factory.id, postKind: "factory" });
+  // Stokta yalnizca guc kristali var ve onu kullanan kule yok: is yok.
   room.updateAssignedWorker(unit, 1);
   assert.equal(unit.cargo, 0);
-  unit.assignment.product = "bullet";
+  // Mermi geldi: yalnizca mermi kulesine.
+  factory.ammoStock.bullet = 4;
   room.updateAssignedWorker(unit, 1);
-  assert.equal(unit.cargo, 4);
+  assert.deepEqual([unit.cargo, unit.cargoAmmoType, unit.targetTowerId], [4, "bullet", gun.id]);
   room.updateAssignedWorker(unit, 1);
-  assert.equal(gun.ammo, 4);
-  assert.equal(factory.ammoStock.auraCrystal, 8);
+  assert.deepEqual([gun.ammo, aura.ammo], [4, 0]);
+  // Aura kristali geldi: aura kulesine. Mermi kulesi doymadi ama stokta mermisi yok.
+  factory.ammoStock.auraCrystal = 3;
+  room.updateAssignedWorker(unit, 1);
+  assert.deepEqual([unit.cargo, unit.cargoAmmoType, unit.targetTowerId], [3, "auraCrystal", aura.id]);
+  room.updateAssignedWorker(unit, 1);
+  assert.deepEqual([gun.ammo, aura.ammo], [4, 3]);
+  assert.equal(factory.ammoStock.powerCrystal, 8, "kullanan kulesi olmayan muhimmat tasindi");
+  assert.equal(factory.ammo, 8);
 });
 
 test("three visible professions have research with actual resource-specific effects", () => {
@@ -200,7 +296,7 @@ test("generic research enforces cell order and applies only the selected resourc
 test("emergency rebuild consumes depot parts and cannot bypass missing supply", () => {
   const room = createRoom("warrior");
   const target = build(room, "warrior-1");
-  const unit = worker(room, "repairer", {}); unit.skillIds = ["repair-emergency-rebuild"];
+  const unit = worker(room, "repairer", { postKind: "repair" }); unit.skillIds = ["repair-emergency-rebuild"];
   assert.equal(room.tryEmergencyRebuild(target), false);
   const depot = build(room, "repair-depot-1"); depot.repairParts = 20;
   assert.equal(room.tryEmergencyRebuild(target), true);
@@ -262,39 +358,186 @@ test("factories select independent recipes and preserve existing finished stock"
   assert.deepEqual(a.ammoStock, { bullet: 1, auraCrystal: 1 });
 });
 
-test("assigned carriers pull only required input, return obsolete cargo and supply repair iron", () => {
+test("warehouse-posted worker feeds the neediest consumer, returns obsolete input and supplies repair iron", () => {
+  // Hammadde Deposu'na atanan isci deponun stogunu ihtiyaci olan her yere
+  // tasiyor: cephaneligin tarifinin girdisi, Tamir Merkezi'nin demiri. Sira
+  // en bos alicidan (doluluk orani; `deliveryScore`).
   const room = createRoom("warrior");
   const warehouse = build(room, "warehouse-1"); warehouse.materials = { gunpowder: 10, mystic: 10, iron: 10 };
   const factory = build(room, "warrior-7"); const depot = build(room, "repair-depot-1");
-  const unit = worker(room, "energyTransport", { product: "energy" });
+  depot.materials.iron = 10; // yari dolu; bos cephanelik daha ihtiyacli
   room.moveLogisticsWorker = () => true;
   room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
-  room.assignWorker(client, { workerId: unit.id, sourceTowerId: factory.id, product: "materials" });
+  const unit = worker(room, "crystalCollector", { nodeId: "crystal-1" });
+  room.assignWorker(client, { workerId: unit.id, sourceTowerId: warehouse.id, product: "energy" });
+  assert.deepEqual(unit.assignment, { sourceTowerId: warehouse.id, postKind: "warehouse" });
+  assert.equal(unit.mode, "energyTransport");
   room.updateAssignedWorker(unit, 1);
-  assert.equal(unit.cargo, 5); assert.equal(unit.cargoResource, "gunpowder");
+  assert.deepEqual([unit.cargo, unit.cargoResource, unit.targetTowerId], [5, "gunpowder", factory.id]);
   assert.equal(warehouse.materials.gunpowder, 5);
+  // Tarif yuk yoldayken degisti: barutun alicisi kalmadi, depoya geri donuyor.
   room.setFactoryProduction(client, { towerId: factory.id, ammoType: "auraCrystal" });
   room.updateAssignedWorker(unit, 1);
   assert.equal(warehouse.materials.gunpowder, 10); assert.equal(unit.cargo, 0);
+  assert.equal(factory.materials.gunpowder, undefined);
+  // Yeni tarifin girdisi (mistik) cephanelige.
   room.updateAssignedWorker(unit, 1); room.updateAssignedWorker(unit, 1);
-  assert.equal(factory.materials.mystic, 5); assert.equal(factory.materials.gunpowder, undefined);
-  room.assignWorker(client, { workerId: unit.id, sourceTowerId: depot.id, product: "materials" });
-  room.updateAssignedWorker(unit, 1); room.updateAssignedWorker(unit, 1);
+  assert.equal(factory.materials.mystic, 5); assert.equal(warehouse.materials.mystic, 5);
+  // Merkezin demiri bitti: en bos alici artik o, ayni isci demir tasiyor.
+  depot.materials.iron = 0;
+  room.updateAssignedWorker(unit, 1);
+  assert.deepEqual([unit.cargo, unit.cargoResource, unit.targetTowerId], [5, "iron", depot.id]);
+  room.updateAssignedWorker(unit, 1);
   assert.equal(depot.materials.iron, 5); assert.equal(warehouse.materials.iron, 5);
+  assert.equal(factory.materials.mystic, 5, "daha dolu cephanelik bos merkezden once beslendi");
 });
 
-test("gatherers cannot bypass a missing warehouse; input loading reserves capacity", () => {
+test("gatherers cannot bypass a missing warehouse; in-flight input reserves the consumer's room", () => {
   const room = createRoom("warrior"); const factory = build(room, "warrior-7");
   room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
   const collector = worker(room, "crystalCollector", { nodeId: "ammo-source-1" });
   room.updateAssignedWorker(collector, 100); assert.equal(collector.cargo, 0);
   const warehouse = build(room, "warehouse-1"); warehouse.materials.gunpowder = 20;
   factory.materials.gunpowder = 18;
-  const first = worker(room, "energyTransport", { sourceTowerId: factory.id, product: "materials" });
+  const first = worker(room, "energyTransport", { sourceTowerId: warehouse.id, postKind: "warehouse" });
   const second = { ...first, id: "second-carrier" }; room.drones.set(second.id, second);
   room.updateAssignedWorker(first, 1); room.updateAssignedWorker(second, 1);
+  // Cephaneligin kalan 2 birimlik yeri birincinin yoldaki yukuyle dolu: ikinci isci yuk almiyor.
   assert.equal(first.cargo, 2); assert.equal(second.cargo, 0);
+  assert.equal(warehouse.materials.gunpowder, 18);
+  // Alici yikildi ve baska alici yok: yuk depoya geri donuyor, kaybolmuyor.
   factory.hp = 0;
   room.updateAssignedWorker(first, 1);
   assert.equal(warehouse.materials.gunpowder, 20); assert.equal(first.cargo, 0);
+});
+
+test("cargo whose consumer is gone goes to another consumer, else back to a store with room", () => {
+  {
+    // Enerji: alici doldu, baska alici yok -> enerji binasina geri.
+    const room = createRoom("warrior");
+    const reactor = build(room, "warrior-8");
+    const gun = build(room, "warrior-1"); gun.energy = gun.maxEnergy - 4;
+    room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
+    const unit = worker(room, "energyTransport", { sourceTowerId: reactor.id, postKind: "energy" });
+    reactor.energy = 10;
+    room.updateAssignedWorker(unit, 1);
+    assert.deepEqual([unit.cargo, unit.cargoResource, unit.targetTowerId, reactor.energy], [4, "energy", gun.id, 6]);
+    gun.energy = gun.maxEnergy;
+    room.updateAssignedWorker(unit, 1);
+    assert.deepEqual([unit.cargo, reactor.energy], [0, 10], "alicisi kalmayan enerji binaya donmedi");
+  }
+  {
+    // Muhimmat: hedef kule sevkiyati kapatti -> ayni turden oteki kule; o da
+    // kapaninca cephaneligin stoguna.
+    const room = createRoom("warrior");
+    const factory = build(room, "warrior-7");
+    const first = build(room, "warrior-1"); const second = build(room, "warrior-1");
+    first.ammo = 0; second.ammo = 0;
+    factory.ammoStock = { bullet: 6 }; factory.ammo = 6;
+    room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
+    const unit = worker(room, "energyTransport", { sourceTowerId: factory.id, postKind: "factory" });
+    room.updateAssignedWorker(unit, 1);
+    assert.equal(unit.cargo, 5);
+    const locked = room.towers.get(unit.targetTowerId);
+    const other = locked === first ? second : first;
+    locked.ammoLogisticsEnabled = false;
+    room.updateAssignedWorker(unit, 1);
+    assert.deepEqual([other.ammo, locked.ammo, unit.cargo], [5, 0, 0], "yuk ayni turden oteki kuleye gitmedi");
+    room.updateAssignedWorker(unit, 1);
+    assert.deepEqual([unit.cargo, unit.targetTowerId], [1, other.id]);
+    other.ammoLogisticsEnabled = false;
+    room.updateAssignedWorker(unit, 1);
+    assert.equal(unit.cargo, 0);
+    assert.deepEqual([factory.ammoStock.bullet, factory.ammo], [1, 1], "alicisi kalmayan muhimmat cephanelige donmedi");
+  }
+});
+
+test("reassigned worker with nowhere to put its cargo drops it and switches instead of waiting", () => {
+  // Atama yokken yuk bekliyor (yer acilinca teslim). Oyuncu isciyi baska ise
+  // verdiyse ve yukun koyacak hicbir yeri yoksa yuk birakiliyor; isci takili kalmiyor.
+  {
+    // Tasiyici: alici yok, enerji binasi dolu.
+    const room = createRoom("warrior");
+    const reactor = build(room, "warrior-8"); reactor.energy = 1e6;
+    room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
+    const unit = worker(room, "energyTransport", { sourceTowerId: reactor.id, postKind: "energy" });
+    unit.cargo = 4; unit.cargoResource = "energy";
+    room.updateAssignedWorker(unit, 1);
+    assert.equal(unit.cargo, 4, "atama yokken yuk birakildi");
+    room.assignWorker(client, { workerId: unit.id, nodeId: "crystal-1" });
+    assert.equal(unit.pendingAssignment.nodeId, "crystal-1");
+    room.updateAssignedWorker(unit, 1);
+    assert.deepEqual([unit.cargo, unit.cargoResource, unit.targetTowerId], [0, undefined, undefined]);
+    assert.equal(reactor.energy, 1e6, "dolu binaya yuk eklendi");
+    room.updateAssignedWorker(unit, 1);
+    assert.deepEqual([unit.assignment.nodeId, unit.mode, unit.pendingAssignment], ["crystal-1", "crystalCollector", undefined]);
+  }
+  {
+    // Yer var ama yol kapali (duvar): yuk birakilmiyor, yol acilinca teslim edilecek.
+    const room = createRoom("warrior");
+    const reactor = build(room, "warrior-8"); reactor.energy = 0;
+    room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => undefined;
+    const unit = worker(room, "energyTransport", { sourceTowerId: reactor.id, postKind: "energy" });
+    unit.cargo = 4; unit.cargoResource = "energy";
+    room.assignWorker(client, { workerId: unit.id, nodeId: "crystal-1" });
+    room.updateAssignedWorker(unit, 1);
+    assert.equal(unit.cargo, 4, "yolu kapali ama yeri olan bina varken yuk birakildi");
+    assert.equal(unit.pendingAssignment.nodeId, "crystal-1");
+  }
+  {
+    // Toplayici: yeri olan enerji binasi yok.
+    const room = createRoom("warrior");
+    const reactor = build(room, "warrior-8"); reactor.energy = 1e6;
+    room.moveLogisticsWorker = () => true;
+    const unit = worker(room, "crystalCollector", { nodeId: "crystal-1" });
+    unit.cargo = 3; unit.cargoResource = "energy";
+    room.updateAssignedWorker(unit, 1);
+    assert.equal(unit.cargo, 3, "atama yokken yuk birakildi");
+    room.assignWorker(client, { workerId: unit.id, sourceTowerId: reactor.id });
+    room.updateAssignedWorker(unit, 1);
+    assert.equal(unit.cargo, 0);
+    room.updateAssignedWorker(unit, 1);
+    assert.deepEqual([unit.assignment.postKind, unit.mode], ["energy", "energyTransport"]);
+  }
+  {
+    // Tamirci: Tamir Merkezi de onaracak yapi da yok.
+    const room = createRoom("warrior");
+    room.moveLogisticsWorker = () => true;
+    const unit = worker(room, "repairer", { postKind: "repair" });
+    unit.cargo = 3;
+    room.updateRepairWorker(unit, 1);
+    assert.equal(unit.cargo, 3, "atama yokken parca birakildi");
+    room.assignWorker(client, { workerId: unit.id, nodeId: "crystal-1" });
+    room.updateRepairWorker(unit, 1);
+    assert.equal(unit.cargo, 0);
+    room.updateRepairWorker(unit, 1);
+    assert.deepEqual([unit.assignment.nodeId, unit.mode], ["crystal-1", "crystalCollector"]);
+  }
+});
+
+test("transport research follows the carried cargo, not a chosen product", () => {
+  // Arastirma yukun turuyle: ayni isci barut tasirken mistik arastirmasindan
+  // yararlanmiyor, mistik tasirken hem fazla yukluyor hem hizli yuruyor.
+  const room = createRoom("warrior");
+  const warehouse = build(room, "warehouse-1"); warehouse.materials = { gunpowder: 20, mystic: 20 };
+  const bullets = build(room, "warrior-7"); const auras = build(room, "warrior-7");
+  room.setFactoryProduction(client, { towerId: auras.id, ammoType: "auraCrystal" });
+  auras.materials.mystic = 10; // barut cephaneligi daha bos: ilk sefer barut
+  room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
+  room.state.players.get("p1").workerSkillIds = ["transport-mystic-1", "transportSpeed-mystic-1"];
+  const unit = worker(room, "energyTransport", { sourceTowerId: warehouse.id, postKind: "warehouse" });
+  const speed = () => {
+    Object.assign(unit, { x: 0, y: 0 });
+    room.stepWorkerToward(unit, 1000, 0, 0.01);
+    return Math.hypot(unit.vx, unit.vy);
+  };
+  room.updateAssignedWorker(unit, 1);
+  assert.deepEqual([unit.cargoResource, unit.cargo, unit.targetTowerId], ["gunpowder", 5, bullets.id]);
+  const gunpowderSpeed = speed();
+  room.updateAssignedWorker(unit, 1);
+  assert.equal(bullets.materials.gunpowder, 5);
+  bullets.materials.gunpowder = 20;
+  room.updateAssignedWorker(unit, 1);
+  assert.deepEqual([unit.cargoResource, unit.cargo, unit.targetTowerId], ["mystic", 5 * 1.3, auras.id]);
+  assert.ok(Math.abs(speed() - gunpowderSpeed * 1.3) < 1e-9, "tasima hizi tasinan yukun turunu izlemiyor");
 });

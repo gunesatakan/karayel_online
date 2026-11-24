@@ -1,62 +1,86 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { MESSAGE_RULES } from "../apps/server/dist/rooms/MatchRoom.js";
 import {
   AMMO_COLLECTOR_WORKER_SKILL_TIERS,
   AMMO_TRANSPORT_WORKER_SKILL_TIERS,
   CRYSTAL_WORKER_SKILL_TIERS,
   REPAIR_WORKER_SKILL_TIERS,
-  WORKER_SPECIALIZATION_CHOICES,
-  WORKER_DEVELOPMENT_XP_COSTS
+  TUTORIAL_TRACKED_MESSAGES,
+  WORKER_DEVELOPMENT_XP_COSTS,
+  getWorkerHireCost
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
 
-test("generic worker chooses one specialization before its three permanent tiers", () => {
+function build(room, definitionId) {
+  const spot = findBuildableSpot(room, definitionId);
+  assert.ok(spot, `${definitionId} icin yer yok`);
+  room.placeTower(client, { ...spot, definitionId });
+  return [...room.towers.values()].at(-1);
+}
+
+/**
+ * Tek tip isci (sahibin istegi, 2026-11-24): uzmanlik adimi kalkti. Alinan
+ * isci rolsuz ve bosta; isi atandigi yerden geliyor ve yeniden atamayla
+ * degisiyor. Kip (`mode`) isin aynasi.
+ */
+test("a hired worker has no specialization step: it waits idle and its post gives its job", () => {
   const room = createRoom("warrior");
   const messages = [];
   const choiceClient = { sessionId: "p1", send(type, value) { messages.push({ type, value }); } };
   room.hireWorker(choiceClient, { advanced: false });
   const player = room.state.players.get("p1");
   const worker = player.hiredWorkers.at(-1);
-  assert.equal(messages.at(-1).type, "worker:specialization-choice");
-  assert.equal(messages.at(-1).value.options.length, WORKER_SPECIALIZATION_CHOICES.length);
-  room.chooseWorkerSpecialization(choiceClient, { workerId: worker.id, role: "repairer" });
-  assert.equal(worker.role, "repairer");
-  assert.equal(messages.at(-1).type, "worker:skill-choice");
-  assert.equal(messages.at(-1).value.role, "repairer");
-  for (const [first] of REPAIR_WORKER_SKILL_TIERS) room.chooseWorkerSkill(choiceClient, { workerId: worker.id, skillId: first.id });
-  assert.deepEqual(worker.skillIds, REPAIR_WORKER_SKILL_TIERS.map(([first]) => first.id));
-  assert.equal(messages.at(-1).type, "worker:skill-complete");
-  const drone = [...room.drones.values()].find((entry) => entry.hiredWorkerId === worker.id);
-  assert.deepEqual(drone.skillIds, worker.skillIds);
+  // Uzmanlik penceresi de mesaji da yok: alim yalnizca bildiriliyor.
+  assert.deepEqual(messages.map(({ type }) => type), ["worker:hired"]);
+  assert.equal(worker.role, undefined);
+  assert.equal(MESSAGE_RULES["worker:specialization"], undefined, "eski uzmanlik mesaji hala kabul ediliyor");
+  assert.equal(TUTORIAL_TRACKED_MESSAGES["worker:specialization"], undefined);
+  assert.equal(room.chooseWorkerSpecialization, undefined);
+  const drone = room.drones.get(messages[0].value.workerId);
+  assert.equal(drone.hiredWorkerId, worker.id);
+  assert.equal(drone.assignment, undefined);
+
+  // Is atamadan: Tamir Merkezi tamirci, dugum toplayici, enerji binasi tasiyici.
+  const depot = build(room, "repair-depot-1");
+  room.assignWorker(choiceClient, { workerId: drone.id, sourceTowerId: depot.id });
+  assert.deepEqual([drone.mode, drone.assignment], ["repairer", { sourceTowerId: depot.id, postKind: "repair" }]);
+  room.assignWorker(choiceClient, { workerId: drone.id, nodeId: "crystal-1" });
+  assert.deepEqual([drone.mode, drone.assignment], ["crystalCollector", { nodeId: "crystal-1" }]);
+  const reactor = build(room, "warrior-8");
+  room.assignWorker(choiceClient, { workerId: drone.id, sourceTowerId: reactor.id });
+  assert.deepEqual([drone.mode, drone.assignment], ["energyTransport", { sourceTowerId: reactor.id, postKind: "energy" }]);
+
+  // Rolsuz iscinin per-worker kademesi yok; gelisim agaci oyuncu basina (asagida).
+  room.chooseWorkerSkill(choiceClient, { workerId: worker.id, skillId: REPAIR_WORKER_SKILL_TIERS[0][0].id });
+  assert.deepEqual(worker.skillIds, []);
+  assert.deepEqual(messages.map(({ type }) => type), ["worker:hired"]);
 });
 
-test("hiring again while a worker has no specialization reopens its choice instead of charging", () => {
+test("hiring again charges again: no worker waits on a choice", () => {
+  // Eskiden secim yapilmadan basilan ikinci alim secimi yeniden aciyor ve
+  // altin almiyordu. Bekleyen secim olmadigi icin her alim yeni bir isci.
   const room = createRoom("warrior");
   const messages = [];
   const choiceClient = { sessionId: "p1", send(type, value) { messages.push({ type, value }); } };
   const player = room.state.players.get("p1");
+  const startGold = player.gold;
   room.hireWorker(choiceClient, { advanced: false });
-  const pending = player.hiredWorkers.at(-1);
-  const goldAfterFirstHire = player.gold;
-  const hiredCount = player.hiredWorkers.length;
-
-  // Pencere secim yapilmadan kapandi; oyuncu Isci Al'a tekrar basiyor.
   room.hireWorker(choiceClient, { advanced: false });
-  assert.equal(player.gold, goldAfterFirstHire);
-  assert.equal(player.hiredWorkers.length, hiredCount);
-  assert.equal(messages.at(-1).type, "worker:specialization-choice");
-  assert.equal(messages.at(-1).value.workerId, pending.id);
-  assert.ok(messages.at(-1).value.options.some((option) => option.id === "energyTransport"));
+  assert.equal(player.hiredWorkers.length, 2);
+  assert.equal(startGold - player.gold, getWorkerHireCost(0) + getWorkerHireCost(1));
+  assert.deepEqual(messages.map(({ type }) => type), ["worker:hired", "worker:hired"]);
+  const workerIds = messages.map(({ value }) => value.workerId);
+  assert.equal(new Set(workerIds).size, 2, "ikinci alim ilk isciyi yeniden acti");
+  assert.ok(workerIds.every((id) => room.drones.get(id)?.assignment === undefined), "yeni isci bosta degil");
 
-  // Altini yetmese bile secim yeniden acilabilmeli.
+  // Altin yetmezse ne alim ne bildirim var.
   player.gold = 0;
   room.hireWorker(choiceClient, { advanced: true });
-  assert.equal(messages.at(-1).type, "worker:specialization-choice");
-
-  room.chooseWorkerSpecialization(choiceClient, { workerId: pending.id, role: "energyTransport" });
-  assert.equal(pending.role, "energyTransport");
+  assert.equal(player.hiredWorkers.length, 2);
+  assert.equal(messages.length, 2);
 });
 
 test("every non-energy specialization exposes three binary choices", () => {
@@ -66,7 +90,7 @@ test("every non-energy specialization exposes three binary choices", () => {
   }
 });
 
-test("worker development tree spends XP once and applies to every role cell", () => {
+test("worker development tree spends XP once and applies to every worker doing that job", () => {
   const room = createRoom("warrior");
   const player = room.state.players.get("p1");
   player.experience = WORKER_DEVELOPMENT_XP_COSTS[0] + WORKER_DEVELOPMENT_XP_COSTS[1] + WORKER_DEVELOPMENT_XP_COSTS[2] + 10;
@@ -78,11 +102,17 @@ test("worker development tree spends XP once and applies to every role cell", ()
   assert.deepEqual(player.workerSkillIds, ["repair-tune-up", "repair-fine-tune", "repair-bulwark"]);
   room.hireWorker(client, { advanced: false });
   const hired = player.hiredWorkers.at(-1);
-  room.chooseWorkerSpecialization(client, { workerId: hired.id, role: "repairer" });
   room.ensureLogisticsWorkers();
+  const drone = [...room.drones.values()].find((entry) => entry.hiredWorkerId === hired.id);
+  // Agacin tamirci etkileri tamir isini yapan bir isci istiyor; henuz yok.
+  assert.equal(room.hasWorkerSkillForOwner("p1", "repairer", "repair-bulwark"), false);
+  // Uzmanlik secimi yerine atama: Tamir Merkezi'ne atanan isci tamirci.
+  const depot = build(room, "repair-depot-1");
+  room.assignWorker(client, { workerId: drone.id, sourceTowerId: depot.id });
   const repairers = [...room.drones.values()].filter((worker) => worker.ownerId === "p1" && worker.mode === "repairer");
-  assert.ok(repairers.length > 0);
+  assert.deepEqual(repairers.map((worker) => worker.id), [drone.id]);
   assert.ok(repairers.every((worker) => room.hasWorkerSkill(worker, "repair-bulwark") && room.hasWorkerSkill(worker, "repair-fine-tune")));
+  assert.equal(room.hasWorkerSkillForOwner("p1", "repairer", "repair-bulwark"), true);
 });
 
 test("crystal reserve and conduit change reactor failure and tower topology", () => {

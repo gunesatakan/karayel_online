@@ -6,6 +6,11 @@
  * dalga sayaci ilerlemiyor ve son dalga zaferi hic gelmiyor; zafer yalnizca
  * `tutorial:complete` ile ve ilerleme kapilarindan gecemiyor. Adim olcumu
  * yalnizca gercekten is yapan istekte `tutorial:progress` yolluyor.
+ *
+ * Tek tip isci: alim rol tasimiyor, isci bosta doguyor; atama olcumu isin
+ * kipini ve binanin gorev yeri turunu yaziyor. Olcum istemcinin adim
+ * motoruna (apps/web/src/tutorial.ts) dogrudan veriliyor: iki taraf ayni
+ * sozlesmeyi okuyor.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -23,6 +28,9 @@ import {
   canRecordProgress
 } from "../packages/shared/dist/index.js";
 import { findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { importWebModule } from "./helpers/web-module.mjs";
+
+const { isTutorialStepCompletedBy } = await importWebModule("apps/web/src/tutorial.ts");
 
 let roomCounter = 0;
 
@@ -84,6 +92,23 @@ function arrive(room, client) {
   }
   assert.equal(room.operatorBodies.get(client.sessionId)?.tasks.length ?? 0, 0, "beden isini bitirmedi");
 }
+
+/** Yapilari oyuncunun yolundan (komut, beden varisi) kurar; tanim kimligine gore doner. */
+function buildStructures(room, client, definitionIds) {
+  const built = {};
+  for (const definitionId of definitionIds) {
+    const spot = findBuildableSpot(room, definitionId);
+    assert.ok(spot, `${definitionId} icin yer yok`);
+    send(room, client, "placeTower", { ...spot, definitionId });
+    arrive(room, client);
+    built[definitionId] = [...room.towers.values()].find((tower) => tower.definition.id === definitionId);
+    assert.ok(built[definitionId], `${definitionId} kurulamadi`);
+  }
+  return built;
+}
+
+/** Son alimin `worker:hired` mesaji: yeni iscinin kimligi (istemci onu secili getiriyor). */
+const lastHired = (client) => client.sent.filter((entry) => entry.type === "worker:hired").at(-1)?.payload;
 
 /** ZentaX ile baslamis ogretici odasi (kurulum evresinde). */
 async function tutorialRoom(extra = {}) {
@@ -370,8 +395,29 @@ test("adim olcumu: yalnizca is yapan istek sayiliyor", async () => {
     send(room, client, "setTowerPerformance", { towerId: tower.id, performance: tower.performance > 0.5 ? 0.25 : 0.75 });
     assert.equal(progressOf(client).at(-1).action, "settings");
 
+    // Tek tip isci: eski istemcinin yolladigi rol yok sayiliyor, alim rol
+    // tasimiyor; isci bosta doguyor ve kimligi istemciye gidiyor.
     send(room, client, "worker:hire", { role: "repairer", advanced: false });
-    assert.deepEqual(progressOf(client).at(-1), { action: "hire", role: "repairer" });
+    assert.deepEqual(progressOf(client).at(-1), { action: "hire" });
+    assert.equal(isTutorialStepCompletedBy("hire", progressOf(client).at(-1)), true);
+    assert.equal(isTutorialStepCompletedBy("repairer", progressOf(client).at(-1)), false, "alim tamirci adimini gecirdi");
+    const hiredWorker = room.drones.get(lastHired(client)?.workerId);
+    assert.ok(hiredWorker, "alinan isci sahada degil");
+    assert.equal(hiredWorker.assignment, undefined, "alinan isci bir ise atandi");
+    assert.notEqual(hiredWorker.mode, "repairer", "alimdaki rol uygulandi");
+    assert.equal(player.hiredWorkers.at(-1).role, undefined);
+    // Altinsiz alim reddediliyor, sayilmiyor.
+    const counted = progressOf(client).length;
+    player.gold = 0;
+    send(room, client, "worker:hire", { advanced: false });
+    assert.equal(progressOf(client).length, counted, "altinsiz alim sayildi");
+    assert.equal(player.hiredWorkers.length, 1);
+    player.gold = TUTORIAL_GOLD_FLOOR;
+    // Uzmanlik secimi kalkti: ne kayitli ne izleniyor.
+    assert.equal(MESSAGE_RULES["worker:specialization"], undefined);
+    assert.equal(room.onMessageHandlers["worker:specialization"], undefined);
+    assert.equal(TUTORIAL_TRACKED_MESSAGES["worker:specialization"], undefined);
+    assert.ok(!Object.values(TUTORIAL_TRACKED_MESSAGES).includes("specialize"), "uzmanlik hala izleniyor");
 
     // Ulti sarjsiz is yapmiyor; sarjla ve gecerli sutunla sayiliyor.
     startCombat(room, client);
@@ -394,6 +440,62 @@ test("adim olcumu: yalnizca is yapan istek sayiliyor", async () => {
 
     // Izlenen her mesajin bir kurali var (kayitli tur).
     for (const type of Object.keys(TUTORIAL_TRACKED_MESSAGES)) assert.ok(MESSAGE_RULES[type], `${type} kuralsiz`);
+  } finally {
+    cleanup(room);
+  }
+});
+
+test("atama olcumu: is atandigi yerden; tamirci adimini yalnizca Tamir Merkezi'ne atama geciriyor", async () => {
+  const { room, client } = await tutorialRoom();
+  try {
+    const built = buildStructures(room, client, ["warehouse-1", "zeynep-10", "zeynep-9", "repair-depot-1", "zeynep-1"]);
+    send(room, client, "worker:hire", { advanced: false });
+    const workerId = lastHired(client)?.workerId;
+    const worker = room.drones.get(workerId);
+    assert.ok(worker, "alinan isci yok");
+    const assign = (target) => {
+      const before = progressOf(client).length;
+      send(room, client, "worker:assign", { workerId, ...target });
+      return progressOf(client).slice(before);
+    };
+
+    // Bina: gorev yeri turu ve isin kipi (kip isin aynasi).
+    for (const [definitionId, postKind, role] of [
+      ["warehouse-1", "warehouse", "energyTransport"],
+      ["zeynep-10", "energy", "energyTransport"],
+      ["zeynep-9", "factory", "energyTransport"],
+      ["repair-depot-1", "repair", "repairer"]
+    ]) {
+      const sent = assign({ sourceTowerId: built[definitionId].id });
+      assert.deepEqual(sent, [{ action: "assign", role, postKind }], definitionId);
+      assert.equal(worker.mode, role, `${definitionId}: kip isi yansitmiyor`);
+      assert.equal(isTutorialStepCompletedBy("assign", sent[0]), true, definitionId);
+      assert.equal(isTutorialStepCompletedBy("repairer", sent[0]), postKind === "repair", `${definitionId}: tamirci adimi`);
+      assert.equal(isTutorialStepCompletedBy("hire", sent[0]), false, definitionId);
+    }
+    // Kaynak: toplama; gorev yeri yok.
+    const node = room.getEconomyNodes().find((entry) => entry.kind === "gunpowder");
+    const gathering = assign({ nodeId: node.id });
+    assert.deepEqual(gathering, [{ action: "assign", role: "crystalCollector" }]);
+    assert.equal(isTutorialStepCompletedBy("repairer", gathering[0]), false, "kaynaga atama tamirci yapti");
+
+    // Is yapmayan atama sayilmiyor: ayni yere yeniden, isci almayan kule,
+    // baskasinin binasi, bilinmeyen isci.
+    assert.deepEqual(assign({ nodeId: node.id }), [], "ayni atama sayildi");
+    assert.deepEqual(assign({ sourceTowerId: built["zeynep-1"].id }), [], "kuleye atama sayildi");
+    built["repair-depot-1"].ownerId = "baska";
+    assert.deepEqual(assign({ sourceTowerId: built["repair-depot-1"].id }), [], "baskasinin binasi sayildi");
+    built["repair-depot-1"].ownerId = "solo";
+    const before = progressOf(client).length;
+    send(room, client, "worker:assign", { workerId: "yok-boyle", sourceTowerId: built["repair-depot-1"].id });
+    assert.equal(progressOf(client).length, before, "bilinmeyen isci sayildi");
+
+    // Elde yuk: is teslimden sonra degisiyor ama olcum oyuncunun sectigi isi yaziyor.
+    worker.cargo = 3;
+    const pending = assign({ sourceTowerId: built["repair-depot-1"].id });
+    assert.deepEqual(pending, [{ action: "assign", role: "repairer", postKind: "repair" }]);
+    assert.equal(worker.mode, "crystalCollector", "yuk teslim edilmeden is degisti");
+    assert.equal(isTutorialStepCompletedBy("repairer", pending[0]), true);
   } finally {
     cleanup(room);
   }
@@ -426,31 +528,35 @@ test("uretim secimi tur degismese de sayiliyor; baskasinin ya da gecersiz secim 
   }
 });
 
-test("teslimat bildirimi: yalnizca elle cephaneye atanmis tasiyici, ogreticide ve seyrek", async () => {
+test("teslimat bildirimi: yalnizca elle cephanelige atanmis isci, ogreticide ve seyrek", async () => {
   const { room, client } = await tutorialRoom();
   const realNow = Date.now;
   let now = realNow();
   Date.now = () => now;
   try {
     room.ensureLogisticsWorkers();
-    const spot = findBuildableSpot(room, "zeynep-1");
-    send(room, client, "placeTower", { ...spot, definitionId: "zeynep-1" });
-    arrive(room, client);
-    const tower = [...room.towers.values()].find((entry) => entry.definition.id === "zeynep-1");
-    const worker = [...room.drones.values()].find((drone) => drone.ownerId === "solo" && drone.mode === "energyTransport");
-    assert.ok(tower && worker, "kule ya da tasiyici yok");
+    const built = buildStructures(room, client, ["zeynep-1", "zeynep-9", "zeynep-10", "warehouse-1", "repair-depot-1"]);
+    const tower = built["zeynep-1"];
+    // Baslangictaki cephanelik tasiyicisi: varsayilan isi otomatik, elle atanmamis.
+    const worker = [...room.drones.values()].find((drone) => drone.ownerId === "solo" && drone.assignment?.postKind === "factory");
+    assert.ok(worker, "otomatik cephanelik tasiyicisi yok");
+    assert.equal(room.workerAssignments.has(worker.id), false);
     const delivered = () => progressOf(client).filter((entry) => entry.action === "ammoDelivered").length;
+    const assign = (target) => send(room, client, "worker:assign", { workerId: worker.id, ...target });
 
     room.applyAmmoTransportArrival(worker, tower, false);
-    assert.equal(delivered(), 0, "otomatik tasiyici sayildi");
-    room.workerAssignments.set(worker.id, { sourceTowerId: tower.id, product: "energy" });
+    assert.equal(delivered(), 0, "otomatik cephanelik tasiyicisi sayildi");
+    for (const definitionId of ["zeynep-10", "warehouse-1", "repair-depot-1"]) {
+      assign({ sourceTowerId: built[definitionId].id });
+      room.applyAmmoTransportArrival(worker, tower, false);
+      assert.equal(delivered(), 0, `${definitionId} gorev yerindeki isci sayildi`);
+    }
+    assign({ nodeId: room.getEconomyNodes().find((entry) => entry.kind === "gunpowder").id });
     room.applyAmmoTransportArrival(worker, tower, false);
-    assert.equal(delivered(), 0, "enerji tasiyicisi sayildi");
-    room.workerAssignments.set(worker.id, { sourceTowerId: tower.id, product: "materials" });
-    room.applyAmmoTransportArrival(worker, tower, false);
-    assert.equal(delivered(), 0, "hammadde tasiyicisi sayildi");
+    assert.equal(delivered(), 0, "kaynaktaki isci sayildi");
 
-    room.workerAssignments.set(worker.id, { sourceTowerId: tower.id, product: "bullet" });
+    assign({ sourceTowerId: built["zeynep-9"].id });
+    assert.deepEqual(room.workerAssignments.get(worker.id), { sourceTowerId: built["zeynep-9"].id, postKind: "factory" });
     room.applyAmmoTransportArrival(worker, tower, false);
     assert.equal(delivered(), 1);
     room.applyAmmoTransportArrival(worker, tower, false);

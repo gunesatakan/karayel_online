@@ -44,8 +44,10 @@ Sunucu dili hiç değiştirmez; ürettiği metin Türkçedir ve eskisiyle birebi
 | İşe Al (İşçi çekmecesi bölümü) | Hire |
 | Ağaç (İşçi çekmecesi bölümü) | Tree |
 | İşçi ağacı | Worker tree |
-| Toplama (işçi mesleği) | Gatherer |
-| Taşıma (işçi mesleği) | Carrier |
+| Toplama (işçinin işi; ağaç dalı) | Gathering / Gatherer |
+| Taşıma (işçinin işi; ağaç dalı) | Hauling / Carrier |
+| Hammadde / Enerji / Mühimmat taşıma | Material / Energy / Ammo hauling |
+| Boşta (atanmamış işçi) | Idle |
 | Otomatik (elle atanmamış işçi) | Automatic |
 | Yük | Cargo |
 | Kalan | Remaining |
@@ -100,7 +102,7 @@ Sunucu dili hiç değiştirmez; ürettiği metin Türkçedir ve eskisiyle birebi
 | Kurulum yasak bölge | No-build zone |
 | Kapı | Gate |
 | Tamir / onarım | Repair |
-| Tamirci (işçi uzmanlığı) | Repairer |
+| Tamirci (Tamir Merkezi'ne atanan işçi) | Repairer |
 | Ulti | Ultimate |
 | Beceri | Skill |
 | Pasif | Passive |

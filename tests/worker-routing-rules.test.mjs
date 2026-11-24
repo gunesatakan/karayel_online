@@ -85,8 +85,10 @@ test("işçi yükleme yaptığı yapıya girebilir", () => {
   assert.equal(room.isWorkerCellOpen(c.col, c.row, teslim), true, "teslimat hedefine girilemedi");
 });
 
-for (const mode of ["energyTransport", "ammoTransport"]) {
-  test(`${mode}: yükü kule merkezinde bırakır ve sonra kuleden çıkar`, () => {
+// Tek tip isci: tasiyici kipi atamadan geliyor (enerji binasi ya da
+// cephanelik), tasidigi sey de yukun kendisi (enerji ya da kulenin muhimmati).
+for (const [postKind, resource, label] of [["energy", "energy", "enerji binası işçisi"], ["factory", "ammo", "cephanelik işçisi"]]) {
+  test(`${label}: yükü kule merkezinde bırakır ve sonra kuleden çıkar`, () => {
     const room = oda();
     const tower = kur(room, "warrior-1");
     const cell = hucre(room, tower);
@@ -95,9 +97,9 @@ for (const mode of ["energyTransport", "ammoTransport"]) {
       { col: cell.col, row: cell.row - 1 }, { col: cell.col, row: cell.row + 1 }
     ].find(c => room.isWorkerCellOpen(c.col, c.row));
     assert.ok(start);
-    const worker = isci(room, { mode, targetTowerId: tower.id });
-    Object.assign(worker, gridToWorld(start.col, start.row, room.activeMap), { cargo: 2 });
-    const resource = mode === "energyTransport" ? "energy" : "ammo";
+    const worker = isci(room, { targetTowerId: tower.id });
+    const cargo = resource === "energy" ? { cargoResource: "energy" } : { cargoAmmoType: tower.ammoType };
+    Object.assign(worker, gridToWorld(start.col, start.row, room.activeMap), { cargo: 2, assignment: { postKind }, ...cargo });
     tower[resource] = 0;
     room.updateLogisticsWorker(worker, 0.016);
     assert.equal(tower[resource], 0, "komşu kareden teslim etti");

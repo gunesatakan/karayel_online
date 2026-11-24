@@ -6,22 +6,50 @@ import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs"
 const messages = [];
 const client = { sessionId: "p1", send(type, value) { messages.push({ type, value }); } };
 
-test("energy worker skills are chosen one tier at a time and remain on the hired worker", () => {
+/**
+ * Eski API: rolle alinmis bir isci kaydi (onceki surumun alimi). Sunucunun
+ * kendi kaydi gibi kimlik ve secimler enumerable degil.
+ */
+function legacyHiredWorker(id, role) {
+  const record = { role, advanced: undefined };
+  Object.defineProperties(record, {
+    id: { value: id, writable: true, configurable: true, enumerable: false },
+    skillIds: { value: [], writable: true, configurable: true, enumerable: false },
+    legacySuffix: { value: false, writable: true, configurable: true, enumerable: false }
+  });
+  return record;
+}
+
+test("a new hire has no per-worker tiers; a legacy energy worker still chooses them one at a time", () => {
+  messages.length = 0;
   const room = createRoom("warrior");
-  room.hireWorker(client, { role: "energyTransport" });
   const player = room.state.players.get("p1");
-  const worker = player.hiredWorkers.at(-1);
-  assert.equal(worker.role, "energyTransport");
-  assert.equal(worker.skillIds.length, 0);
-  assert.equal(messages.at(-1).type, "worker:skill-choice");
-  for (const pair of ENERGY_WORKER_SKILL_TIERS) room.chooseWorkerSkill(client, { workerId: worker.id, skillId: pair[0].id });
-  assert.deepEqual(worker.skillIds, ENERGY_WORKER_SKILL_TIERS.map(([option]) => option.id));
-  assert.equal(messages.at(-1).type, "worker:skill-complete");
+
+  // Tek tip isci: eski istemcinin rolu yok sayiliyor, kademe secimi acilmiyor.
+  room.hireWorker(client, { role: "energyTransport" });
+  const hired = player.hiredWorkers.at(-1);
+  assert.equal(hired.role, undefined);
+  assert.deepEqual(messages.map(({ type }) => type), ["worker:hired"]);
+  room.chooseWorkerSkill(client, { workerId: hired.id, skillId: ENERGY_WORKER_SKILL_TIERS[0][0].id });
+  assert.deepEqual(hired.skillIds, [], "rolsuz isci per-worker kademe secti");
+  assert.deepEqual(messages.map(({ type }) => type), ["worker:hired"]);
+
+  // Rolle alinmis eski kayit kendi kademelerini secmeye devam ediyor.
+  const legacy = legacyHiredWorker("worker-legacy", "energyTransport");
+  player.hiredWorkers.push(legacy);
   room.ensureLogisticsWorkers();
-  const drone = [...room.drones.values()].find((entry) => entry.id.endsWith(`:${worker.id}`));
-  assert.deepEqual(drone.skillIds, worker.skillIds);
-  room.chooseWorkerSkill(client, { workerId: worker.id, skillId: "energy-relay" });
-  assert.equal(worker.skillIds.length, 3, "permanent choices can not be replaced");
+  const drone = room.drones.get(`logistics-p1-energyTransport:${legacy.id}`);
+  assert.ok(drone, "eski kaydin iscisi sahaya cikmadi");
+  assert.deepEqual(drone.assignment, { postKind: "energy" }, "eski kaydin varsayilan isi degisti");
+  // Sira atlanamiyor: ikinci kademenin secenegi birinciden once secilemez.
+  room.chooseWorkerSkill(client, { workerId: legacy.id, skillId: ENERGY_WORKER_SKILL_TIERS[1][0].id });
+  assert.deepEqual(legacy.skillIds, []);
+  for (const pair of ENERGY_WORKER_SKILL_TIERS) room.chooseWorkerSkill(client, { workerId: legacy.id, skillId: pair[0].id });
+  assert.deepEqual(legacy.skillIds, ENERGY_WORKER_SKILL_TIERS.map(([option]) => option.id));
+  assert.equal(messages.at(-1).type, "worker:skill-complete");
+  assert.deepEqual(drone.skillIds, legacy.skillIds);
+  room.chooseWorkerSkill(client, { workerId: legacy.id, skillId: "energy-relay" });
+  assert.equal(legacy.skillIds.length, 3, "permanent choices can not be replaced");
 });
 
 test("relay arrival powers an adjacent tower from the delivered tower's pool", () => {

@@ -11,16 +11,23 @@
  * kayboluyor, acik `<select>` kapaniyordu -- kule cekmecesinde duzeltilen
  * hatanin aynisi (tests/tower-drawer-touch.test.mjs).
  *
+ * Sahibin istegi (2026-11-24): tek tip isci. Alimda uzmanlik penceresi,
+ * seritte urun secimi yok; is atandigi yerden geliyor.
+ *
  * Kilitlenen sozler:
  *   1. Baslaticida "İşçi" / "Worker"; cekmecede uc bolum, baslik satirinda.
  *      Varsayilan bolum iscisi olana Yonetim, olmayana Ise Al; secim mac
  *      boyunca hatirlaniyor.
- *   2. Isci alimi Envanter'de degil, tam ekran perde de yok.
+ *   2. Isci alimi Envanter'de degil, tam ekran perde de yok; bekleyen
+ *      uzmanlik durumu ve isareti (" •") yok. Alinan isci secili geliyor.
  *   3. Kadro alt barin cizim hattinda: kendi DOM'u, kendi yeniden kurmasi yok.
  *      Parmak basiliyken yeniden kurma erteleniyor; yuk ve kalan yerinde
  *      yaziliyor; dugmeler `pointerup`ta calisiyor; `<select>` yok.
- *   4. Hedef beklenirken cekmece seride iniyor; cekmece degisince secim kapanir.
- *   5. Brifingin isci adimi yeni cekmeceyi gosteriyor.
+ *   4. Hedef beklenirken cekmece seride iniyor (urun dugmesi yok), uygun yerler
+ *      haritada isin renginde halkali; cekmece degisince secim kapanir.
+ *   5. Haritada isciye dokunmak onu seciyor; hedef beklerken baska isciye
+ *      dokunmak secimi ona geciriyor.
+ *   6. Brifingin isci adimlari yeni cekmeceyi gosteriyor.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -52,6 +59,8 @@ const inventoryBuilder = between(ui, "const buildInventoryDrawer = ", "const bui
 const launcher = between(ui, "const buildLauncher = ", "const render = (state: ControlState) => {");
 const render = between(ui, "const render = (state: ControlState) => {", "const keepDrawerScroll = ");
 const workerBuilders = drawerBuilder + manageBuilder + pickBuilder + hireBuilder;
+const mapPointer = between(scene, "private handleMapPointer(pointer: Phaser.Input.Pointer) {", "if (this.hitSellButton(pointer)) {");
+const pickTap = between(scene, "private resolveWorkerPickTap(pointer: Phaser.Input.Pointer) {", "private getWorkerRosterState()");
 
 const web = await importWebModule("tests/fixtures/worker-roster-entry.ts");
 const { tr, en, setLocaleForTest, getTutorialCopy, pickTutorialTarget, TUTORIAL_TARGETS } = web;
@@ -67,11 +76,12 @@ test("baslatici: İşçi / Worker; eski İşçi Ağacı adi ve anahtari yok", ()
       assert.doesNotMatch(text, /İşçi Ağacı|Worker Tree|Gelişim Ağacı|Development Tree/, `${locale} ${key}`);
     }
   }
-  assert.match(launcher, /makeLaunchButton\(`\$\{t\("controls\.launch\.worker"\)\}[^`]*`, "worker"\)/);
+  assert.match(launcher, /makeLaunchButton\(t\("controls\.launch\.worker"\), "worker"\)/);
   assert.match(ui, /type DrawerId = "towers" \| "skills" \| "inventory" \| "creative" \| "worker";/);
   assert.equal(ui.includes("\"workerDevelopment\")"), false, "eski cekmece kimligi kalmis");
-  // Rolsuz isci isareti artik bu dugmede, Envanter'de degil.
-  assert.match(launcher, /controls\.launch\.worker"\)\}\$\{state\.workerHire\?\.pendingSpecialization \? " •" : ""\}/);
+  // Tek tip isci rolsuz kalmiyor: bekleyen uzmanlik isareti ne baslaticida ne Ise Al bolumunde.
+  assert.doesNotMatch(launcher + drawerBuilder, /pendingSpecialization|" •"/);
+  assert.match(drawerBuilder, /makeTab\("hire", t\("controls\.workerTab\.hire"\)\)/);
   assert.match(launcher, /makeLaunchButton\(t\("controls\.launch\.inventory", \{ count: total \}\), "inventory"\)/);
 });
 
@@ -105,7 +115,7 @@ test("varsayilan bolum: iscisi olana Yonetim, olmayana Ise Al; secim mac boyunca
   assert.equal((ui.match(/workerTab = undefined;/g) ?? []).length, 1, "bolum secimi mac bitmeden siliniyor");
 });
 
-test("isci alimi Envanter'de degil; tam ekran perde kalkti", () => {
+test("isci alimi Envanter'de degil; tam ekran perde ve uzmanlik secimi kalkti", () => {
   assert.doesNotMatch(inventoryBuilder, /workerHire|worker-hire|hireWorker/);
   // Alim dugmesi tek yerde, Ise Al bolumunde.
   assert.equal((ui.match(/game-controls__worker-hire\b(?!-)/g) ?? []).length, 1);
@@ -113,9 +123,20 @@ test("isci alimi Envanter'de degil; tam ekran perde kalkti", () => {
   assert.match(hireBuilder, /\(\) => dispatch\(\{ action: "hireWorker" \}\)/);
   assert.match(hireBuilder, /makeWorkerTierButton\(t\("controls\.workerHire\.tierNormal"/);
   assert.match(hireBuilder, /makeWorkerTierButton\(t\("controls\.workerHire\.tierAdvanced"/);
-  // Bekleyen uzmanlik secimi satin alma degil: kademe gosterilmiyor, dugme hep acik.
-  assert.match(hireBuilder, /if \(!pending\) \{\n\s+body\.push\(makeRow\(\[\n\s+makeWorkerTierButton/);
-  assert.match(hireBuilder, /hire\.affordable \|\| pending,/);
+  // Tek tip isci: kademe her zaman seciliyor, dugme yalnizca bedel yetince acik;
+  // bedelsiz "uzmanligini sec" yolu yok.
+  assert.match(hireBuilder, /body\.push\(intro\);\n(?:\s*\/\/[^\n]*\n)*\s+body\.push\(makeRow\(\[\n\s+makeWorkerTierButton/);
+  assert.match(hireBuilder, /\n\s+hire\.affordable,\n\s+\(\) => dispatch\(\{ action: "hireWorker" \}\)/);
+  assert.match(hireBuilder, /intro\.textContent = t\("controls\.workerHire\.intro", \{ hired: hire\.hired \}\);/);
+  assert.match(hireBuilder, /note\.textContent = t\("controls\.workerHire\.description"\);/);
+  assert.doesNotMatch(hireBuilder, /pending|[sS]pecializ/);
+  // Bekleyen uzmanlik durumu ne arayuzun durumunda ne sahnenin urettiginde.
+  assert.doesNotMatch(between(ui, "workerHire?: {", "};"), /pendingSpecialization|generic|roles/);
+  assert.doesNotMatch(between(scene, "private getWorkerHireState() {", "\n  }\n"), /pendingSpecialization|generic|roles|ACTIVE_WORKER_ROLES/);
+  for (const key of ["controls.workerHire.pendingIntro", "controls.workerHire.pendingName", "controls.workerHire.pendingDescription"]) {
+    assert.equal(key in tr, false, `${key} kalmis`);
+    assert.equal(key in en, false, `${key} Ingilizcesi kalmis`);
+  }
   // Perde ve onu acan eylemler yok.
   for (const gone of ["gold-shop inventory", "openWorkerHire", "closeWorkerHire", "workerHire?.open"]) {
     assert.equal(ui.includes(gone), false, `arayuzde kalmis: ${gone}`);
@@ -123,6 +144,42 @@ test("isci alimi Envanter'de degil; tam ekran perde kalkti", () => {
   for (const gone of ["openWorkerHire", "closeWorkerHire", "workerHireOpen"]) {
     assert.equal(scene.includes(gone), false, `sahnede kalmis: ${gone}`);
   }
+});
+
+test("alinan isci secili geliyor: uzmanlik penceresi yok, uygun yerler haritada halkali", () => {
+  // Alim istegi yalnizca kademe; rol yok.
+  assert.match(scene, /this\.room\?\.send\("worker:hire", \{ advanced: this\.workerHireAdvanced \}\);/);
+  // Uzmanlik penceresi ve mesajlari kalkti.
+  assert.equal(scene.includes("worker:specialization"), false, "uzmanlik penceresi kalmis");
+  assert.equal(scene.includes("WORKER_SPECIALIZATION_CHOICES"), false);
+  // Bildirimdeki kimlikle secime giriliyor. Isci bir sonraki anlik goruntude
+  // geliyor: o gelene kadar secim bekliyor, sonra satir yoksa kapaniyor.
+  const hired = between(scene, 'room.onMessage("worker:hired", ', 'room.onMessage("worker:skill-choice", ');
+  assert.match(hired, /if \(typeof message\.workerId === "string"\) \{\n\s+this\.workerPick = \{ workerId: message\.workerId \};\n\s+this\.workerPickAwaitUntil = performance\.now\(\) \+ 3000;\n\s+this\.emitControlState\(\);/);
+  const rosterState = between(scene, "private getWorkerRosterState(): WorkerRosterState | undefined {", "private findTappedWorkerAt(");
+  assert.match(rosterState, /pick: this\.workerPick/);
+  assert.match(rosterState, /if \(this\.workerPick && !roster\.picking && performance\.now\(\) > this\.workerPickAwaitUntil\) this\.workerPick = undefined;/);
+  // Metinler yeni akisi soyluyor: uzmanlik degil, dokunus.
+  assert.equal(tr["scene.worker.hired"], "{worker} alındı ({cost}g). Bir kaynağa ya da binaya dokun.");
+  assert.equal(en["scene.worker.hired"], "{worker} hired ({cost}g). Tap a resource or building.");
+  assert.equal(tr["controls.workerHire.description"], "Alınan işçi seçili gelir: bir kaynağa ya da binaya dokunarak işini ver.");
+  assert.equal(en["controls.workerHire.description"], "The new worker comes selected: tap a resource or building to give it a job.");
+  for (const key of ["scene.worker.specializationTitle", "scene.worker.specializationBody", "scene.worker.specializationSkipped"]) {
+    assert.equal(key in tr, false, `${key} kalmis`);
+    assert.equal(key in en, false, `${key} Ingilizcesi kalmis`);
+  }
+
+  // Secim varken her karede: tukenmemis kaynaklar toplayicinin, Tamir Merkezi
+  // tamircinin, oteki gorev binalari tasiyicinin renginde halka.
+  assert.match(between(scene, "\n  update() {", "\n  }\n"), /this\.renderWorkerPickMarks\(now\);/);
+  const marks = between(scene, "private renderWorkerPickMarks(now: number) {", "private drawMap() {");
+  assert.match(marks, /if \(!this\.workerPick\) \{\n\s+if \(marks\?\.visible\) marks\.clear\(\)\.setVisible\(false\);\n\s+return;/);
+  assert.match(marks, /if \(node\.remaining !== undefined && node\.remaining <= 0\) continue;\n\s+graphics\.lineStyle\(2, WORKER_LOOKS\.gatherer\.color,/);
+  // Bina kurali haritaya dokunusla ayni (`isWorkerPostTower`); yalnizca kendi ve ayakta binalar.
+  assert.match(marks, /if \(tower\.ownerId !== this\.localSessionId \|\| \(tower\.hp \?\? 1\) <= 0 \|\| !isWorkerPostTower\(tower\)\) continue;/);
+  assert.match(marks, /const color = tower\.definitionId === REPAIR_DEPOT_TOWER_ID \? WORKER_LOOKS\.repairer\.color : WORKER_LOOKS\.carrier\.color;/);
+  // Hareket azaltmada nabiz yok.
+  assert.match(marks, /const pulse = this\.feedback\?\.reducedMotion \? 1 :/);
 });
 
 test("yuzen kadro paneli yok: modulu, sinifi ve CSS'i kalkti", () => {
@@ -160,11 +217,8 @@ test("dokunma: parmak basiliyken kadro yeniden kurulmuyor", () => {
   // yeniden kurma tetiklemesin).
   assert.doesNotMatch(workerBuilders, /"click"|"pointerdown"|\.onclick/);
   assert.match(manageBuilder, /button\.addEventListener\("pointerup", \(\) => dispatch\(\{ action: "selectWorker", workerId: row\.id \}\)\);/);
-  // Urun secimi yerel acilir liste degil: acikken panel yeniden kurulunca kapaniyordu.
+  // Yerel acilir liste yok: acikken panel yeniden kurulunca kapaniyordu.
   assert.doesNotMatch(workerBuilders, /createElement\("select"\)|createElement\("option"\)/);
-  assert.match(pickBuilder, /getWorkerProductOptions\(picking\.role\)/);
-  assert.match(pickBuilder, /dispatch\(\{ action: "setWorkerProduct", product \}\)/);
-  assert.match(pickBuilder, /button\.setAttribute\("aria-pressed", String\(active\)\);/);
 });
 
 test("canli sayilar yerinde yaziliyor: yapi anahtarinda degiller", () => {
@@ -188,27 +242,89 @@ test("canli sayilar yerinde yaziliyor: yapi anahtarinda degiller", () => {
   assert.doesNotMatch(read("apps/web/src/worker-roster.ts"), /JSON\.stringify/);
 });
 
-test("hedef seridi: cekmece yerine tek satir; cekmece degisince secim kapanir", () => {
+test("hedef seridi: cekmece yerine tek satir, urun secimi yok; cekmece degisince secim kapanir", () => {
   // Secim varken cekmece seride iniyor, bolumler kurulmuyor.
   assert.match(drawerBuilder, /if \(picking\) return \{ id: "worker:pick", drawer: buildWorkerPickStrip\(picking\) \};/);
   assert.match(pickBuilder, /strip\.className = "game-controls__drawer worker-pick";/);
   assert.match(pickBuilder, /makeActionButton\(t\("controls\.roster\.cancel"\), "worker-pick__cancel", true, \(\) => dispatch\(\{ action: "cancelWorkerAssign" \}\)\)/);
+  // Serit kimi (isin adiyla) ve tek yonergeyi yaziyor; urun dugmeleri ve eylemi kalkti.
+  assert.match(pickBuilder, /role: formatWorkerRole\(picking\.role, picking\.postKind\)/);
+  assert.match(pickBuilder, /what\.textContent = getWorkerPickHint\(\);/);
+  assert.doesNotMatch(pickBuilder, /getWorkerProductOptions|setWorkerProduct|workerProduct|worker-pick__product|aria-pressed/);
+  for (const [name, source] of [["arayuz", ui], ["sahne", scene]]) {
+    assert.equal(source.includes("setWorkerProduct"), false, `${name}: urun eylemi kalmis`);
+  }
   // Serit gorunmeden secim acik kalmaz: baska cekmece acilinca iptal,
   // secim varken Isci cekmecesi acik.
   const toggle = between(ui, "const toggleDrawer = ", "/** Cekmece kabugu");
   assert.match(toggle, /if \(latestState\?\.workerRoster\?\.picking\) dispatch\(\{ action: "cancelWorkerAssign" \}\);/);
   assert.match(render, /if \(state\.workerRoster\?\.picking\) openDrawer = "worker";/);
-  // Serit haritayi kapatmiyor: bir ya da iki satir, kaydirma yok.
+  // Serit haritayi kapatmiyor: tek satir, kaydirma yok.
   const rule = between(css, ".game-controls__drawer.worker-pick {", "}");
   assert.match(rule, /overflow: visible;/);
   // Sahne: secim acikken haritaya dokunus atamadir; atama ve iptal secimi kapatir.
-  const pointer = between(scene, "private handleMapPointer(pointer: Phaser.Input.Pointer) {", "if (this.hitSellButton(pointer)) {");
-  assert.match(pointer, /if \(this\.workerPick && this\.isBattlePointer\(pointer\)\) \{\n\s+this\.resolveWorkerPickTap\(pointer\);\n\s+return;\n\s+\}/);
-  const tap = between(scene, "private resolveWorkerPickTap(pointer: Phaser.Input.Pointer) {", "private getWorkerRosterState()");
-  assert.match(tap, /if \(target\.kind === "assign"\) \{\n\s+this\.room\?\.send\("worker:assign", target\.message\);\n\s+this\.workerPick = undefined;/);
+  assert.match(mapPointer, /if \(this\.workerPick && this\.isBattlePointer\(pointer\)\) \{\n\s+this\.resolveWorkerPickTap\(pointer\);\n\s+return;\n\s+\}/);
+  assert.match(pickTap, /if \(target\.kind === "assign"\) \{\n\s+this\.room\?\.send\("worker:assign", target\.message\);\n\s+this\.workerPick = undefined;/);
+  // Hedef yalnizca dokunulan yerden: atama cagrisina rol ya da urun girmiyor.
+  assert.doesNotMatch(between(pickTap, "resolveWorkerMapTarget({", "});"), /role|product/);
   // Tukenmis kaynak: istek gitmiyor, kisa bildirim; secim acik kaliyor.
-  assert.match(tap, /\} else if \(target\.kind === "depleted"\) \{\n\s+this\.showNotice\(t\("server\.worker\.nodeDepleted"\)\);\n\s+\}/);
+  assert.match(pickTap, /\} else if \(target\.kind === "depleted"\) \{\n\s+this\.showNotice\(t\("server\.worker\.nodeDepleted"\)\);\n\s+\}/);
+  // Isci almayan yapi: bildirim hangi yapilarin isci aldigini soyluyor.
+  assert.match(pickTap, /\} else if \(target\.kind === "wrongBuilding"\) \{\n\s+this\.showNotice\(t\("scene\.worker\.wrongBuilding"\)\);/);
+  assert.equal(tr["scene.worker.wrongBuilding"], "Bu binaya işçi atanmaz: kaynak, depo, enerji binası, cephanelik ya da Tamir Merkezi seç.");
+  assert.equal(en["scene.worker.wrongBuilding"], "Workers can't take this building: pick a resource, warehouse, energy building, armory or Repair Depot.");
   assert.match(scene, /room\.onMessage\("worker:rejected", /);
+});
+
+test("haritada isciye dokunmak onu seciyor; ozel kipler once; hedef beklerken kaynak ve bina once", () => {
+  const tap = between(scene, "private handleMapPointer(pointer: Phaser.Input.Pointer) {", "private handleSkillButton(");
+  // Bekleyen eylem yokken isciye dokunus onu secer.
+  assert.match(tap, /if \(!this\.pendingAction\) \{\n\s+const tapped = this\.findTappedWorkerAt\(pointer\.worldX, pointer\.worldY\);\n\s+if \(tapped\) \{\n\s+this\.workerPick = \{ workerId: tapped\.id \};\n\s+this\.emitControlState\(\);\n\s+return;/);
+  // Ozel kiplerin hepsi isci seciminden once: kip acikken yoldan gecen isci
+  // dokunusu yutmuyor (atama, kart hedefi, sat, ulti, esya, yasak, yonlendirme,
+  // bekleme penceresi, arena disi, infaz hedefi).
+  const select = tap.indexOf("const tapped = this.findTappedWorkerAt(");
+  for (const branch of [
+    "this.resolveWorkerPickTap(pointer);",
+    "this.resolveCardTargetTap(pointer);",
+    "this.requestSellSelectedTower();",
+    'this.room?.send("useUltimate"',
+    'this.room?.send("shop:place"',
+    'this.room?.send("worker:banCell"',
+    'this.room?.send("useSkill", { slot: 0',
+    "performance.now() < this.ignoreMapPointerUntil",
+    "if (!this.isBattlePointer(pointer)) {",
+    "this.resolveExecuteTap(pointer);"
+  ]) {
+    const at = tap.indexOf(branch);
+    assert.ok(at >= 0 && at < select, `${branch} isci seciminden once`);
+  }
+  // Kule secimi sonra; yapinin ustundeki dokunusu `findTappedWorker` yapiya birakiyor.
+  assert.ok(select < tap.indexOf("const tower = this.findTowerAt(pointer.worldX, pointer.worldY);"));
+  // Dokunus kaydi ayni dali goruyor.
+  const outcome = between(scene, "private describeTapOutcome(pointer: Phaser.Input.Pointer) {", "private handleMapPointerMove(");
+  assert.match(outcome, /if \(!this\.pendingAction && this\.findTappedWorkerAt\(pointer\.worldX, pointer\.worldY\)\) return "isci secimi";/);
+  assert.ok(outcome.indexOf('return "ARENA DISI"') < outcome.indexOf('return "isci secimi"'));
+  assert.ok(outcome.indexOf('return "isci secimi"') < outcome.indexOf('return "kule secimi"'));
+  // Kendi iscisi, govdeden genis yaricap; yapinin ustundeki dokunus yapiya gidiyor.
+  const finder = between(scene, "private findTappedWorkerAt(x: number, y: number) {", "private handleMapPointer(");
+  assert.match(finder, /return findTappedWorker\(\{/);
+  assert.match(finder, /radius: this\.getMapCellSize\(\) \* 0\.55,/);
+  assert.match(finder, /drones: this\.workerRosterSource\?\.drones \?\? \[\],/);
+  assert.match(finder, /ownerId: this\.localSessionId,/);
+  assert.match(finder, /hitTower: Boolean\(this\.findTowerAt\(x, y\)\)/);
+  // Hedef beklerken once kaynak ya da bina: kaynagin ustunde toplayan isci hep
+  // var, ona dokunus atamadir. Yakinda hedef yoksa baska isciye dokunmak
+  // secimi ona geciriyor; atama gitmiyor.
+  assert.match(pickTap, /if \(target\.kind === "none"\) \{\n\s+const tapped = this\.findTappedWorkerAt\(pointer\.worldX, pointer\.worldY\);\n\s+if \(tapped && tapped\.id !== worker\.id\) \{\n\s+this\.workerPick = \{ workerId: tapped\.id \};\n\s+this\.emitControlState\(\);\n\s+\}\n\s+return;\n\s+\}/);
+  assert.ok(pickTap.indexOf("resolveWorkerMapTarget(") < pickTap.indexOf("tapped.id !== worker.id"), "kaynaktaki isciye dokunus atama olmali");
+  // Listeden secim: her lojistik iscisi (bosta olan da); secim yalnizca kimlik.
+  const listSelect = between(scene, 'case "selectWorker": {', 'case "cancelWorkerAssign":');
+  assert.match(listSelect, /!getWorkerRosterRole\(worker\)\) break;/);
+  assert.match(listSelect, /this\.workerPick = \{ workerId: worker\.id \};/);
+  // Yonetim'in yonergesi iki yolu da soyluyor.
+  assert.match(tr["controls.roster.intro"], /listeden ya da haritada dokunarak/);
+  assert.match(en["controls.roster.intro"], /from the list or by tapping it on the map/);
 });
 
 test("gorunum: oteki cekmecelerle ayni dil, 44 px dokunma hedefi", () => {
@@ -222,7 +338,7 @@ test("gorunum: oteki cekmecelerle ayni dil, 44 px dokunma hedefi", () => {
   assert.deepEqual(block.match(/max-height:[^;]+;/g), ["max-height: min(54vh, 380px);"]);
   assert.match(between(block, ".game-controls__drawer--worker-manage {", "}"), /max-height: min\(54vh, 380px\);/);
   assert.doesNotMatch(block, /border-radius|animation|transition|box-shadow/, "kose, parilti ya da hareket eklenmis");
-  for (const selector of [".worker-tabs {", ".game-controls button.worker-tab {", ".game-controls button.worker-row {", ".game-controls__drawer.worker-pick {", ".game-controls button.worker-pick__product {", ".game-controls button.game-controls__worker-hire {"]) {
+  for (const selector of [".worker-tabs {", ".game-controls button.worker-tab {", ".game-controls button.worker-row {", ".game-controls button.worker-row--idle {", ".game-controls__drawer.worker-pick {", ".game-controls button.game-controls__worker-hire {"]) {
     assert.ok(block.includes(selector), `kural yok: ${selector}`);
   }
   // Uzun listede parmak satirin ustunden cekmeceyi kaydirabiliyor.
@@ -234,6 +350,12 @@ test("egitim: isci adimlari Isci cekmecesi -> bolum -> asil dugme", () => {
   assert.deepEqual([...TUTORIAL_TARGETS.hire], [".game-controls__worker-hire", '[data-worker-tab="hire"]', '[data-launch="worker"]']);
   assert.deepEqual([...TUTORIAL_TARGETS.assign], [".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]']);
   assert.deepEqual([...TUTORIAL_TARGETS.workerTree], [".worker-development__viewport", '[data-worker-tab="tree"]', '[data-launch="worker"]']);
+  // Tamirci alinmiyor, atanir: adim Ise Al'i degil listeyi ve seridi gosteriyor.
+  assert.deepEqual([...TUTORIAL_TARGETS.repairer], [...TUTORIAL_TARGETS.assign]);
+  // Urun dugmesi kalkti; hicbir adim onu hedeflemiyor.
+  for (const [id, selectors] of Object.entries(TUTORIAL_TARGETS)) {
+    assert.ok(selectors.every((selector) => !selector.includes("data-worker-product")), id);
+  }
   // Derinden yuzeye: ekranda gorunen ilk hedef cerceveleniyor.
   const visible = new Set(['[data-launch="worker"]']);
   const find = (selector) => (visible.has(selector) ? selector : undefined);
@@ -254,8 +376,9 @@ test("egitim: isci adimlari Isci cekmecesi -> bolum -> asil dugme", () => {
   for (const id of ["hire", "assign", "workerTree", "repairer", "gatherer", "materials", "ammoCarrier"]) {
     assert.ok(TUTORIAL_TARGETS[id].every((selector) => !/inventory|gold-shop/.test(selector)), id);
   }
-  // Isci adimlarinin metni iki dilde kisa; hicbiri Envanter'i anmiyor.
-  for (const [locale, word] of [["tr", /Envanter/], ["en", /Inventory/]]) {
+  // Isci adimlarinin metni iki dilde kisa; hicbiri Envanter'i anmiyor. Isci
+  // turleri adimi tek tip isciyi anlatiyor: is atandigi yerden.
+  for (const [locale, word, single] of [["tr", /Envanter/, /işi atadığın yerden gelir/], ["en", /Inventory/, /where you assign it sets its job/]]) {
     setLocaleForTest(locale);
     try {
       for (const id of ["workerTypes", "hire", "assign", "workerTree", "repairer"]) {
@@ -263,14 +386,12 @@ test("egitim: isci adimlari Isci cekmecesi -> bolum -> asil dugme", () => {
         assert.doesNotMatch(copy.body, word, `${locale}: ${copy.body}`);
         assert.ok(copy.body.length <= 170, `${locale}/${id}`);
       }
+      assert.match(getTutorialCopy("workerTypes").body, single, `${locale}: tek tip isci anlatilmiyor`);
       assert.ok(getTutorialCopy("workerTypes").ack, "isci turleri bilgi adimi");
       assert.equal(getTutorialCopy("hire").ack, undefined, "alim eylemle geciyor");
     } finally {
       setLocaleForTest("tr");
     }
   }
-  assert.equal(getTutorialCopy("hire").body, "İşçi › İşe Al'da İşçi Al'a bas ve uzmanlığını seç. Her alım bir sonrakini pahalılaştırır.");
-  // Uzmanlik secilmeden kapanan pencerenin bildirimi de yeni yeri soyluyor.
-  assert.equal(tr["scene.worker.specializationSkipped"], "Uzmanlık seçilmedi. İşçi › İşe Al'dan seçebilirsin.");
-  assert.equal(en["scene.worker.specializationSkipped"], "No specialization chosen. You can pick one from Worker › Hire.");
+  assert.equal(getTutorialCopy("hire").body, "İşçi › İşe Al'da İşçi Al'a bas. Yeni işçi seçili gelir: bir kaynağa ya da binaya dokun. Her alım bir sonrakini pahalılaştırır.");
 });

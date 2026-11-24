@@ -1,14 +1,15 @@
 import {
-  REPAIR_DEPOT_TOWER_ID,
+  HIRABLE_WORKER_ROLES,
   RESOURCE_NAMES,
-  WORKER_ROLE_LABELS,
+  getWorkerJob,
+  getWorkerPostKind,
   type AmmoNodeSnapshot,
   type CrystalNodeSnapshot,
   type DroneSnapshot,
-  type HirableWorkerRole,
   type ResourceKind,
   type TowerSnapshot,
-  type TransportProduct
+  type TransportProduct,
+  type WorkerPostKind
 } from "@karayel/shared";
 import { ammoTypeLabels } from "./codex";
 import { t } from "./i18n";
@@ -24,11 +25,17 @@ import { localizeTowerName } from "./server-text";
  * degisiminde butun satirlari yeniden yaratiyordu; parmagin altindaki dugme
  * DOM'dan cikinca dokunus kayboluyordu.
  *
- * Metinler `t()` ile ve katalogdan (meslek, hammadde, muhimmat, kule adlari);
+ * Sahibin istegi (2026-11-24): tek tip isci. Meslek ve tasinacak urun secimi
+ * yok; isin adi iscinin atandigi yerden (`getWorkerJob`, `WorkerPostKind`):
+ * kaynakta Toplama, Hammadde Deposu / enerji binasi / cephanelikte o binanin
+ * tasimasi, Tamir Merkezi'nde Onarim; atamasiz isci Bosta.
+ *
+ * Metinler `t()` ile ve katalogdan (hammadde, muhimmat, kule adlari);
  * satirlar ham veri tasiyor, dil cizim aninda okunuyor.
  */
 
-export type WorkerRosterRole = "gatherer" | "carrier" | "repairer";
+/** Iscinin su anki isi (rengi ve satiri bununla). */
+export type WorkerRosterRole = "gatherer" | "carrier" | "repairer" | "idle";
 
 /** Haritadaki kaynak: turu ve ayni turdekiler arasindaki sirasi (1'den). */
 export type ResourceNode = { id: string; kind: ResourceKind; ordinal: number; remaining?: number; x: number; y: number };
@@ -36,7 +43,7 @@ export type ResourceNode = { id: string; kind: ResourceKind; ordinal: number; re
 export type WorkerRosterTarget =
   | { type: "node"; kind: ResourceKind; ordinal: number }
   | { type: "tower"; name: string; definitionId?: string }
-  /** Atanan bina artik yok (satildi ya da yikildi). */
+  /** Atanan bina artik yok (satildi ya da yikildi): isci ayni turden en yakin binada. */
   | { type: "lost" };
 
 export type WorkerRosterRow = {
@@ -49,8 +56,8 @@ export type WorkerRosterRow = {
   auto: boolean;
   /** Toplayicinin cikardigi hammadde. */
   resource?: ResourceKind;
-  /** Tasiyicinin tasidigi urun. */
-  product?: TransportProduct;
+  /** Tasiyici ve tamircinin gorev yeri turu. */
+  postKind?: WorkerPostKind;
   target?: WorkerRosterTarget;
   /** Toplayicinin kaynagi tukendi: isci bekliyor. */
   depleted: boolean;
@@ -59,30 +66,27 @@ export type WorkerRosterRow = {
   remaining?: number;
 };
 
-export type WorkerPick = { workerId: string; product: TransportProduct };
+/** Haritada hedefi beklenen isci (tek tip: yalnizca kimligi). */
+export type WorkerPick = { workerId: string };
 
 export type WorkerRosterState = {
   rows: WorkerRosterRow[];
   /** Haritada hedefi beklenen isci; cekmece o sirada tek satira iniyor. */
-  picking?: WorkerPick & { order: number; role: WorkerRosterRole };
+  picking?: WorkerPick & { order: number; role: WorkerRosterRole; postKind?: WorkerPostKind };
 };
 
 type TowerLike = Pick<TowerSnapshot, "id" | "name" | "definitionId" | "ownerId" | "x" | "y"> & Partial<Pick<TowerSnapshot, "hp" | "resourceProvider">>;
 
-/** Rolun katalogdaki meslek adi (`WORKER_ROLE_LABELS`). */
-const ROLE_LABEL_IDS: Record<WorkerRosterRole, HirableWorkerRole> = {
-  gatherer: "crystalCollector",
-  carrier: "energyTransport",
-  repairer: "repairer"
-};
+/** Lojistik iscisi mi (AttackLord'un ulti dronlari degil). */
+export function isLogisticsWorkerSnapshot(drone: Pick<DroneSnapshot, "mode">): boolean {
+  return (HIRABLE_WORKER_ROLES as readonly string[]).includes(drone.mode);
+}
 
-const CARRIER_PRODUCTS: readonly TransportProduct[] = ["materials", "energy", "bullet", "auraCrystal", "powerCrystal"];
-
-/** Lojistik iscisinin meslegi; savas dronlarinda `undefined`. */
-export function getWorkerRosterRole(mode: DroneSnapshot["mode"]): WorkerRosterRole | undefined {
-  if (mode === "crystalCollector" || mode === "ammoCollector") return "gatherer";
-  if (mode === "energyTransport" || mode === "ammoTransport") return "carrier";
-  return mode === "repairer" ? "repairer" : undefined;
+/** Lojistik iscisinin su anki isi; savas dronlarinda `undefined`. */
+export function getWorkerRosterRole(drone: Pick<DroneSnapshot, "mode" | "assignment">): WorkerRosterRole | undefined {
+  if (!isLogisticsWorkerSnapshot(drone)) return undefined;
+  const job = getWorkerJob(drone.assignment);
+  return job === "gather" ? "gatherer" : job === "haul" ? "carrier" : job === "repair" ? "repairer" : "idle";
 }
 
 /** Enerji kristalleri ve hammadde yataklari tek listede, turune gore numarali. */
@@ -115,7 +119,7 @@ export function buildWorkerRoster(input: {
 }): WorkerRosterState {
   const rows: WorkerRosterRow[] = [];
   for (const drone of input.drones) {
-    const role = drone.ownerId === input.ownerId && drone.maxHp !== undefined ? getWorkerRosterRole(drone.mode) : undefined;
+    const role = drone.ownerId === input.ownerId && drone.maxHp !== undefined ? getWorkerRosterRole(drone) : undefined;
     if (!role) continue;
     const assignment = drone.assignment;
     const row: WorkerRosterRow = {
@@ -123,7 +127,7 @@ export function buildWorkerRoster(input: {
       order: rows.length + 1,
       role,
       advanced: drone.advanced === true,
-      auto: drone.autoAssigned === true || !assignment,
+      auto: drone.autoAssigned === true,
       depleted: false,
       cargo: Math.floor(drone.cargo ?? 0)
     };
@@ -135,8 +139,8 @@ export function buildWorkerRoster(input: {
         row.remaining = node.remaining === undefined ? undefined : Math.floor(node.remaining);
         row.depleted = node.remaining !== undefined && node.remaining <= 0;
       }
-    } else {
-      if (role === "carrier") row.product = assignment?.product ?? "energy";
+    } else if (role !== "idle") {
+      row.postKind = assignment?.postKind;
       if (assignment?.sourceTowerId) {
         const tower = input.getTower(assignment.sourceTowerId);
         row.target = tower && (tower.hp ?? 1) > 0 ? { type: "tower", name: tower.name, definitionId: tower.definitionId } : { type: "lost" };
@@ -147,7 +151,7 @@ export function buildWorkerRoster(input: {
   const picked = input.pick ? rows.find((row) => row.id === input.pick?.workerId) : undefined;
   return {
     rows,
-    picking: picked && input.pick ? { workerId: picked.id, order: picked.order, role: picked.role, product: input.pick.product } : undefined
+    picking: picked ? { workerId: picked.id, order: picked.order, role: picked.role, postKind: picked.postKind } : undefined
   };
 }
 
@@ -161,20 +165,19 @@ export function getWorkerRosterStructureKey(state: WorkerRosterState | undefined
   if (!state) return "";
   const rows = state.rows.map((row) => {
     const target = !row.target ? "" : row.target.type === "node" ? `n${row.target.kind}${row.target.ordinal}` : row.target.type === "tower" ? `t${row.target.definitionId ?? ""}${row.target.name}` : "lost";
-    return `${row.id}:${row.role}:${row.advanced ? 1 : 0}${row.auto ? 1 : 0}${row.depleted ? 1 : 0}:${row.resource ?? ""}:${row.product ?? ""}:${target}:${row.remaining === undefined ? 0 : 1}`;
+    return `${row.id}:${row.role}:${row.advanced ? 1 : 0}${row.auto ? 1 : 0}${row.depleted ? 1 : 0}:${row.resource ?? ""}:${row.postKind ?? ""}:${target}:${row.remaining === undefined ? 0 : 1}`;
   });
-  return `${rows.join("|")}#${state.picking ? `${state.picking.workerId}:${state.picking.product}` : ""}`;
-}
-
-/** Haritada hedef beklerken secilebilen urunler; yalnizca tasiyicida. */
-export function getWorkerProductOptions(role: WorkerRosterRole): readonly TransportProduct[] {
-  return role === "carrier" ? CARRIER_PRODUCTS : [];
+  return `${rows.join("|")}#${state.picking ? state.picking.workerId : ""}`;
 }
 
 // ------------------------------------------------------------ Metinler
 
-export function formatWorkerRole(role: WorkerRosterRole): string {
-  return WORKER_ROLE_LABELS[ROLE_LABEL_IDS[role]];
+/** Isin adi: "Toplama", "Hammadde taşıma", "Enerji taşıma", "Mühimmat taşıma", "Onarım", "Boşta". */
+export function formatWorkerRole(role: WorkerRosterRole, postKind?: WorkerPostKind): string {
+  if (role === "gatherer") return t("controls.roster.jobGather");
+  if (role === "repairer") return t("controls.roster.jobRepair");
+  if (role === "idle") return t("controls.roster.jobIdle");
+  return t(postKind === "warehouse" ? "controls.roster.jobHaulWarehouse" : postKind === "factory" ? "controls.roster.jobHaulFactory" : "controls.roster.jobHaulEnergy");
 }
 
 /** "Enerji kristali 2", "Barut yatağı 1": ic kimlik ("crystal-2") yerine. */
@@ -182,6 +185,7 @@ export function formatResourceNodeName(kind: ResourceKind, ordinal: number): str
   return t(kind === "energy" ? "controls.roster.nodeCrystal" : "controls.roster.nodeDeposit", { resource: RESOURCE_NAMES[kind], n: ordinal });
 }
 
+/** Urunun adi (egitim metinleri): hammadde, enerji ya da muhimmat turu. */
 export function formatTransportProduct(product: TransportProduct): string {
   if (product === "materials") return t("controls.roster.productMaterials");
   if (product === "energy") return t("controls.roster.productEnergy");
@@ -197,18 +201,18 @@ function formatWorkerTarget(row: WorkerRosterRow): string {
   return target.type === "node" ? formatResourceNodeName(target.kind, target.ordinal) : localizeTowerName(target.definitionId, target.name);
 }
 
-/** Satirin sabit metni: baslik ("2. Taşıma") ve is ("Enerji · Otomatik"). */
+/** Satirin sabit metni: baslik ("2. Enerji taşıma") ve hedef ("Enerji Reaktörü"). */
 export function describeWorkerRow(row: WorkerRosterRow): { title: string; detail: string } {
-  const role = formatWorkerRole(row.role);
+  const role = formatWorkerRole(row.role, row.postKind);
   const title = t(row.advanced ? "controls.roster.titleAdvanced" : "controls.roster.title", { n: row.order, role });
+  if (row.role === "idle") return { title, detail: t("controls.roster.idleDetail") };
   const target = formatWorkerTarget(row);
   if (row.role === "gatherer") {
     // Elle atanmis toplayicida kaynagin adi turunu zaten soyluyor.
     if (!row.auto && row.target) return { title, detail: target };
     return { title, detail: row.resource ? t("controls.roster.detail", { job: RESOURCE_NAMES[row.resource], target }) : target };
   }
-  const job = row.role === "repairer" ? t("controls.roster.jobRepair") : formatTransportProduct(row.product ?? "energy");
-  return { title, detail: t("controls.roster.detail", { job, target }) };
+  return { title, detail: target };
 }
 
 /** Canli sayi: tasinan yuk. */
@@ -216,50 +220,42 @@ export function formatWorkerCargo(row: WorkerRosterRow): string {
   return t("controls.roster.cargo", { n: row.cargo });
 }
 
-/** Canli sayi: toplayicinin kaynaginda kalan; baska rollerde bos. */
+/** Canli sayi: toplayicinin kaynaginda kalan; baska islerde bos. */
 export function formatWorkerReserve(row: WorkerRosterRow): string {
   if (row.depleted) return t("controls.roster.depleted");
   return row.remaining === undefined ? "" : t("controls.roster.remaining", { n: row.remaining });
 }
 
-/** Hedef beklenirken seritte yazan yonerge. */
-export function getWorkerPickHint(role: WorkerRosterRole, product: TransportProduct): string {
-  if (role === "gatherer") return t("controls.roster.hintNode");
-  if (role === "repairer") return t("controls.roster.hintRepair");
-  if (product === "materials") return t("controls.roster.hintMaterials");
-  return t(product === "energy" ? "controls.roster.hintEnergy" : "controls.roster.hintAmmo");
+/** Hedef beklenirken seritte yazan yonerge: her isci her yere gidebiliyor. */
+export function getWorkerPickHint(): string {
+  return t("controls.roster.hintPost");
 }
 
 // ------------------------------------------------------------ Haritada hedef
 
-/** Bina bu isin cikis (hammaddede: beslenecek) binasi mi; sunucudaki `assignWorker` ile ayni kural. */
-export function isWorkerSourceTower(role: WorkerRosterRole, product: TransportProduct, tower: Pick<TowerLike, "definitionId" | "resourceProvider">): boolean {
-  const depot = tower.definitionId === REPAIR_DEPOT_TOWER_ID;
-  if (role === "repairer") return depot;
-  if (role !== "carrier") return false;
-  if (product === "materials") return tower.resourceProvider === "ammunition" || depot;
-  return tower.resourceProvider === (product === "energy" ? "energy" : "ammunition");
+/** Isci atanabilen bina mi (sunucudaki `assignWorker` ile ayni kural: `getWorkerPostKind`). */
+export function isWorkerPostTower(tower: Pick<TowerLike, "definitionId" | "resourceProvider">): boolean {
+  return getWorkerPostKind({ id: tower.definitionId, resourceProvider: tower.resourceProvider }) !== undefined;
 }
 
-export type WorkerAssignMessage = { workerId: string; nodeId?: string; sourceTowerId?: string; product?: TransportProduct };
+export type WorkerAssignMessage = { workerId: string; nodeId?: string; sourceTowerId?: string };
 
 export type WorkerMapTarget =
   | { kind: "assign"; message: WorkerAssignMessage }
   /** Dokunulan kaynak tukenmis: atama gitmiyor, oyuncuya soyleniyor. */
   | { kind: "depleted" }
-  /** Dokunulan bina bu is icin uygun degil. */
+  /** Dokunulan bina isci alamiyor (kule, duvar). */
   | { kind: "wrongBuilding" }
   | { kind: "none" };
 
 /**
- * Haritaya dokunusun atamaya cevrilmesi. Toplayici kaynaga, tasiyici ve
- * tamirci kendi binasina gider; en yakin aday secilir. `hitTowerId`: dokunulan
- * karedeki kule (cok kareli binada merkez yaricapin disinda kalabiliyor).
+ * Haritaya dokunusun atamaya cevrilmesi: dokunusa en yakin kaynak ya da gorev
+ * binasi (Hammadde Deposu, enerji binasi, cephanelik, Tamir Merkezi).
+ * `hitTowerId`: dokunulan karedeki kule (cok kareli binada merkez yaricapin
+ * disinda kalabiliyor); o en yakin sayiliyor.
  */
 export function resolveWorkerMapTarget(input: {
   workerId: string;
-  role: WorkerRosterRole;
-  product: TransportProduct;
   x: number;
   y: number;
   radius: number;
@@ -269,24 +265,46 @@ export function resolveWorkerMapTarget(input: {
   ownerId: string;
 }): WorkerMapTarget {
   const distance = (item: { x: number; y: number }) => Math.hypot(item.x - input.x, item.y - input.y);
-  if (input.role === "gatherer") {
-    const node = input.nodes.filter((entry) => distance(entry) <= input.radius).sort((a, b) => distance(a) - distance(b))[0];
-    if (!node) return { kind: "none" };
+  const reach = (tower: TowerLike) => (tower.id === input.hitTowerId ? 0 : distance(tower));
+  let post: TowerLike | undefined;
+  let nearbyOwned = false;
+  for (const tower of input.towers) {
+    if (tower.ownerId !== input.ownerId || (tower.hp ?? 1) <= 0 || reach(tower) > input.radius) continue;
+    nearbyOwned = true;
+    if (isWorkerPostTower(tower) && (!post || reach(tower) < reach(post))) post = tower;
+  }
+  const node = input.nodes.filter((entry) => distance(entry) <= input.radius).sort((a, b) => distance(a) - distance(b))[0];
+  if (node && (!post || distance(node) < reach(post))) {
     if (node.remaining !== undefined && node.remaining <= 0) return { kind: "depleted" };
     return { kind: "assign", message: { workerId: input.workerId, nodeId: node.id } };
   }
-  const reach = (tower: TowerLike) => (tower.id === input.hitTowerId ? 0 : distance(tower));
-  const nearby: TowerLike[] = [];
-  for (const tower of input.towers) {
-    if (tower.ownerId === input.ownerId && (tower.hp ?? 1) > 0 && reach(tower) <= input.radius) nearby.push(tower);
+  if (post) return { kind: "assign", message: { workerId: input.workerId, sourceTowerId: post.id } };
+  return nearbyOwned ? { kind: "wrongBuilding" } : { kind: "none" };
+}
+
+/**
+ * Haritaya dokunus bir isciyi mi seciyor: yerel oyuncunun en yakin iscisi,
+ * govdesinden genis bir yaricapta (kucuk ve hareketli birim). Dokunus bir
+ * yapinin uzerindeyse yapi kazanir (`hitTower`): binada bekleyen isci listeden.
+ */
+export function findTappedWorker(input: {
+  x: number;
+  y: number;
+  radius: number;
+  drones: readonly DroneSnapshot[];
+  ownerId: string;
+  hitTower: boolean;
+}): DroneSnapshot | undefined {
+  if (input.hitTower) return undefined;
+  let best: DroneSnapshot | undefined;
+  let bestDistance = input.radius;
+  for (const drone of input.drones) {
+    if (drone.ownerId !== input.ownerId || drone.maxHp === undefined || !isLogisticsWorkerSnapshot(drone)) continue;
+    const distance = Math.hypot(drone.x - input.x, drone.y - input.y);
+    if (distance <= bestDistance) {
+      best = drone;
+      bestDistance = distance;
+    }
   }
-  if (nearby.length === 0) return { kind: "none" };
-  const source = nearby.filter((tower) => isWorkerSourceTower(input.role, input.product, tower)).sort((a, b) => reach(a) - reach(b))[0];
-  if (!source) return { kind: "wrongBuilding" };
-  return {
-    kind: "assign",
-    message: input.role === "repairer"
-      ? { workerId: input.workerId, sourceTowerId: source.id }
-      : { workerId: input.workerId, sourceTowerId: source.id, product: input.product }
-  };
+  return best;
 }

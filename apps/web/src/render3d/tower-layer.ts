@@ -192,7 +192,8 @@ export type Worker3dInput = {
   size: number;
   /** Rol rengi (worker-look) ve rolun ek parcasi. */
   color: number;
-  role: "gatherer" | "carrier" | "repairer" | "drone";
+  /** Isin gorunusu (worker-look); bosta isci gri ve yuk tasimiyor. */
+  role: "gatherer" | "carrier" | "repairer" | "idle" | "drone";
   carrying: boolean;
 };
 

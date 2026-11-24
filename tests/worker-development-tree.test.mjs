@@ -300,7 +300,14 @@ test("muhimmat toplayicinin yonleri fabrikadan cikan partiyle kuleye geliyor", (
   room.applyAmmoTransportArrival(transport, tower, false);
   assert.equal(room.getTowerAmmoCost(tower), baseAmmo);
 
-  addWorker(room, "ammoCollector", ["ammo-light-cast", "ammo-heat-sink-casing", "ammo-piercing-core", "ammo-long-barrel", "ammo-heavy-cast"]);
+  // Bir ise atanmamis (bosta) iscinin secimleri sayilmiyor: sahibin becerisi
+  // o isi su an yapan bir isciden.
+  const collector = addWorker(room, "ammoCollector", ["ammo-light-cast", "ammo-heat-sink-casing", "ammo-piercing-core", "ammo-long-barrel", "ammo-heavy-cast"]);
+  room.applyAmmoTransportArrival(transport, tower, false);
+  assert.equal(room.getTowerAmmoCost(tower), baseAmmo, "bosta iscinin secimi partiye isledi");
+  assert.equal(room.getTowerShotHeat(tower), baseHeat);
+
+  collector.assignment = { nodeId: "ammo-source-1" };
   room.applyAmmoTransportArrival(transport, tower, false);
   assert.ok(Math.abs(room.getTowerAmmoCost(tower) - baseAmmo * 0.75) < 1e-9);
   assert.ok(Math.abs(room.getTowerShotHeat(tower) - baseHeat * 0.7) < 1e-9);
@@ -320,7 +327,8 @@ test("zirhli kasa ve zirh kaplama kulenin aldigi hasari kesiyor", () => {
   const room = setupRoom();
   const plain = place(room, "warrior-1");
   const armored = place(room, "warrior-1");
-  addWorker(room, "ammoCollector", ["ammo-armored-crate"]);
+  // Sahibin becerisi ise atanmis bir isciden (bkz. ustteki test).
+  addWorker(room, "ammoCollector", ["ammo-armored-crate"]).assignment = { nodeId: "ammo-source-1" };
   room.applyAmmoTransportArrival(addWorker(room, "ammoTransport", []), armored, false);
   room.damageTower(plain, 50);
   room.damageTower(armored, 50);

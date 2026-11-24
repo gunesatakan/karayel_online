@@ -34,9 +34,28 @@ test("in-flight reservations send the next carrier to another tower", () => {
   first.ammo = first.maxAmmo - 3;
   second.ammo = second.maxAmmo - 3;
   first.logisticsPriority = "critical";
-  const reserved = { ...worker, id: "reserved", cargo: 3, logisticsPhase: "deliver", targetTowerId: first.id };
+  // Yoldaki yuk sinifina gore sayiliyor: kritik kuleye enerji goturen isci
+  // onun muhimmat yerini ayirmiyor.
+  const energyCarrier = { ...room.drones.get("logistics-p1-energyTransport"), id: "energy-carrier", cargo: 3, cargoResource: "energy", logisticsPhase: "deliver", targetTowerId: first.id };
+  room.drones.set(energyCarrier.id, energyCarrier);
+  assert.equal(room.selectDeliveryTarget(worker, "ammo").id, first.id);
+  const reserved = { ...worker, id: "reserved", cargo: 3, cargoAmmoType: first.ammoType, logisticsPhase: "deliver", targetTowerId: first.id };
   room.drones.set(reserved.id, reserved);
   assert.equal(room.selectDeliveryTarget(worker, "ammo").id, second.id);
+});
+
+test("energy reservations spread energy carriers too, independently of ammunition", () => {
+  const { room, towers: [first, second] } = setup();
+  const carrier = room.drones.get("logistics-p1-energyTransport");
+  first.energy = first.maxEnergy - 3;
+  second.energy = second.maxEnergy - 3;
+  first.logisticsPriority = "critical";
+  const ammoCarrier = { ...room.drones.get("logistics-p1-ammoTransport"), id: "ammo-carrier", cargo: 3, cargoAmmoType: first.ammoType, logisticsPhase: "deliver", targetTowerId: first.id };
+  room.drones.set(ammoCarrier.id, ammoCarrier);
+  assert.equal(room.selectDeliveryTarget(carrier, "energy").id, first.id);
+  const reserved = { ...carrier, id: "reserved-energy", cargo: 3, cargoResource: "energy", logisticsPhase: "deliver", targetTowerId: first.id };
+  room.drones.set(reserved.id, reserved);
+  assert.equal(room.selectDeliveryTarget(carrier, "energy").id, second.id);
 });
 
 test("disabled delivery target reroutes without deleting cargo", () => {
@@ -50,11 +69,13 @@ test("disabled delivery target reroutes without deleting cargo", () => {
 });
 
 test("no eligible recipient preserves carried ammunition", () => {
+  // Alici da yuku geri alacak cephanelik de yok: isci yukuyle bekliyor.
   const { room, towers, worker } = setup();
   for (const tower of towers) tower.ammoLogisticsEnabled = false;
-  Object.assign(worker, { cargo: 3, logisticsPhase: "deliver", targetTowerId: towers[0].id });
+  Object.assign(worker, { cargo: 3, cargoAmmoType: towers[0].ammoType, logisticsPhase: "deliver", targetTowerId: towers[0].id });
   room.updateLogisticsWorker(worker, 0);
   assert.equal(worker.cargo, 3);
+  assert.equal(worker.cargoAmmoType, towers[0].ammoType);
   assert.equal(worker.logisticsPhase, "deliver");
 });
 

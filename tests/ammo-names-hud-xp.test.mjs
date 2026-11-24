@@ -4,11 +4,12 @@
  * Kilitlenen sozler:
  *   1. Her muhimmat turunun tek adi var: `ammoTypeLabels` (TR Kurşun / Aura
  *      kristali / Güç çekirdeği, EN Bullet / Aura crystal / Power core).
- *      Cephaneligin uretim secicisi, tasiyicinin urun dugmeleri, isci
- *      listesi, kule cekmecesi/dosya, ust cubugun muhimmat cipi ve ogretici
- *      bu sozlugu okuyor; eski ikinci adlar ("Projektil", "Psişik / Aura",
+ *      Cephaneligin uretim secicisi, kule cekmecesi/dosya, ust cubugun
+ *      muhimmat cipi ve ogretici (urun adi `formatTransportProduct` ile) bu
+ *      sozlugu okuyor; eski ikinci adlar ("Projektil", "Psişik / Aura",
  *      "Projectile", "Psychic / Aura", "Mermi · Aura · Güç") geri gelmiyor.
- *      Hammadde adlari ("Güç kristali") ayri ve degismiyor.
+ *      Hammadde adlari ("Güç kristali") ayri ve degismiyor. Tasiyicinin urun
+ *      dugmeleri tek tip isciyle (2026-11-24) kalkti.
  *   2. Ust satirda altinin hemen yaninda deneyim (★): canli, altinla ayni
  *      kisaltma, iki dilde ipucu; Detay panelindeki ★ cipi de yerinde.
  */
@@ -25,7 +26,7 @@ const read = (path) => readFileSync(join(root, path), "utf8").replace(/\r\n/g, "
 const web = await importWebModule("tests/fixtures/ammo-names-entry.ts");
 const {
   setLocaleForTest, installCatalogLocale, AMMO_TYPE_ORDER, ammoTypeLabels, enAmmoTypeLabels, formatTransportProduct,
-  getWorkerProductOptions, describeTowerAmmo, getTutorialCopy, formatHudCompactNumber, tr, en,
+  describeTowerAmmo, getTutorialCopy, formatHudCompactNumber, tr, en,
   RESOURCE_NAMES, RESOURCE_NAMES_EN, towerCatalog, getTowerAmmoUsage
 } = web;
 installCatalogLocale();
@@ -78,7 +79,7 @@ test("eski ikinci adlar arayuz kodunda ve metinlerde yok", () => {
   }
 });
 
-test("uretim secicisi, tasiyici dugmeleri, muhimmat cipi ve kule satiri ammoTypeLabels okuyor", () => {
+test("uretim secicisi, egitimin urun adi, muhimmat cipi ve kule satiri ammoTypeLabels okuyor", () => {
   const ui = read("apps/web/src/game-control-ui.ts");
   const picker = ui.slice(ui.indexOf("const buildProductionPicker = "), ui.indexOf("Secili kulenin paneli."));
   assert.ok(picker.length > 200, "uretim secicisi bulunamadi");
@@ -87,14 +88,16 @@ test("uretim secicisi, tasiyici dugmeleri, muhimmat cipi ve kule satiri ammoType
   assert.doesNotMatch(picker, /controls\.tower\.production\./);
   assert.match(ui, /const ammoLabel = AMMO_TYPE_ORDER\.map\(\(type\) => ammoTypeLabels\[type\]\)\.join\(" · "\);/);
   assert.match(read("apps/web/src/worker-roster.ts"), /return ammoTypeLabels\[product\];/);
-  assert.match(read("apps/web/src/tutorial.ts"), /ammo: ammoTypeLabels\[production\],/);
+  const tutorial = read("apps/web/src/tutorial.ts");
+  assert.match(tutorial, /ammo: ammoTypeLabels\[production\],/);
+  // Tasiyicinin urun dugmeleri kalkti: urunun adi yalnizca egitim metninde.
+  assert.match(tutorial, /product: formatTransportProduct\(production\),/);
+  assert.doesNotMatch(ui, /formatTransportProduct|getWorkerProductOptions|worker-pick__product/);
 
   for (const locale of ["tr", "en"]) {
     withLocale(locale, () => {
       const names = CANONICAL[locale];
-      const ammoProducts = getWorkerProductOptions("carrier").filter((product) => product in names);
-      assert.deepEqual([...ammoProducts], ["bullet", "auraCrystal", "powerCrystal"]);
-      for (const type of ammoProducts) assert.equal(formatTransportProduct(type), names[type], `${locale} ${type}`);
+      for (const type of AMMO_TYPE_ORDER) assert.equal(formatTransportProduct(type), names[type], `${locale} ${type}`);
       let checked = 0;
       for (const tower of Object.values(towerCatalog).flat()) {
         const usage = getTowerAmmoUsage(tower);
@@ -116,10 +119,13 @@ test("ogretici kanonik adlari yaziyor (secicideki, dugmedeki ve paneldeki ad ayn
       for (const type of AMMO_TYPE_ORDER) assert.ok(production.includes(lower(names[type])), `${locale}: ${production}`);
       assert.doesNotMatch(production, /\{|projektil|projectile|psychic/i);
       for (const type of AMMO_TYPE_ORDER) {
-        // Iki otomatik tasiyici: biri enerjide kaliyor, digeri cephaneye atanabilir (ise alim metni yok).
-        const facts = { production: type, workers: [{ mode: "energyTransport", manual: false }, { mode: "energyTransport", manual: false }] };
+        // Baslangicin iki otomatik tasiyicisi (enerji binasi ve cephanelik): biri
+        // enerjide kaliyor, digeri cephanelige atanabilir (ise alim metni yok).
+        const facts = { production: type, workers: [{ mode: "energyTransport", manual: false, postKind: "energy" }, { mode: "energyTransport", manual: false, postKind: "factory" }] };
         assert.ok(getTutorialCopy("gatherer", true, { facts }).body.includes(names[type]), `${locale} gatherer ${type}`);
         assert.ok(getTutorialCopy("ammoCarrier", true, { facts }).body.includes(names[type]), `${locale} ammoCarrier ${type}`);
+        // Teslimati bekleyen metin urunu `formatTransportProduct` ile yaziyor.
+        assert.ok(getTutorialCopy("delivery", true, { facts }).body.includes(names[type]), `${locale} delivery ${type}`);
       }
     });
   }

@@ -13,10 +13,14 @@
  * gorunen renk tam bu. Isci listesinin satir renkleri (style.css,
  * `.worker-row--*`) ayni renkler; listedeki satirla haritadaki isciyi
  * birbirine baglayan tek sey renk.
+ *
+ * Sahibin istegi (2026-11-24): tek tip isci; gorunus iscinin su anki isinden
+ * (atandigi yer): kaynakta toplayan mor, tasiyan kehribar, tamirci yesil arti;
+ * atamasiz (bosta) isci gri baklava. Is degisince gorunus de degisiyor.
  */
-import type { DroneSnapshot } from "@karayel/shared";
+import { HIRABLE_WORKER_ROLES, getWorkerJob, type DroneSnapshot } from "@karayel/shared";
 
-export type WorkerLookRole = "gatherer" | "carrier" | "repairer";
+export type WorkerLookRole = "gatherer" | "carrier" | "repairer" | "idle";
 export type WorkerShape = "diamond" | "plus";
 
 export type WorkerLook = {
@@ -32,19 +36,19 @@ export type WorkerLook = {
 export const WORKER_LOOKS: Readonly<Record<WorkerLookRole, WorkerLook>> = {
   gatherer: { texture: "worker-gatherer", color: 0x9b7ee0, accent: 0xcdbef0, shape: "diamond" },
   carrier: { texture: "worker-carrier", color: 0xe0a63a, accent: 0xf0d29c, shape: "diamond" },
-  repairer: { texture: "worker-repairer", color: 0x4cc77a, accent: 0xa6e3bc, shape: "plus" }
+  repairer: { texture: "worker-repairer", color: 0x4cc77a, accent: 0xa6e3bc, shape: "plus" },
+  idle: { texture: "worker-idle", color: 0x8b94a3, accent: 0xc5cad1, shape: "diamond" }
 };
 
 /**
- * Tel kipinden gorunus rolu. Eski muhimmat kipleri (sunucu onlari zaten
- * toplama ve tasimaya katliyor) ayni gorunuse dusuyor; AttackLord'un ulti
- * dronlari (`attack`, nexus onaran `repair`) isci degil: `undefined`.
+ * Iscinin gorunusu su anki isinden (atamasindan, `getWorkerJob`).
+ * AttackLord'un ulti dronlari (`attack`, nexus onaran `repair`) isci degil:
+ * `undefined`.
  */
-export function getWorkerLookRole(mode: DroneSnapshot["mode"]): WorkerLookRole | undefined {
-  if (mode === "crystalCollector" || mode === "ammoCollector") return "gatherer";
-  if (mode === "energyTransport" || mode === "ammoTransport") return "carrier";
-  if (mode === "repairer") return "repairer";
-  return undefined;
+export function getWorkerLookRole(drone: Pick<DroneSnapshot, "mode" | "assignment">): WorkerLookRole | undefined {
+  if (!(HIRABLE_WORKER_ROLES as readonly string[]).includes(drone.mode)) return undefined;
+  const job = getWorkerJob(drone.assignment);
+  return job === "gather" ? "gatherer" : job === "haul" ? "carrier" : job === "repair" ? "repairer" : "idle";
 }
 
 /** Artinin kol yari kalinligi / kol boyu: 30 px dokuda 4 / 11. */

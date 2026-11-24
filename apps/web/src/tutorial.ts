@@ -8,7 +8,7 @@ import {
   towerCatalog,
   type AmmoType,
   type ResourceKind,
-  type TransportProduct,
+  type WorkerPostKind,
   type TutorialPrepareId,
   type TutorialProgressMessage
 } from "@karayel/shared";
@@ -112,15 +112,20 @@ export type TutorialFacts = {
   ammoDelivered?: boolean;
 };
 
+/**
+ * Tek tip isci (sahibin istegi 2026-11-24): is atandigi yerden. Kip isin
+ * aynasi; `postKind` atandigi binanin turu (Hammadde Deposu, enerji binasi,
+ * cephanelik, Tamir Merkezi), `nodeKind` atandigi kaynagin turu.
+ */
 export type TutorialWorkerFact = {
-  /** Sunucunun isci modu: "crystalCollector" (Toplama), "energyTransport" (Taşıma), "repairer". */
+  /** Sunucunun isci modu: "crystalCollector" (toplama), "energyTransport" (tasima ya da bosta), "repairer". */
   mode: string;
   manual: boolean;
   /** Toplayicinin atandigi yatagin turu. */
   nodeKind?: ResourceKind;
-  /** Tasiyicinin urunu. */
-  product?: TransportProduct;
-  /** Tasiyicinin atandigi binanin tanim kimligi. */
+  /** Atandigi binanin gorev yeri turu. */
+  postKind?: WorkerPostKind;
+  /** Atandigi binanin tanim kimligi. */
   sourceDefinitionId?: string;
 };
 
@@ -184,15 +189,15 @@ export function isTutorialStepCompletedBy(id: TutorialStepId, progress: Tutorial
     case "settings":
       return progress.action === "settings";
     case "hire":
-      return progress.action === "hire" || progress.action === "specialize";
+      return progress.action === "hire";
     case "assign":
       return progress.action === "assign";
     case "production":
       return progress.action === "production";
     case "repairer":
-      // Onarim uzmani alindi ya da bir tamirci merkeze atandi; altinla onarim da gosteriyor.
+      // Bir isci Tamir Merkezi'ne atandi (tamirci oldu); altinla onarim da gosteriyor.
       return progress.action === "repair"
-        || ((progress.action === "hire" || progress.action === "specialize" || progress.action === "assign") && progress.role === "repairer");
+        || (progress.action === "assign" && (progress.postKind === "repair" || progress.role === "repairer"));
     case "upgrade":
       return progress.action === "upgrade";
     case "workerTree":
@@ -230,18 +235,17 @@ export function isTutorialStepSatisfied(id: TutorialStepId, facts: TutorialFacts
       return Boolean(facts.production) && (facts.workers ?? []).some((worker) => worker.mode === "crystalCollector" && worker.manual && worker.nodeKind === material);
     }
     case "materials":
-      return (facts.workers ?? []).some((worker) => isArmoryCarrier(worker, "materials"));
+      return (facts.workers ?? []).some((worker) => isPostedWorker(worker, "warehouse"));
     case "ammoCarrier":
-      return Boolean(facts.production) && (facts.workers ?? []).some((worker) => isArmoryCarrier(worker, facts.production!));
+      return Boolean(facts.production) && (facts.workers ?? []).some((worker) => isPostedWorker(worker, "factory"));
     default:
       return false;
   }
 }
 
-/** Elle cephaneye (Cephane Divanı gibi) bu urunle atanmis tasiyici. */
-function isArmoryCarrier(worker: TutorialWorkerFact, product: TransportProduct) {
-  return worker.mode === "energyTransport" && worker.manual && worker.product === product
-    && worker.sourceDefinitionId !== undefined && classifyTutorialBuild(worker.sourceDefinitionId) === "armory";
+/** Elle bu turden bir binaya (Hammadde Deposu, cephanelik...) atanmis isci. */
+function isPostedWorker(worker: TutorialWorkerFact, postKind: WorkerPostKind) {
+  return worker.manual && worker.postKind === postKind;
 }
 
 /** Cephaneligin uretimi; cephanelik yoksa (adim gecildi) varsayilan kursun. */
@@ -255,18 +259,19 @@ export function getTutorialMaterial(facts: TutorialFacts | undefined): ResourceK
 }
 
 /**
- * Tasiyici adiminda bosta Taşıma iscisi yok mu. Bosta: elle bir ise atanmamis.
- * Elle enerjiye atanmis tasiyici yoksa otomatik enerji tasiyan biri enerjide
- * kalmali (onu alan oyuncu cephaneligi ve kuleleri enerjisiz birakir), o
- * bosta sayilmiyor. Bosta yoksa adim once isci aldiriyor (İşe Al cercevede).
+ * Tasima adiminda bos isci yok mu. Bos: elle bir ise atanmamis ve bir kaynakta
+ * toplamiyor (bosta ya da otomatik tasiyan). Elle enerji binasina atanmis isci
+ * yoksa otomatik enerji tasiyan biri enerjide kalmali (onu alan oyuncu
+ * cephaneligi ve kuleleri enerjisiz birakir), o bos sayilmiyor. Bos yoksa adim
+ * once isci aldiriyor (İşe Al cercevede).
  */
 export function tutorialNeedsCarrierHire(id: TutorialStepId, facts: TutorialFacts | undefined) {
   if (id !== "materials" && id !== "ammoCarrier") return false;
-  const carriers = (facts?.workers ?? []).filter((worker) => worker.mode === "energyTransport");
-  const auto = carriers.filter((worker) => !worker.manual);
-  const energyCovered = carriers.some((worker) => worker.manual && worker.product === "energy");
-  const autoOnEnergy = auto.some((worker) => worker.product === undefined || worker.product === "energy");
-  return auto.length - (!energyCovered && autoOnEnergy ? 1 : 0) <= 0;
+  const workers = facts?.workers ?? [];
+  const free = workers.filter((worker) => !worker.manual && worker.nodeKind === undefined);
+  const energyCovered = workers.some((worker) => worker.manual && worker.postKind === "energy");
+  const autoOnEnergy = free.some((worker) => worker.postKind === "energy");
+  return free.length - (!energyCovered && autoOnEnergy ? 1 : 0) <= 0;
 }
 
 /** Teslimat adiminin ANLADIM'i: ilk teslimat goruldu. */
@@ -334,13 +339,13 @@ export const TUTORIAL_TARGETS: Readonly<Record<TutorialStepId, readonly string[]
   chain: ['[data-launch="worker"]'],
   // Toplayici: Yonetim'de Toplama satiri, sonra haritada yatak (secim seridi).
   gatherer: [".game-controls__drawer.worker-pick", ".worker-row--gatherer", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
-  // Tasiyici satirlarindan hangisinin bosta oldugu satirda yazmiyor: liste butun olarak.
-  materials: ['[data-worker-product="materials"]:not(.is-active)', ".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
-  // Urune ozel dugme `getTutorialTargets`ta en basa ekleniyor.
+  // Bos iscinin hangisi oldugu satirda yazmiyor: liste butun olarak; secilince serit.
+  materials: [".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
   ammoCarrier: [".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
   delivery: ['.ts-bar[data-key="ammo"]', ".ts-stock", ".tower-sheet"],
   repairDepot: [".game-controls__tower-grid", '[data-launch="towers"]'],
-  repairer: [".game-controls__worker-hire", '[data-worker-tab="hire"]', '[data-launch="worker"]'],
+  // Bir isciyi Tamir Merkezi'ne atamak: liste, sonra serit.
+  repairer: [".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
   // Deneyim ust satirda altinin hemen yaninda; Detay panelindeki cip ve altin yedek.
   xpGold: [".game-hud__vital--xp", ".game-hud__chip--xp", ".game-hud__vital--gold"],
   upgrade: [".game-controls__action--upgrade", ".tower-sheet"],
@@ -352,13 +357,11 @@ export const TUTORIAL_TARGETS: Readonly<Record<TutorialStepId, readonly string[]
 };
 
 /**
- * O anki hedef zinciri: tasiyici adiminda bosta tasiyici yoksa İşe Al;
- * cephane tasiyicisinda uretimin urun dugmesi en basta; teslimat geldiyse
- * once cephaneligin stok blogu.
+ * O anki hedef zinciri: tasima adiminda bos isci yoksa İşe Al; teslimat
+ * geldiyse once cephaneligin stok blogu.
  */
 export function getTutorialTargets(id: TutorialStepId, facts: TutorialFacts | undefined): readonly string[] {
   if (tutorialNeedsCarrierHire(id, facts)) return TUTORIAL_TARGETS.hire;
-  if (id === "ammoCarrier") return [`[data-worker-product="${getTutorialProduction(facts)}"]:not(.is-active)`, ...TUTORIAL_TARGETS.ammoCarrier];
   if (id === "delivery" && isTutorialDeliveryReady(facts)) return [".ts-stock", '.ts-bar[data-key="ammo"]', ".tower-sheet"];
   return TUTORIAL_TARGETS[id];
 }

@@ -3,7 +3,7 @@
 export * from "../../apps/web/src/i18n";
 export { installCatalogLocale } from "../../apps/web/src/catalog-locale";
 export { AMMO_TYPE_ORDER, ammoTypeLabels } from "../../apps/web/src/codex";
-export { formatTransportProduct, getWorkerProductOptions } from "../../apps/web/src/worker-roster";
+export { formatTransportProduct } from "../../apps/web/src/worker-roster";
 export { describeTowerAmmo } from "../../apps/web/src/tower-ammo";
 export { getTutorialCopy } from "../../apps/web/src/tutorial";
 export { formatHudCompactNumber } from "../../apps/web/src/game-control-ui";

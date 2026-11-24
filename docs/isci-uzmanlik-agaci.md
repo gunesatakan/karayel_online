@@ -1,8 +1,8 @@
 # İşçi uzmanlık ağacı
 
-İşçi satın alma akışı tek tip işçi → hücrenin ne iş yapacağını seçme şeklindedir. Bu seçim yalnızca satın alınan hücreyi belirler: Kristal Toplayıcı, Enerji Taşıyıcı, Mühimmat Toplayıcı, Mühimmat Taşıyıcı veya Tamirci.
+Tek tip işçi (sahibin isteği, 2026-11-24): alımda uzmanlık seçimi yok. İşçinin işi atandığı yerden gelir: kaynakta toplama, Hammadde Deposu / enerji binası / cephanelikte taşıma, Tamir Merkezi'nde onarım (bkz. `docs/resource-economy.md`).
 
-İşçi gelişim ağacı satın alma ekranından ayrıdır. Oyuncu ağacı XP ile açar. Seçilen ilerleme oyuncunun ortak ağacına yazılır ve o uzmanlıktaki bütün işçilere uygulanır. Seçimler geri alınamaz. Katalog, açıklamalar ve sayılar `packages/shared/src/worker-skills.ts` içindedir.
+İşçi gelişim ağacı satın alma ekranından ayrıdır. Oyuncu ağacı XP ile açar. Seçilen ilerleme oyuncunun ortak ağacına yazılır ve dalın işini (Toplama, Taşıma, Onarım) o anda yapan bütün işçilere uygulanır; işçinin işi değişince ona işleyen dal da değişir. Seçimler geri alınamaz. Katalog, açıklamalar ve sayılar `packages/shared/src/worker-skills.ts` içindedir.
 
 ## Yapı
 

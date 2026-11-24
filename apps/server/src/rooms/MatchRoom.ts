@@ -3,8 +3,9 @@ import { getTowerRangePerLevel } from "@karayel/shared";
 import { ZEYNEP_PALACE_AURA_RADIUS, ZEYNEP_PALACE_ID, getZeynepPalaceEffects } from "@karayel/shared";
 import { DAMAGE_SHARE_CAP, IDLE_REGEN_DELAY_MS, LAST_STAND_HP, getVeteranHealthMultiplier, getWoundedDamageMultiplier } from "@karayel/shared";
 import { ARMOR_FEAR_ROLL_INTERVAL_MS, getArmorFearDurationMs, getHealthRangeAdd, getStructureArmor, rollArmorFearDie } from "@karayel/shared";
+import { getWorkerJob, getWorkerJobMode, getWorkerPostKind, type WorkerPostKind } from "@karayel/shared";
 import { AMBUSH_RANGE_HOLD_MS, AMBUSH_RANGE_IDLE_MS, FOCUS_RANGE_GRACE_MS, KILL_RANGE_LONG_MAX_KILLS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
-import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
+import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { createResourceLayoutRandom, getMapResourceNodes, type MapResourceNodeDefinition, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
 import { BUILD_ZONE_TERRAIN_SPEED_MULTIPLIER, createBuildZoneHillLookup, createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, isLineBlockedByHill, type BuildZoneHillLookup, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
@@ -328,7 +329,6 @@ import {
   AMMO_COLLECTOR_WORKER_CAPACITY,
   RESOURCE_PROVIDER_INITIAL_STOCK,
   AMMO_FACTORY_INITIAL_ENERGY,
-  WORKER_SPECIALIZATION_CHOICES,
   WORKER_DEVELOPMENT_XP_COSTS,
   WORKER_DEVELOPMENT_CELLS,
   LOAD_SHEDDER_CRISIS_ENERGY_RATIO,
@@ -2403,7 +2403,6 @@ type TowerModel = EconomyStock & {
 
 type RepairStructureMessage = { towerId?: string };
 type HireWorkerMessage = { role?: HirableWorkerRole; advanced?: boolean };
-type ChooseWorkerSpecializationMessage = { workerId?: string; role?: HirableWorkerRole };
 type ChooseWorkerSkillMessage = { workerId?: string; skillId?: WorkerSkillId };
 type WorkerDevelopmentMessage = { role?: HirableWorkerRole; skillId?: WorkerSkillId };
 type ChooseUcubePerkMessage = { towerId?: string; perkId?: UcubePerkId };
@@ -2547,7 +2546,6 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   "factory:production": { phase: "match", fields: { towerId: "string", ammoType: "string" } },
   "worker:assign": { phase: "match", fields: { workerId: "string", nodeId: "string", sourceTowerId: "string", product: "string" } },
   "worker:hire": { phase: "match", fields: { role: "string", advanced: "boolean" } },
-  "worker:specialization": { phase: "match", fields: { workerId: "string", role: "string" } },
   "worker:skill": { phase: "match", fields: { workerId: "string", skillId: "string" } },
   "worker:development": { phase: "match", fields: { role: "string", skillId: "string" } },
   "ultimate:upgrade": { phase: "match", fields: {} },
@@ -3274,7 +3272,7 @@ export class MatchRoom extends Room<MatchState> {
    * on ek karsilastirip kesiyordu. Kayitlar ve degerleri birebir ayni
    * (kaynak + kule cifti bir anahtar), siralari da kaynak icinde ayni.
    */
-  private readonly deliveryWaitingSince = { ammo: new Map<string, number>(), energy: new Map<string, number>() };
+  private readonly deliveryWaitingSince = { ammo: new Map<string, number>(), energy: new Map<string, number>(), materials: new Map<string, number>() };
   private previewRequestTimes = new Map<string, number>();
   private towerInsightCache = new WeakMap<TowerModel, { at: number; value: string }>();
   /**
@@ -4207,7 +4205,6 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("factory:production", (client, message) => this.setFactoryProduction(client, message));
     this.onMessage("worker:assign", (client, message) => this.assignWorker(client, message));
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
-    this.onMessage("worker:specialization", (client, message: ChooseWorkerSpecializationMessage) => this.chooseWorkerSpecialization(client, message));
     this.onMessage("worker:skill", (client, message: ChooseWorkerSkillMessage) => this.chooseWorkerSkill(client, message));
     this.onMessage("worker:development", (client, message: WorkerDevelopmentMessage) => this.unlockWorkerDevelopment(client, message));
     this.onMessage("ultimate:upgrade", (client) => this.upgradeUltimatePower(client));
@@ -4288,14 +4285,13 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Ogretici: elle cephaneye atanmis tasiyici bir kuleye muhimmat goturdu.
+   * Ogretici: elle cephanelige atanmis isci bir kuleye muhimmat goturdu.
    * Adim motoru ("teslimat" adimi) ilk teslimati bekliyor; oyuncu basina iki
    * saniyede en fazla bir mesaj.
    */
   private noteTutorialAmmoDelivery(worker: DroneModel) {
     if (!this.tutorialMode || !worker.ownerId) return;
-    const product = this.workerAssignments.get(worker.id)?.product;
-    if (!product || product === "energy" || product === "materials") return;
+    if (this.workerAssignments.get(worker.id)?.postKind !== "factory") return;
     const now = Date.now();
     if (now - (this.tutorialAmmoNoticeAt.get(worker.ownerId) ?? 0) < 2000) return;
     this.tutorialAmmoNoticeAt.set(worker.ownerId, now);
@@ -4323,7 +4319,7 @@ export class MatchRoom extends Room<MatchState> {
     const towers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === sessionId);
     const assignments = Array.from(this.workerAssignments.entries())
       .filter(([workerId]) => this.drones.get(workerId)?.ownerId === sessionId)
-      .map(([workerId, assignment]) => [workerId, assignment.nodeId ?? "", assignment.sourceTowerId ?? "", assignment.product ?? ""]);
+      .map(([workerId, assignment]) => [workerId, assignment.nodeId ?? "", assignment.sourceTowerId ?? "", assignment.postKind ?? ""]);
     return {
       towerIds: new Set(towers.map((tower) => tower.id)),
       signature: JSON.stringify([
@@ -4361,12 +4357,14 @@ export class MatchRoom extends Room<MatchState> {
       if (definitionIds.length === 0) return;
       progress.definitionIds = definitionIds;
     }
-    if ((action === "hire" || action === "specialize") && typeof message.role === "string" && isHirableWorkerRole(message.role)) {
-      progress.role = message.role;
-    }
+    // Tek tip isci: is atandigi yerden. Yuk teslim edilene kadar bekleyen
+    // atama da sayiliyor (oyuncunun sectigi is).
     if (action === "assign" && typeof message.workerId === "string") {
-      const mode = this.drones.get(message.workerId)?.mode;
-      if (mode) progress.role = mode;
+      const assignment = this.workerAssignments.get(message.workerId);
+      if (assignment) {
+        progress.role = getWorkerJobMode(getWorkerJob(assignment));
+        if (assignment.postKind) progress.postKind = assignment.postKind;
+      }
     }
     client.send("tutorial:progress", progress);
   }
@@ -4925,17 +4923,12 @@ export class MatchRoom extends Room<MatchState> {
     this.sendRunState(client);
     this.sendPendingCardChoices(client);
     this.sendWorkerDevelopmentState(client);
-    const pending = this.state.players.get(client.sessionId)?.hiredWorkers?.find((worker) => {
-      if (!worker.role) return true;
-      // Rol belirtilerek alınan eski API işçileri per-worker seçim akışını
-      // korur; yeni genel işçiler global gelişim ağacını kullanır.
-      return Boolean((worker as HiredWorker & { legacySuffix?: boolean }).legacySuffix)
-        && (worker.skillIds?.length ?? 0) < getWorkerSkillTiers(worker.role).length;
-    });
-    if (pending?.id) {
-      if (pending.role) this.sendWorkerSkillChoice(client, pending.id, pending.skillIds?.length ?? 0);
-      else this.sendWorkerSpecializationChoice(client, pending.id);
-    }
+    // Rol belirtilerek alinan eski API iscileri per-worker secim akisini
+    // koruyor; tek tip (rolsuz) isci secim beklemiyor, isi atamasindan.
+    const pending = this.state.players.get(client.sessionId)?.hiredWorkers?.find((worker) => Boolean(worker.role)
+      && Boolean((worker as HiredWorker & { legacySuffix?: boolean }).legacySuffix)
+      && (worker.skillIds?.length ?? 0) < getWorkerSkillTiers(worker.role!).length);
+    if (pending?.id && pending.role) this.sendWorkerSkillChoice(client, pending.id, pending.skillIds?.length ?? 0);
   }
 
   private sendPendingCardChoices(client: Client) {
@@ -12351,11 +12344,21 @@ export class MatchRoom extends Room<MatchState> {
     return [...this.getCrystalNodes().map((node) => ({ ...node, kind: "energy" as ResourceKind })), ...this.getMaterialNodes()];
   }
 
-  private assignWorker(client: Client, message: { workerId?: string; nodeId?: string; sourceTowerId?: string; product?: string }) {
+  /**
+   * Isciyi bir dugume ya da binaya atar.
+   *
+   * Sahibin istegi (2026-11-24): tek tip isci; is atandigi yerden geliyor
+   * (`WorkerPostKind`). Uzmanlik ve urun secimi yok: dugum toplama,
+   * Hammadde Deposu / enerji binasi / cephanelik tasima, Tamir Merkezi
+   * onarim. Elde yuk varsa once o teslim ediliyor (alicisi yoksa onu saklayan
+   * binaya); yuk hicbir zaman donusturulmuyor. Yalnizca koyacak hicbir yer
+   * yoksa (tamircide: merkez dolu ya da yok) yuk birakiliyor, isci takili kalmasin.
+   */
+  private assignWorker(client: Client, message: { workerId?: string; nodeId?: string; sourceTowerId?: string; product?: unknown }) {
     const worker = message.workerId ? this.drones.get(message.workerId) : undefined;
     if (!worker || worker.ownerId !== client.sessionId || !isLogisticsWorkerMode(worker.mode)) return;
     let assignment: WorkerAssignment;
-    if (worker.mode === "crystalCollector" || worker.mode === "ammoCollector") {
+    if (message.nodeId) {
       const node = this.getEconomyNodes().find((entry) => entry.id === message.nodeId);
       if (!node) return;
       // Tukenmis kaynaga atanan isci orada sonsuza dek bekler. Istemci bunu
@@ -12368,20 +12371,66 @@ export class MatchRoom extends Room<MatchState> {
     } else {
       const source = message.sourceTowerId ? this.towers.get(message.sourceTowerId) : undefined;
       if (!source || source.ownerId !== client.sessionId || source.hp <= 0) return;
-      if (worker.mode === "repairer") {
-        if (!isRepairDepotDefinition(source.definition)) return;
-        assignment = { sourceTowerId: source.id };
-      } else {
-        if (!isTransportProduct(message.product)) return;
-        if (message.product === "materials" ? source.definition.resourceProvider !== "ammunition" && !isRepairDepotDefinition(source.definition)
-          : source.definition.resourceProvider !== (message.product === "energy" ? "energy" : "ammunition")) return;
-        assignment = { sourceTowerId: source.id, product: message.product };
-      }
+      const postKind = getWorkerPostKind(source.definition);
+      if (!postKind) return;
+      // Eski istemci (yayindaki itch surumu) hammadde tasiyicisini cephanelige
+      // ya da Tamir Merkezi'ne gonderiyor (`product: "materials"`). Tek tip
+      // iscide bu is Hammadde Deposu'nda: en yakin depo (yoksa kurulunca).
+      assignment = message.product === "materials" ? { postKind: "warehouse" } : { sourceTowerId: source.id, postKind };
     }
     // Finish the current delivery before switching: never discard or convert cargo.
     this.workerAssignments.set(worker.id, assignment);
     if ((worker.cargo ?? 0) > 0) worker.pendingAssignment = assignment;
-    else { worker.assignment = assignment; worker.targetTowerId = undefined; worker.extractionRemainingMs = undefined; }
+    else this.applyWorkerAssignment(worker, assignment);
+  }
+
+  /**
+   * Atamayi iscinin uzerine yazar: kip (`getWorkerJobMode`) isin aynasi, yani
+   * gorunus, isci agaci ve tamirci kurallari yeni isi okuyor.
+   */
+  private applyWorkerAssignment(worker: DroneModel, assignment: WorkerAssignment | undefined) {
+    worker.assignment = assignment;
+    worker.pendingAssignment = undefined;
+    worker.mode = getWorkerJobMode(getWorkerJob(assignment));
+    worker.targetTowerId = undefined;
+    worker.extractionRemainingMs = undefined;
+    worker.logisticsPhase = "pickup";
+    worker.repairing = undefined;
+  }
+
+  /**
+   * Baslangic iscilerinin (ve rolle alinmis eski kayitlarin) varsayilan isi:
+   * toplayici usse en yakin enerji kristali ya da barut yatagi, tasiyicilar
+   * en yakin enerji binasi ve cephanelik. Yeni alinan isci rolsuz: bosta
+   * (oyuncu bir binaya dokunarak atiyor).
+   */
+  private getDefaultWorkerAssignment(role: HiredWorker["role"], spawnX: number, spawnY: number): WorkerAssignment | undefined {
+    if (role === "crystalCollector") return { nodeId: this.getDefaultGatherNodeId("energy", spawnX, spawnY) };
+    if (role === "ammoCollector") return { nodeId: this.getDefaultGatherNodeId("gunpowder", spawnX, spawnY) };
+    if (role === "energyTransport") return { postKind: "energy" };
+    if (role === "ammoTransport") return { postKind: "factory" };
+    if (role === "repairer") return { postKind: "repair" };
+    return undefined;
+  }
+
+  /**
+   * Iscinin calistigi bina: atandigi bina ayaktaysa o; yikildi ya da
+   * satildiysa (ya da atama "en yakin bu tur" ise) sahibinin ayni turden en
+   * yakin binasi. Hic yoksa `undefined`: isci bekler.
+   */
+  private getWorkerPostBuilding(worker: DroneModel) {
+    const kind = worker.assignment?.postKind;
+    if (!kind) return undefined;
+    const assigned = worker.assignment?.sourceTowerId ? this.towers.get(worker.assignment.sourceTowerId) : undefined;
+    if (assigned && assigned.ownerId === worker.ownerId && assigned.hp > 0 && getWorkerPostKind(assigned.definition) === kind) return assigned;
+    let best: TowerModel | undefined;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== worker.ownerId || tower.hp <= 0 || getWorkerPostKind(tower.definition) !== kind) continue;
+      const distance = distanceSq(tower.x, tower.y, worker.x, worker.y);
+      if (distance < bestDistance) { best = tower; bestDistance = distance; }
+    }
+    return best;
   }
 
   /**
@@ -12435,14 +12484,12 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateAssignedWorker(worker: DroneModel, seconds: number) {
     if ((worker.cargo ?? 0) <= 0 && worker.pendingAssignment) {
-      worker.assignment = worker.pendingAssignment;
-      worker.pendingAssignment = undefined;
-      worker.targetTowerId = undefined;
-      worker.extractionRemainingMs = undefined;
+      this.applyWorkerAssignment(worker, worker.pendingAssignment);
+      if (worker.mode === "repairer") return;
     }
     worker.vx = worker.vy = 0;
-    const gatherer = worker.mode === "crystalCollector" || worker.mode === "ammoCollector";
     const assignment = worker.assignment!;
+    const gatherer = getWorkerJob(assignment) === "gather";
     // Sahibin ayakta yapilari. Her cagrida butun kulelerden bir dizi
     // kurulup suzuluyordu; asagidaki dallar ayni suzgeci kendi suzgecleriyle
     // ayni sirada tek geciste uyguluyor (ayni elemanlar, ayni sira).
@@ -12464,7 +12511,12 @@ export class MatchRoom extends Room<MatchState> {
           && stock(tower) < (kind === "energy" ? getResourceProviderCapacity(tower.level) : getWarehouseCapacity(tower.level))) candidates.push(tower);
       }
       const depot = nearest(candidates);
-      if (!depot) return;
+      if (!depot) {
+        // Yeri olan depo yok: yeni isine gecmeyi bekleyen isci yuku birakiyor
+        // (kayip), yoksa atama depo bosalana dek islemezdi.
+        if ((worker.cargo ?? 0) > 0 && worker.pendingAssignment) this.dropWorkerCargo(worker);
+        return;
+      }
       worker.targetTowerId = depot.id;
       worker.logisticsPhase = (worker.cargo ?? 0) > 0 ? "deliver" : "pickup";
       if ((worker.cargo ?? 0) <= 0) {
@@ -12488,91 +12540,254 @@ export class MatchRoom extends Room<MatchState> {
       if (worker.cargo <= 0) worker.cargoResource = undefined;
       return;
     }
-    if (assignment.product === "materials") { this.updateMaterialCarrier(worker, seconds); return; }
-    const product = assignment.product ?? "energy";
-    // Atanmis kaynak: kule kimligi `towers` anahtarinin kendisi (tek yazim
-    // `towers.set(tower.id, ...)`, kimlik sonradan degismiyor), yani o
-    // kimlikteki tek kule; sahip ve can suzgeci aynen.
-    const assignedSource = assignment.sourceTowerId ? this.towers.get(assignment.sourceTowerId) : undefined;
-    const providers: TowerModel[] = [];
-    if (!assignment.sourceTowerId) {
-      const provider = product === "energy" ? "energy" : "ammunition";
-      for (const tower of this.towers.values()) {
-        if (owned(tower) && tower.definition.resourceProvider === provider) providers.push(tower);
-      }
+    this.updateHaulWorker(worker, seconds);
+  }
+
+  /**
+   * Tasima isi: Hammadde Deposu, enerji binasi ya da cephanelik.
+   *
+   * Elde yuk varsa o yukun en bos alicisina gidiyor; alici kalmadiysa yuku
+   * saklayan en yakin binaya geri birakiyor (yuk atilmiyor, isci de takili
+   * kalmiyor). Bossa gorev yerindeki stoktan en bos alicinin ihtiyaci kadar
+   * aliyor. Alicilar `getHaulConsumer`da; sira `deliveryScore` (doluluk,
+   * kulenin onceligi, bekleme suresi, uzaklik).
+   */
+  private updateHaulWorker(worker: DroneModel, seconds: number) {
+    if ((worker.cargo ?? 0) > 0) {
+      this.deliverHaulCargo(worker, seconds);
+      return;
     }
-    const source = assignment.sourceTowerId ? assignedSource && owned(assignedSource) ? assignedSource : undefined
-      : nearest(providers);
-    const resource = product === "energy" ? "energy" : "ammo";
+    worker.logisticsPhase = "pickup";
+    worker.cargoResource = undefined;
+    worker.cargoAmmoType = undefined;
+    const post = this.getWorkerPostBuilding(worker);
+    if (!post) {
+      worker.targetTowerId = undefined;
+      return;
+    }
+    const trip = this.planHaulTrip(worker, post);
+    if (!trip) {
+      // Is yok: gorev yerinde bekliyor; ihtiyac dogunca oradan cikiyor.
+      worker.targetTowerId = undefined;
+      this.moveLogisticsWorker(worker, post.x, post.y, seconds);
+      return;
+    }
+    worker.targetTowerId = trip.target.id;
+    if (!this.moveLogisticsWorker(worker, post.x, post.y, seconds)) return;
+    const amount = trip.amount;
+    if (!(amount > 0)) return;
+    if (trip.resource === "energy") {
+      post.energy -= amount;
+      worker.cargoResource = "energy";
+    } else if (trip.resource === "ammo") {
+      post.ammoStock![trip.ammoType!] = Math.max(0, (post.ammoStock![trip.ammoType!] ?? 0) - amount);
+      post.ammo = Object.values(post.ammoStock!).reduce((sum, n) => sum + n, 0);
+      worker.cargoAmmoType = trip.ammoType;
+    } else {
+      post.materials![trip.kind!] = Math.max(0, (post.materials![trip.kind!] ?? 0) - amount);
+      worker.cargoResource = trip.kind;
+    }
+    worker.cargo = amount;
+    worker.logisticsPhase = "deliver";
+  }
+
+  /**
+   * Gorev yerinden bir sefer: en ihtiyacli alici ve yuklenecek miktar
+   * (tasima kapasitesi, gorev yerindeki stok ve alicinin yoldaki yuk
+   * dusulmus ihtiyaci). Is yoksa `undefined`.
+   */
+  private planHaulTrip(worker: DroneModel, post: TowerModel): { resource: "energy" | "ammo" | "materials"; target: TowerModel; amount: number; ammoType?: AmmoType; kind?: ResourceKind } | undefined {
+    const kind = worker.assignment?.postKind;
+    if (kind === "energy") {
+      if (!(post.energy > 0)) return undefined;
+      const target = this.selectDeliveryTarget(worker, "energy");
+      if (!target) return undefined;
+      const needed = Math.max(0, target.maxEnergy - target.energy - this.getReservedCargo(worker, target, "energy"));
+      return { resource: "energy", target, amount: Math.min(this.getWorkerCapacity(worker) * this.getEconomyResearchMultiplier(worker, "transport", "energy"), post.energy, needed) };
+    }
+    if (kind === "factory") {
+      const stock = post.ammoStock ?? {};
+      const target = this.selectDeliveryTarget(worker, "ammo", (tower) => (stock[tower.ammoType] ?? 0) > 0);
+      if (!target) return undefined;
+      const ammoType = target.ammoType;
+      const needed = Math.max(0, target.maxAmmo - target.ammo - this.getReservedCargo(worker, target, "ammo"));
+      return { resource: "ammo", target, ammoType, amount: Math.min(this.getWorkerCapacity(worker) * this.getEconomyResearchMultiplier(worker, "transport", AMMO_RECIPES[ammoType]), stock[ammoType] ?? 0, needed) };
+    }
+    if (kind === "warehouse") {
+      const pick = this.selectMaterialTarget(worker, post);
+      if (!pick) return undefined;
+      return { resource: "materials", target: pick.tower, kind: pick.kind,
+        amount: Math.min(this.getWorkerCapacity(worker) * this.getEconomyResearchMultiplier(worker, "transport", pick.kind), post.materials?.[pick.kind] ?? 0, pick.remaining) };
+    }
+    return undefined;
+  }
+
+  /** Eldeki yukun sinifi: mühimmat, enerji ya da hammadde. */
+  private getHaulCargoResource(worker: DroneModel): "energy" | "ammo" | "materials" {
+    if (worker.cargoAmmoType) return "ammo";
+    return !worker.cargoResource || worker.cargoResource === "energy" ? "energy" : "materials";
+  }
+
+  /** Eldeki yuku teslim et: once alicisi, alici yoksa yuku saklayan en yakin bina. */
+  private deliverHaulCargo(worker: DroneModel, seconds: number) {
+    const resource = this.getHaulCargoResource(worker);
+    const kind = worker.cargoResource as ResourceKind | undefined;
     const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
-    const target = (worker.cargo ?? 0) > 0 && locked && locked.ownerId === worker.ownerId && locked.hp > 0
-      && (product === "energy" ? locked.definition.resourceProvider !== "energy" && locked.energy < locked.maxEnergy
-        : locked.ammoType === product && locked.ammoLogisticsEnabled && locked.ammo < locked.maxAmmo)
-      && this.getWorkerApproachPoint(worker, locked.x, locked.y) ? locked : this.selectDeliveryTarget(worker, resource);
-    if (!target) return;
-    if ((worker.cargo ?? 0) <= 0) {
-      if (!source || !this.moveLogisticsWorker(worker, source.x, source.y, seconds)) return;
-      const available = product === "energy" ? source.energy : source.ammoStock?.[product] ?? 0;
-      const needed = Math.max(0, (product === "energy" ? target.maxEnergy - target.energy : target.maxAmmo - target.ammo) - this.getReservedCargo(worker, target));
-      const amount = Math.min(this.getWorkerCapacity(worker) * this.getEconomyResearchMultiplier(worker, "transport", product === "energy" ? "energy" : AMMO_RECIPES[product]), available, needed);
-      if (product === "energy") source.energy -= amount;
-      else { source.ammoStock![product] = available - amount; source.ammo = Object.values(source.ammoStock!).reduce((sum, n) => sum + n, 0); }
-      worker.cargo = amount;
-      worker.cargoAmmoType = product === "energy" ? undefined : product;
-      worker.targetTowerId = target.id;
-      worker.logisticsPhase = "deliver";
+    const lockedValid = locked && locked.ownerId === worker.ownerId && locked.hp > 0
+      && this.getHaulConsumerRoom(locked, resource, worker) > 0.01
+      && this.getWorkerApproachPoint({ ...worker, logisticsPhase: "deliver", routeStep: undefined }, locked.x, locked.y);
+    const consumer = lockedValid ? locked
+      : resource === "materials" ? this.selectMaterialTarget(worker)?.tower : this.selectDeliveryTarget(worker, resource);
+    const target = consumer ?? this.findHaulCargoStore(worker, resource);
+    if (!target) {
+      worker.vx = worker.vy = 0;
+      // Yeni isine gecmeyi bekleyen iscinin yukunu koyacak hicbir yer yok: yuk
+      // birakiliyor (kayip), yoksa oyuncunun atamasi hic islemezdi. Yer var da
+      // yol kapaliysa bekliyor (duvar kalkinca teslim eder, yuk kaybolmaz).
+      if (worker.pendingAssignment && !this.hasHaulCargoRoomAnywhere(worker, resource)) this.dropWorkerCargo(worker);
       return;
     }
     worker.targetTowerId = target.id;
+    worker.logisticsPhase = "deliver";
     if (!this.moveLogisticsWorker(worker, target.x, target.y, seconds)) return;
-    const amount = Math.min(worker.cargo!, product === "energy" ? target.maxEnergy - target.energy : target.maxAmmo - target.ammo);
-    const hadNoAmmo = target.ammo <= 0;
-    if (product === "energy") target.energy += amount;
-    else target.ammo += amount;
-    worker.cargo = Math.max(0, worker.cargo! - amount);
-    if (amount > 0) {
-      if (product === "energy") this.applyEnergyWorkerArrival(worker, target);
-      else this.applyAmmoTransportArrival(worker, target, hadNoAmmo);
-      this.awardDeliveryGold(target, amount, resource);
-      this.deliveryWaitingSince[resource].delete(target.id);
+    let delivered = 0;
+    if (consumer) {
+      delivered = Math.min(worker.cargo!, this.getHaulConsumerRoom(target, resource, worker));
+      // Yuk varis etkilerinden once dusuluyor: etkiler (or. aktarma iskelesi)
+      // yalnizca elde kalanla calisiyor, teslim edilen ikinci kez dagitilmiyor.
+      worker.cargo = Math.max(0, worker.cargo! - delivered);
+      if (resource === "energy") {
+        target.energy += delivered;
+        if (delivered > 0) {
+          this.applyEnergyWorkerArrival(worker, target);
+          this.awardDeliveryGold(target, delivered, "energy");
+          this.deliveryWaitingSince.energy.delete(target.id);
+        }
+      } else if (resource === "ammo") {
+        const hadNoAmmo = target.ammo <= 0;
+        target.ammo += delivered;
+        if (delivered > 0) {
+          this.applyAmmoTransportArrival(worker, target, hadNoAmmo);
+          this.awardDeliveryGold(target, delivered, "ammo");
+          this.deliveryWaitingSince.ammo.delete(target.id);
+        }
+      } else if (kind) {
+        target.materials ??= {};
+        target.materials[kind] = (target.materials[kind] ?? 0) + delivered;
+        if (delivered > 0) this.deliveryWaitingSince.materials.delete(target.id);
+      }
+    } else {
+      // Geri birakma: alicisi kalmayan yuk onu saklayan binaya.
+      delivered = Math.min(worker.cargo!, this.getHaulStoreRoom(target, resource, worker));
+      worker.cargo = Math.max(0, worker.cargo! - delivered);
+      if (resource === "energy") target.energy += delivered;
+      else if (resource === "ammo") {
+        const type = worker.cargoAmmoType!;
+        target.ammoStock ??= {};
+        target.ammoStock[type] = (target.ammoStock[type] ?? 0) + delivered;
+        target.ammo = Object.values(target.ammoStock).reduce((sum, n) => sum + n, 0);
+      } else if (kind) {
+        target.materials ??= {};
+        target.materials[kind] = (target.materials[kind] ?? 0) + delivered;
+      }
     }
-    if (worker.cargo <= 0) { worker.logisticsPhase = "pickup"; worker.targetTowerId = undefined; }
+    if ((worker.cargo ?? 0) <= 0) this.dropWorkerCargo(worker);
   }
 
-  /** Assigned production building pulls only its recipe input from an owned warehouse. */
-  private updateMaterialCarrier(worker: DroneModel, seconds: number) {
-    const destination = this.towers.get(worker.assignment?.sourceTowerId ?? "");
-    const valid = destination && destination.ownerId === worker.ownerId && destination.hp > 0
-      && (destination.definition.resourceProvider === "ammunition" || isRepairDepotDefinition(destination.definition));
-    const ownedWarehouses = [...this.towers.values()].filter(tower => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.id === "warehouse-1")
-      .sort((a, b) => distanceSq(a.x, a.y, worker.x, worker.y) - distanceSq(b.x, b.y, worker.x, worker.y));
-    const kind = valid ? isRepairDepotDefinition(destination.definition) ? "iron" : AMMO_RECIPES[destination.productionAmmo ?? "bullet"] : undefined;
-    if ((worker.cargo ?? 0) > 0) {
-      const cargoKind = worker.cargoResource!;
-      // Recipe changes and demolished destinations return cargo rather than converting or losing it.
-      const target = valid && kind === cargoKind ? destination : ownedWarehouses.find(tower => (tower.materials?.[cargoKind] ?? 0) < getWarehouseCapacity(tower.level));
-      if (!target) return;
-      worker.targetTowerId = target.id; worker.logisticsPhase = "deliver";
-      if (!this.moveLogisticsWorker(worker, target.x, target.y, seconds)) return;
-      const capacity = target.definition.id === "warehouse-1" ? getWarehouseCapacity(target.level) : getResourceProviderCapacity(target.level);
-      const amount = Math.min(worker.cargo!, Math.max(0, capacity - (target.materials?.[cargoKind] ?? 0)));
-      target.materials ??= {}; target.materials[cargoKind] = (target.materials[cargoKind] ?? 0) + amount;
-      worker.cargo = Math.max(0, worker.cargo! - amount);
-      if (worker.cargo === 0) { worker.cargoResource = undefined; worker.logisticsPhase = "pickup"; }
-      return;
+  /**
+   * Yuk icin herhangi bir yerde (alici ya da saklama binasi) bos yer var mi;
+   * yol bakilmiyor. Yalnizca yer hic yokken yuk birakilsin diye.
+   */
+  private hasHaulCargoRoomAnywhere(worker: DroneModel, resource: "energy" | "ammo" | "materials") {
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== worker.ownerId || tower.hp <= 0) continue;
+      if (this.getHaulConsumerRoom(tower, resource, worker) > 0.01 || this.getHaulStoreRoom(tower, resource, worker) > 0.01) return true;
     }
-    if (!valid || !kind) return;
-    const needed = getResourceProviderCapacity(destination.level) - (destination.materials?.[kind] ?? 0)
-      - [...this.drones.values()].filter(other => other.id !== worker.id && other.assignment?.product === "materials"
-        && other.assignment.sourceTowerId === destination.id && other.cargoResource === kind).reduce((sum, other) => sum + (other.cargo ?? 0), 0);
-    if (needed <= 0) return;
-    const source = ownedWarehouses.find(tower => (tower.materials?.[kind] ?? 0) > 0
-      && this.getWorkerApproachPoint(worker, tower.x, tower.y));
-    if (!source) return;
-    worker.targetTowerId = destination.id; worker.logisticsPhase = "pickup";
-    if (!this.moveLogisticsWorker(worker, source.x, source.y, seconds)) return;
-    const amount = Math.min(needed, source.materials![kind]!, this.getWorkerCapacity(worker) * this.getEconomyResearchMultiplier(worker, "transport", kind));
-    source.materials![kind]! -= amount; worker.cargo = amount; worker.cargoResource = kind; worker.logisticsPhase = "deliver";
+    return false;
+  }
+
+  /** Iscinin eli bosaliyor: yuk, turu ve teslimat hedefi siliniyor. */
+  private dropWorkerCargo(worker: DroneModel) {
+    worker.cargo = 0;
+    worker.cargoResource = undefined;
+    worker.cargoAmmoType = undefined;
+    worker.logisticsPhase = "pickup";
+    worker.targetTowerId = undefined;
+  }
+
+  /** Alicinin bu yuk icin bos yeri; alici degilse 0. */
+  private getHaulConsumerRoom(tower: TowerModel, resource: "energy" | "ammo" | "materials", worker: DroneModel) {
+    if (resource === "energy") return tower.definition.resourceProvider === "energy" ? 0 : tower.maxEnergy - tower.energy;
+    if (resource === "ammo") {
+      return this.acceptsTowerOperation(tower) && tower.ammoLogisticsEnabled && tower.ammoType === worker.cargoAmmoType ? tower.maxAmmo - tower.ammo : 0;
+    }
+    const kind = worker.cargoResource as ResourceKind | undefined;
+    return kind && this.getMaterialConsumerKind(tower) === kind ? getResourceProviderCapacity(tower.level) - (tower.materials?.[kind] ?? 0) : 0;
+  }
+
+  /** Yuku saklayan binanin bos yeri (enerji binasi, cephanelik, Hammadde Deposu). */
+  private getHaulStoreRoom(tower: TowerModel, resource: "energy" | "ammo" | "materials", worker: DroneModel) {
+    if (resource === "energy") return tower.definition.resourceProvider === "energy" ? getResourceProviderCapacity(tower.level) - tower.energy : 0;
+    if (resource === "ammo") {
+      return tower.definition.resourceProvider === "ammunition"
+        ? getResourceProviderCapacity(tower.level) - Object.values(tower.ammoStock ?? {}).reduce((sum, n) => sum + n, 0) : 0;
+    }
+    const kind = worker.cargoResource as ResourceKind | undefined;
+    return kind && tower.definition.id === "warehouse-1" ? getWarehouseCapacity(tower.level) - (tower.materials?.[kind] ?? 0) : 0;
+  }
+
+  /** Alicisi kalmayan yuk icin yeri olan en yakin saklama binasi. */
+  private findHaulCargoStore(worker: DroneModel, resource: "energy" | "ammo" | "materials") {
+    let best: TowerModel | undefined;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== worker.ownerId || tower.hp <= 0 || this.getHaulStoreRoom(tower, resource, worker) <= 0.01) continue;
+      const distance = distanceSq(tower.x, tower.y, worker.x, worker.y);
+      if (distance >= bestDistance) continue;
+      if (!this.getWorkerApproachPoint({ ...worker, targetTowerId: tower.id, logisticsPhase: "deliver", routeStep: undefined }, tower.x, tower.y)) continue;
+      best = tower;
+      bestDistance = distance;
+    }
+    return best;
+  }
+
+  /** Hammadde alicisinin istedigi tur: cephaneligin tarifinin girdisi, Tamir Merkezi'nde demir. */
+  private getMaterialConsumerKind(tower: TowerModel): ResourceKind | undefined {
+    if (tower.definition.resourceProvider === "ammunition") return AMMO_RECIPES[tower.productionAmmo ?? "bullet"];
+    if (isRepairDepotDefinition(tower.definition)) return "iron";
+    return undefined;
+  }
+
+  /**
+   * Hammadde alicisi: girdisi eksik cephanelik ya da demiri eksik Tamir
+   * Merkezi, en bostan baslayarak (`deliveryScore`; yoldaki yuk dusulmus).
+   * `post` verilirse (bos isci) yalnizca deponun stogunda olan turler;
+   * verilmezse eldeki yukun turu.
+   */
+  private selectMaterialTarget(worker: DroneModel, post?: TowerModel): { tower: TowerModel; kind: ResourceKind; remaining: number } | undefined {
+    const waiting = this.deliveryWaitingSince.materials;
+    const carried = post ? undefined : worker.cargoResource as ResourceKind | undefined;
+    const ranked: Array<{ tower: TowerModel; kind: ResourceKind; remaining: number; score: number }> = [];
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== worker.ownerId || tower.hp <= 0) continue;
+      const kind = this.getMaterialConsumerKind(tower);
+      if (!kind || (carried && carried !== kind) || (post && !((post.materials?.[kind] ?? 0) > 0))) continue;
+      const max = getResourceProviderCapacity(tower.level);
+      const current = tower.materials?.[kind] ?? 0;
+      const reserved = this.getReservedCargo(worker, tower, "materials", kind);
+      const remaining = max - current - reserved;
+      if (current >= max) { waiting.delete(tower.id); continue; }
+      if (remaining <= 0.01) continue;
+      if (!waiting.has(tower.id)) waiting.set(tower.id, this.logisticsClock);
+      ranked.push({ tower, kind, remaining, score: deliveryScore("normal", (current + reserved) / Math.max(1, max),
+        this.logisticsClock - waiting.get(tower.id)!, Math.hypot(worker.x - tower.x, worker.y - tower.y)) });
+    }
+    ranked.sort((a, b) => b.score - a.score || a.tower.id.localeCompare(b.tower.id));
+    for (const entry of ranked) {
+      const probe = { ...worker, targetTowerId: entry.tower.id, logisticsPhase: "deliver" as const, routeStep: undefined };
+      if (this.getWorkerApproachPoint(probe, entry.tower.x, entry.tower.y)) return entry;
+    }
+    return undefined;
   }
 
   private getEconomyResearchMultiplier(worker: DroneModel, action: "gather" | "gatherLoad" | "transport" | "transportSpeed", kind: ResourceKind) {
@@ -12670,12 +12885,14 @@ export class MatchRoom extends Room<MatchState> {
         ...(player?.ownedShopItemIds.includes("besinci-isci") ? [{ role: "ammoTransport" as const }] : []),
         ...(player?.hiredWorkers ?? [])
       ];
+      // Tek tip isci: altinla alinan rolsuz (kimlikte "worker"); baslangic
+      // iscilerinin ve eski kayitlarin rolu yalnizca kimlik ve varsayilan is.
       const workers: HiredWorker[] = [
         ...baseWorkerModes.map((role) => ({ role: role as HirableWorkerRole })),
-        ...extraWorkers.filter((worker) => isHirableWorkerRole(worker.role))
+        ...extraWorkers.filter((worker) => worker.role === undefined || isHirableWorkerRole(worker.role))
       ];
       for (const [index, worker] of workers.entries()) {
-        const mode = worker.role as DroneSnapshot["mode"];
+        const mode = (worker.role ?? "worker") as DroneSnapshot["mode"] | "worker";
         const legacySuffix = Boolean((worker as HiredWorker & { legacySuffix?: boolean }).legacySuffix);
         const suffix = index >= baseWorkerModes.length ? `:${legacySuffix ? `extra${index - baseWorkerModes.length}` : worker.id ?? `extra${index - baseWorkerModes.length}`}` : "";
         // Temel dort iscinin kimligi her tick ayni dizgi: tek kez kurulup
@@ -12691,17 +12908,16 @@ export class MatchRoom extends Room<MatchState> {
         }
         const spawnX = origin.x + gridSize * (1.5 + index);
         const spawnY = origin.y + gridSize * (this.activeMap.rows - 1.5);
+        // Elle atama varsa o; yoksa varsayilan is (toplayicinin varsayilani
+        // turunun usse en yakin dugumu: dugumler rastgele yerlestigi icin
+        // sabit "1 numara" uzakta kalabilirdi). Yeni alinan isci bosta.
+        const assignment = this.workerAssignments.get(id) ?? this.getDefaultWorkerAssignment(worker.role, spawnX, spawnY);
         this.drones.set(id, {
           id,
-          // Toplayicinin varsayilani turunun usse en yakin dugumu (enerji
-          // kristali ya da barut): dugumler rastgele yerlestigi icin sabit
-          // "1 numara" uzakta kalabilirdi.
-          assignment: this.workerAssignments.get(id) ?? (mode === "crystalCollector" ? { nodeId: this.getDefaultGatherNodeId("energy", spawnX, spawnY) }
-            : mode === "ammoCollector" ? { nodeId: this.getDefaultGatherNodeId("gunpowder", spawnX, spawnY) }
-            : { product: mode === "ammoTransport" ? "bullet" : "energy" }),
+          assignment,
           hiredWorkerId: worker.id,
           ownerId,
-          mode: mode === "ammoCollector" ? "crystalCollector" : mode === "ammoTransport" ? "energyTransport" : mode,
+          mode: getWorkerJobMode(getWorkerJob(assignment)),
           x: spawnX,
           y: spawnY,
           vx: 0,
@@ -12789,6 +13005,15 @@ export class MatchRoom extends Room<MatchState> {
     return reached && approach.final;
   }
 
+  /** Tasima arastirmasinin turu: eldeki yuk; yuk yoksa gorev yerinin ana turu. */
+  private getWorkerHaulResearchKind(worker: DroneModel): ResourceKind {
+    if (worker.cargoAmmoType) return AMMO_RECIPES[worker.cargoAmmoType];
+    if (worker.cargoResource) return worker.cargoResource as ResourceKind;
+    const kind = worker.assignment?.postKind;
+    if (kind === "factory") return AMMO_RECIPES[this.getWorkerPostBuilding(worker)?.productionAmmo ?? "bullet"];
+    return kind === "warehouse" ? "iron" : "energy";
+  }
+
   /** Tek bir noktaya duz yuruyus; hucreler arasi adimin kendisi. */
   private stepWorkerToward(worker: DroneModel, targetX: number, targetY: number, seconds: number) {
     const dx = targetX - worker.x;
@@ -12801,8 +13026,9 @@ export class MatchRoom extends Room<MatchState> {
       worker.vy = 0;
       return true;
     }
-    const product = worker.assignment?.product;
-    const researchSpeed = product ? this.getEconomyResearchMultiplier(worker, "transportSpeed", product === "energy" ? "energy" : product === "materials" ? worker.cargoResource ?? "iron" : AMMO_RECIPES[product]) : 1;
+    // Tasima hizi arastirmasi tasinan turle (yuk yoksa gorev yerinin ana turu).
+    const haulKind = getWorkerJob(worker.assignment) === "haul" ? this.getWorkerHaulResearchKind(worker) : undefined;
+    const researchSpeed = haulKind ? this.getEconomyResearchMultiplier(worker, "transportSpeed", haulKind) : 1;
     const cell = worldToGrid(worker.x, worker.y, this.activeMap);
     const speed = researchSpeed * this.scaleWorldSpeed(worker.speed ?? LOGISTICS_WORKER_SPEED)
       * getModifierMultiplier(this.getWorkerModifiers(worker), "workerSpeed")
@@ -13597,172 +13823,23 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  /**
+   * Isci tick'i: is atamadan (`getWorkerJob`). Atamasiz isci bosta bekliyor;
+   * eskiden rol basina atamasiz davranislar vardi (her isci bir varsayilan
+   * isle dogdugu icin hic calismiyorlardi), tek tip isciyle kalktilar.
+   */
   private updateLogisticsWorker(worker: DroneModel, seconds: number) {
-    const capacity = this.getWorkerCapacity(worker);
-    if (worker.assignment && worker.mode !== "repairer") { this.updateAssignedWorker(worker, seconds); return; }
+    if (!worker.assignment) {
+      worker.vx = 0;
+      worker.vy = 0;
+      worker.extractionRemainingMs = undefined;
+      return;
+    }
     if (worker.mode === "repairer") {
       this.updateRepairWorker(worker, seconds);
       return;
     }
-    if (worker.mode === "crystalCollector") {
-      const reactor = this.getCrystalWorkerReactor(worker);
-      if (!reactor) {
-        worker.vx = 0;
-        worker.vy = 0;
-        worker.extractionRemainingMs = undefined;
-        return;
-      }
-      if (worker.logisticsPhase === "pickup") {
-        if (reactor.energy >= reactor.maxEnergy) {
-          worker.vx = 0;
-          worker.vy = 0;
-          worker.extractionRemainingMs = undefined;
-          return;
-        }
-        const node = this.getCrystalNodes().filter((entry) => entry.remaining > 0)
-          .sort((left, right) => distanceSq(reactor.x, reactor.y, left.x, left.y) - distanceSq(reactor.x, reactor.y, right.x, right.y))[0];
-        if (!node) { worker.extractionRemainingMs = undefined; return; }
-        if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
-          const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000 * this.getWorkerGatherSpeedMultiplier(worker));
-          worker.extractionRemainingMs = extraction.remainingMs;
-          if (extraction.completed) {
-            worker.cargo = this.extractNodeResource(node.id, Math.min(capacity, reactor.maxEnergy - reactor.energy));
-            worker.logisticsPhase = "deliver";
-            worker.extractionRemainingMs = undefined;
-            this.applyCrystalNodePickup(worker, node.id);
-          }
-        } else {
-          worker.extractionRemainingMs = undefined;
-        }
-        return;
-      }
-      if (reactor.energy < reactor.maxEnergy && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds)) {
-        const delivered = Math.min(worker.cargo ?? 0, reactor.maxEnergy - reactor.energy);
-        const becameFull = reactor.energy + delivered >= reactor.maxEnergy;
-        reactor.energy += delivered;
-        worker.cargo = 0;
-        if (delivered > 0) this.applyCrystalWorkerArrival(worker, reactor, becameFull);
-        worker.logisticsPhase = "pickup";
-      }
-      return;
-    }
-
-    if (worker.mode === "ammoCollector") {
-      const factory = this.getAmmoCollectorFactory(worker);
-      if (!factory) {
-        worker.vx = 0;
-        worker.vy = 0;
-        worker.extractionRemainingMs = undefined;
-        return;
-      }
-      if (worker.logisticsPhase === "pickup") {
-        if (factory.rawAmmo >= factory.maxRawAmmo) {
-          worker.vx = 0;
-          worker.vy = 0;
-          worker.extractionRemainingMs = undefined;
-          return;
-        }
-        const node = this.getAmmoNodes().filter((entry) => entry.remaining > 0)
-          .sort((left, right) => distanceSq(factory.x, factory.y, left.x, left.y) - distanceSq(factory.x, factory.y, right.x, right.y))[0];
-        if (!node) { worker.extractionRemainingMs = undefined; return; }
-        if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
-          const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000 * this.getWorkerGatherSpeedMultiplier(worker));
-          worker.extractionRemainingMs = extraction.remainingMs;
-          if (extraction.completed) {
-            worker.cargo = this.extractNodeResource(node.id, Math.min(capacity, factory.maxRawAmmo - factory.rawAmmo));
-            worker.logisticsPhase = "deliver";
-            worker.extractionRemainingMs = undefined;
-          }
-        } else {
-          worker.extractionRemainingMs = undefined;
-        }
-        return;
-      }
-      if (factory.rawAmmo < factory.maxRawAmmo && this.moveLogisticsWorker(worker, factory.x, factory.y, seconds)) {
-        const delivered = Math.min(worker.cargo ?? 0, factory.maxRawAmmo - factory.rawAmmo);
-        factory.rawAmmo += delivered;
-        worker.cargo = 0;
-        if (delivered > 0) this.applyAmmoCollectorArrival(worker, factory);
-        worker.logisticsPhase = "pickup";
-      }
-      return;
-    }
-
-    if (worker.mode === "energyTransport") {
-      if (worker.logisticsPhase === "pickup") {
-        if ((worker.cargo ?? 0) > 0) { worker.logisticsPhase = "deliver"; return; }
-        const recipient = this.selectDeliveryTarget(worker, "energy");
-        const reactor = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "energy");
-        if (reactor && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds) && reactor.energy > 0) {
-          const loaded = Math.min(capacity, reactor.energy, recipient ? Math.max(0, recipient.maxEnergy - recipient.energy - this.getReservedCargo(worker, recipient)) : capacity);
-          reactor.energy -= loaded;
-          worker.cargo = loaded;
-          worker.logisticsPhase = "deliver";
-          worker.targetTowerId = recipient?.id ?? "";
-        }
-        return;
-      }
-      const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
-      const target = locked && locked.hp > 0 && locked.ownerId === worker.ownerId && locked.energy < locked.maxEnergy
-        && this.getWorkerApproachPoint(worker, locked.x, locked.y)
-        ? locked : this.selectDeliveryTarget(worker, "energy");
-      if (!target) {
-        worker.targetTowerId = "";
-        return;
-      }
-      worker.targetTowerId = target.id;
-      if (this.moveLogisticsWorker(worker, target.x, target.y, seconds)) {
-        const delivered = Math.min(worker.cargo ?? 0, target.maxEnergy - target.energy);
-        target.energy += delivered;
-        worker.cargo = Math.max(0, (worker.cargo ?? 0) - delivered);
-        if (delivered > 0) this.applyEnergyWorkerArrival(worker, target);
-        if (delivered > 0) this.awardDeliveryGold(target, delivered, "energy");
-        worker.logisticsPhase = (worker.cargo ?? 0) > 0 ? "deliver" : "pickup";
-        this.deliveryWaitingSince.energy.delete(target.id);
-        worker.targetTowerId = "";
-      }
-      return;
-    }
-
-    if (worker.logisticsPhase === "pickup") {
-      if ((worker.cargo ?? 0) > 0) { worker.logisticsPhase = "deliver"; return; }
-      const factory = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "ammunition");
-      if (!factory || !this.moveLogisticsWorker(worker, factory.x, factory.y, seconds)) {
-        return;
-      }
-      const target = this.selectDeliveryTarget(worker, "ammo");
-      if (target && factory.ammo > 0) {
-        const loaded = Math.min(capacity, factory.ammo, Math.max(0, target.maxAmmo - target.ammo - this.getReservedCargo(worker, target)));
-        factory.ammo -= loaded;
-        worker.cargo = loaded;
-        worker.cargoSpecial = Boolean(factory.ammoRefinerUntil && factory.ammoRefinerUntil > this.runtime.now());
-        worker.cargoAmmoPayloadKind = worker.cargoSpecial ? "refined" : undefined;
-        worker.cargoAmmoType = target.ammoType;
-        worker.targetTowerId = target.id;
-        worker.logisticsPhase = "deliver";
-      }
-      return;
-    }
-    const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
-    const target = locked && locked.hp > 0 && locked.ownerId === worker.ownerId && locked.ammoLogisticsEnabled && locked.ammo < locked.maxAmmo
-      && this.getWorkerApproachPoint(worker, locked.x, locked.y)
-      ? locked : this.selectDeliveryTarget(worker, "ammo");
-    if (!target) {
-      worker.targetTowerId = "";
-      return;
-    }
-    worker.targetTowerId = target.id;
-    if (this.moveLogisticsWorker(worker, target.x, target.y, seconds)) {
-      const delivered = Math.min(worker.cargo ?? 0, target.maxAmmo - target.ammo);
-      const hadNoAmmo = target.ammo <= 0;
-      target.ammo += delivered;
-      worker.cargo = Math.max(0, (worker.cargo ?? 0) - delivered);
-      if (delivered > 0) this.applyAmmoTransportArrival(worker, target, hadNoAmmo);
-      if (delivered > 0) this.awardDeliveryGold(target, delivered, "ammo");
-      worker.logisticsPhase = (worker.cargo ?? 0) > 0 ? "deliver" : "pickup";
-      this.deliveryWaitingSince.ammo.delete(target.id);
-      worker.targetTowerId = "";
-    }
+    this.updateAssignedWorker(worker, seconds);
   }
 
   private hasWorkerSkill(worker: DroneModel, skill: WorkerSkillId) {
@@ -13771,8 +13848,9 @@ export class MatchRoom extends Room<MatchState> {
     return Boolean(player?.workerSkillIds?.includes(skill));
   }
 
+  /** Bu isi su an yapan (atanmis) bir iscide bu agac secimi var mi. Kip isin aynasi. */
   private hasWorkerSkillForOwner(ownerId: string, role: HirableWorkerRole, skill: WorkerSkillId) {
-    return Array.from(this.drones.values()).some((drone) => drone.ownerId === ownerId && drone.mode === role && this.hasWorkerSkill(drone, skill));
+    return Array.from(this.drones.values()).some((drone) => drone.ownerId === ownerId && drone.assignment !== undefined && drone.mode === role && this.hasWorkerSkill(drone, skill));
   }
 
   /** Etkin bir isci agaci etkisi; suresi dolmus ya da atislari bitmisse yok. */
@@ -14196,7 +14274,10 @@ export class MatchRoom extends Room<MatchState> {
   private updateRepairWorker(worker: DroneModel, seconds: number) {
     // Kirinti bos yuk sayilir (bkz. `REPAIR_CARGO_EPSILON`).
     if ((worker.cargo ?? 0) > 0 && (worker.cargo ?? 0) <= REPAIR_CARGO_EPSILON) worker.cargo = 0;
-    if ((worker.cargo ?? 0) <= 0 && worker.pendingAssignment) { worker.assignment = worker.pendingAssignment; worker.pendingAssignment = undefined; }
+    if ((worker.cargo ?? 0) <= 0 && worker.pendingAssignment) {
+      this.applyWorkerAssignment(worker, worker.pendingAssignment);
+      if (worker.mode !== "repairer") return;
+    }
     worker.repairing = undefined;
     if ((worker.cargo ?? 0) <= 0) {
       const depot = this.getRepairDepot(worker);
@@ -14233,10 +14314,19 @@ export class MatchRoom extends Room<MatchState> {
       worker.targetTowerId = "";
       const depot = this.getRepairDepot(worker);
       if (depot) {
-        this.moveLogisticsWorker(worker, depot.x, depot.y, seconds);
+        const arrived = this.moveLogisticsWorker(worker, depot.x, depot.y, seconds);
+        // Gorevi degisen tamirci onaracak yapi yokken parcalari merkeze birakip
+        // yeni isine geciyor (takili kalmasin). Merkez doluysa artan parca kayip.
+        if (arrived && worker.pendingAssignment && (worker.cargo ?? 0) > 0) {
+          depot.repairParts = Math.min(getResourceProviderCapacity(depot.level), (depot.repairParts ?? 0) + worker.cargo!);
+          worker.cargo = 0;
+        }
       } else {
         worker.vx = 0;
         worker.vy = 0;
+        // Merkez de yok: parcalarin gidecegi yer kalmadi, gorevi degisen tamirci
+        // onlari birakip yeni isine geciyor.
+        if (worker.pendingAssignment && (worker.cargo ?? 0) > 0) worker.cargo = 0;
       }
       return;
     }
@@ -14397,9 +14487,10 @@ export class MatchRoom extends Room<MatchState> {
    * Yikilan merkez us sayilmaz; iscinin enkazda beklemesinin bir anlami yok.
    */
   private getRepairDepot(worker: DroneModel) {
+    // Atandigi merkez yikildi ya da satildiysa en yakin merkez (tek tip isci kurali).
     if (worker.assignment?.sourceTowerId) {
       const assigned = this.towers.get(worker.assignment.sourceTowerId);
-      return assigned && assigned.ownerId === worker.ownerId && assigned.hp > 0 && isRepairDepotDefinition(assigned.definition) ? assigned : undefined;
+      if (assigned && assigned.ownerId === worker.ownerId && assigned.hp > 0 && isRepairDepotDefinition(assigned.definition)) return assigned;
     }
     let best: TowerModel | undefined;
     let bestDistanceSq = Number.POSITIVE_INFINITY;
@@ -15046,23 +15137,18 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  /**
+   * Isci alimi.
+   *
+   * Sahibin istegi (2026-11-24): tek tip isci. Alimda uzmanlik secimi yok
+   * (eskiden kalici bir pencere aciliyordu); isci bosta doguyor ve istemci
+   * onu secili getiriyor: bir binaya ya da dugume dokunmak isini veriyor.
+   * Eski istemcinin yolladigi `role` yok sayiliyor.
+   */
   private hireWorker(client: Client, message: HireWorkerMessage) {
     const player = this.state.players.get(client.sessionId);
-    const hasRoleField = Boolean(message && Object.prototype.hasOwnProperty.call(message, "role"));
-    if (!player || (!hasRoleField && message?.advanced === undefined) || (message?.role !== undefined && !isHirableWorkerRole(message.role))) {
-      return;
-    }
-    const role = isHirableWorkerRole(message?.role) ? message.role : undefined;
-    // Secim penceresi acikken ikinci isci alinmasin; aksi halde iki is
-    // atamasindan yalnizca biri gorunur ve digeri baglanti yenilenene kadar
-    // sessizce bekler. Pencere secimsiz kapandiysa istek sessizce dusmesin:
-    // bekleyen iscinin secimi yeniden acilir, altin harcanmaz.
-    const pending = role ? undefined : player.hiredWorkers.find((worker) => !worker.role);
-    if (pending) {
-      if (pending.id) this.sendWorkerSpecializationChoice(client, pending.id);
-      return;
-    }
-    const advanced = message.advanced === true;
+    if (!player) return;
+    const advanced = message?.advanced === true;
     const cost = getWorkerHireCostWithModifiers(
       player.hiredWorkers.length,
       advanced,
@@ -15074,26 +15160,20 @@ export class MatchRoom extends Room<MatchState> {
 
     player.gold -= cost;
     player.goldSpent += cost;
-    const workerId = `worker-${this.nextHiredWorkerId++}`;
+    const hiredId = `worker-${this.nextHiredWorkerId++}`;
     // Kimlik ve secimler teldeki eski snapshot testlerini sisirmesin diye
     // enumerable degil; sunucu bunlari kalici kayit olarak yine tutuyor.
-    const hiredWorker: HiredWorker = role ? { role, advanced: advanced || undefined } : { advanced: advanced || undefined };
+    const hiredWorker: HiredWorker = { advanced: advanced || undefined };
     Object.defineProperties(hiredWorker, {
-      id: { value: workerId, writable: true, configurable: true, enumerable: false },
+      id: { value: hiredId, writable: true, configurable: true, enumerable: false },
       skillIds: { value: [], writable: true, configurable: true, enumerable: false },
-      legacySuffix: { value: Boolean(role && role !== "energyTransport"), writable: true, configurable: true, enumerable: false }
+      legacySuffix: { value: false, writable: true, configurable: true, enumerable: false }
     });
     player.hiredWorkers.push(hiredWorker);
     // Isci hemen sahaya ciksin: bir sonraki dalgayi beklemek alimin etkisini
     // oyuncunun goremedigi bir yere ertelerdi.
     this.ensureLogisticsWorkers();
-    client.send("worker:hired", { role, advanced, cost });
-    if (role) this.sendWorkerSkillChoice(client, workerId, 0);
-    else this.sendWorkerSpecializationChoice(client, workerId);
-  }
-
-  private sendWorkerSpecializationChoice(client: Client, workerId: string) {
-    client.send("worker:specialization-choice", { workerId, options: WORKER_SPECIALIZATION_CHOICES });
+    client.send("worker:hired", { advanced, cost, workerId: `logistics-${client.sessionId}-worker:${hiredId}` });
   }
 
   private sendWorkerSkillChoice(client: Client, workerId: string, tier: number) {
@@ -15146,17 +15226,6 @@ export class MatchRoom extends Room<MatchState> {
     client.send("worker:development-unlocked", { role: message.role, skillId: message.skillId, cost });
     this.sendWorkerDevelopmentState(client);
     this.broadcast("lobby:state", this.getLobbyState());
-  }
-
-  private chooseWorkerSpecialization(client: Client, message: ChooseWorkerSpecializationMessage) {
-    const player = this.state.players.get(client.sessionId);
-    const hired = player?.hiredWorkers.find((worker) => worker.id === message.workerId);
-    if (!player || !hired || hired.role || !isHirableWorkerRole(message.role)) return;
-    hired.role = message.role;
-    this.ensureLogisticsWorkers();
-    // Eski istemci/test protokolu icin secim olayi gonderilebilir; yeni UI bu
-    // legacy isaretli olayi gostermez. Gelisim agaci secimi ayri ve globaldir.
-    this.sendWorkerSkillChoice(client, hired.id!, 0);
   }
 
   private chooseWorkerSkill(client: Client, message: ChooseWorkerSkillMessage) {
@@ -15294,9 +15363,9 @@ export class MatchRoom extends Room<MatchState> {
   private getDeliveryReason(tower: TowerModel, resource: "ammo" | "energy") {
     const label = resource === "ammo" ? "Mühimmat" : "Enerji";
     if (resource === "ammo" && !tower.ammoLogisticsEnabled) return `${label}: sevkiyat kapalı`;
+    // Bu kaynagi tasiyanlar: cephaneliklere (mühimmat) ya da enerji binalarina (enerji) atanmis isciler.
     const workers = [...this.drones.values()].filter((worker) => worker.ownerId === tower.ownerId
-      && (worker.assignment?.product ? worker.assignment.product === (resource === "ammo" ? tower.ammoType : "energy")
-        : worker.mode === (resource === "ammo" ? "ammoTransport" : "energyTransport")));
+      && worker.assignment?.postKind === (resource === "ammo" ? "factory" : "energy"));
     const incoming = workers.filter((worker) => worker.logisticsPhase === "deliver" && worker.targetTowerId === tower.id && (worker.cargo ?? 0) > 0);
     const reachable = workers.some((worker) => this.getWorkerApproachPoint({ ...worker, targetTowerId: tower.id, logisticsPhase: "deliver", routeStep: undefined }, tower.x, tower.y));
     if (workers.length && !reachable) return `${label}: yol kapalı`;
@@ -15315,7 +15384,12 @@ export class MatchRoom extends Room<MatchState> {
     tower.logisticsPriority = message!.priority;
   }
 
-  private selectDeliveryTarget(worker: DroneModel, resource: "ammo" | "energy") {
+  /**
+   * Enerji ya da mühimmat alicisi, en bostan (`deliveryScore`; yoldaki yuk
+   * dusulmus). `accepts`: bos iscinin gorev yerinde bu kulenin turu var mi
+   * (cephanelik yalnizca stogundaki mühimmati tasiyor).
+   */
+  private selectDeliveryTarget(worker: DroneModel, resource: "ammo" | "energy", accepts?: (tower: TowerModel) => boolean) {
     const waiting = this.deliveryWaitingSince[resource];
     for (const towerId of waiting.keys()) {
       const tower = this.towers.get(towerId);
@@ -15327,14 +15401,14 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.ownerId === worker.ownerId && tower.hp > 0
         && (resource === "energy" ? tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy
           : this.acceptsTowerOperation(tower) && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo
-            && (!worker.assignment?.product || worker.assignment.product === tower.ammoType)
-            && (!(worker.cargo ?? 0) || !worker.cargoAmmoType || worker.cargoAmmoType === tower.ammoType))) candidates.push(tower);
+            && (!(worker.cargo ?? 0) || !worker.cargoAmmoType || worker.cargoAmmoType === tower.ammoType))
+        && (!accepts || accepts(tower))) candidates.push(tower);
     }
     // Yoldaki yuk aday basina `getReservedCargo` ile butun iscileri tariyordu;
     // burada tek gecis, ayni suzgec ve kule basina ayni toplama sirasi (0'dan
     // baslayip isci sirasiyla), yani ayni sayi. Adaylarin siralanmasi iscileri
     // degistirmiyor.
-    const reservedByTower = candidates.length > 0 ? this.collectReservedCargo(worker) : undefined;
+    const reservedByTower = candidates.length > 0 ? this.collectReservedCargo(worker, resource) : undefined;
     const ranked = candidates.map((tower) => {
       const max = resource === "ammo" ? tower.maxAmmo : tower.maxEnergy;
       const current = tower[resource];
@@ -15351,11 +15425,21 @@ export class MatchRoom extends Room<MatchState> {
     return undefined;
   }
 
-  private getReservedCargo(worker: DroneModel, tower: TowerModel) {
-    return [...this.drones.values()].filter((other) => other.id !== worker.id && other.ownerId === worker.ownerId
-      && other.mode === worker.mode && other.assignment?.product === worker.assignment?.product
-      && other.logisticsPhase === "deliver" && other.targetTowerId === tower.id)
-      .reduce((sum, other) => sum + (other.cargo ?? 0), 0);
+  /** Yoldaki yukun bu iscinin yukuyle ayni sinifta olup olmadigi (`kind`: hammadde turu). */
+  private isSameHaulCargo(other: DroneModel, resource: "energy" | "ammo" | "materials", kind?: ResourceKind) {
+    if (other.logisticsPhase !== "deliver" || !((other.cargo ?? 0) > 0) || getWorkerJob(other.assignment) !== "haul") return false;
+    if (resource === "ammo") return other.cargoAmmoType !== undefined;
+    if (resource === "energy") return other.cargoAmmoType === undefined && (!other.cargoResource || other.cargoResource === "energy");
+    return other.cargoResource === kind;
+  }
+
+  private getReservedCargo(worker: DroneModel, tower: TowerModel, resource: "energy" | "ammo" | "materials", kind?: ResourceKind) {
+    let total = 0;
+    for (const other of this.drones.values()) {
+      if (other.id !== worker.id && other.ownerId === worker.ownerId && other.targetTowerId === tower.id
+        && this.isSameHaulCargo(other, resource, kind)) total += other.cargo ?? 0;
+    }
+    return total;
   }
 
   /**
@@ -15364,12 +15448,10 @@ export class MatchRoom extends Room<MatchState> {
    * 0'dan basliyor, yani `getReservedCargo(worker, tower)` ile bit bit ayni
    * (kaydi olmayan kule 0).
    */
-  private collectReservedCargo(worker: DroneModel) {
+  private collectReservedCargo(worker: DroneModel, resource: "energy" | "ammo") {
     const totals = new Map<string | undefined, number>();
     for (const other of this.drones.values()) {
-      if (other.id !== worker.id && other.ownerId === worker.ownerId
-        && other.mode === worker.mode && other.assignment?.product === worker.assignment?.product
-        && other.logisticsPhase === "deliver") {
+      if (other.id !== worker.id && other.ownerId === worker.ownerId && this.isSameHaulCargo(other, resource)) {
         totals.set(other.targetTowerId, (totals.get(other.targetTowerId) ?? 0) + (other.cargo ?? 0));
       }
     }
@@ -24893,6 +24975,10 @@ function toLegacyWireFrame(delta: WireGameSnapshot, full: WireGameSnapshot): Wir
  */
 function toHiredWorkerWire(worker: HiredWorker): HiredWorker {
   const copy = { ...worker };
+  // Tek tip isci rolsuz. Eski istemci (itch'teki eski paket) rolsuz kaydi
+  // "uzmanlik bekliyor" sayip ikinci bir isci aldiriyordu; ona bir rol
+  // gorunuyor. Yeni istemci bu alani okumuyor.
+  if (copy.role === undefined) copy.role = "energyTransport";
   if (Array.isArray(copy.skillIds)) copy.skillIds = [...copy.skillIds];
   return copy;
 }

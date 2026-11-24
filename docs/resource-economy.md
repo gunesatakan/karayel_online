@@ -1,14 +1,23 @@
 # Resource economy and worker assignment
 
-Three player-facing professions: Gatherer, Carrier, Repairer. Existing role IDs remain accepted for old clients, but snapshots, hiring controls and the shared research screen show unified professions. The starting four workers are two gatherers and two carriers, initially assigned to energy and gunpowder/bullets.
+One kind of worker (owner's request, 2026-11-24: logistics took more time than defending). There is no specialization and no product choice; a worker's job comes only from where it is assigned (`WorkerPostKind`, `getWorkerJob` in `packages/shared/src/resource-economy.ts`):
+
+- **resource node:** gathers it and carries it to the nearest depot with room (energy building for energy crystals, Material Warehouse for everything else);
+- **Material Warehouse (`warehouse-1`):** carries every raw material in it to every place that needs it: armories (the input of their selected recipe) and Repair Depots (iron);
+- **energy building:** carries energy to every non-energy structure that needs it (towers, armories, Repair Depots);
+- **armory:** carries whatever ammunition it has in stock to towers of that ammo type with deliveries on;
+- **Repair Depot:** becomes a repairer;
+- **nothing:** idle.
+
+Every trip starts with the neediest receiver: fill ratio, the tower's logistics priority and how long it has waited (`deliveryScore`), minus cargo already on the way. Cargo whose receiver is gone goes to the next receiver, otherwise back to a store with room, so a worker never gets stuck holding cargo. If the assigned building is sold or destroyed, the worker serves the nearest building of the same kind. The drone's wire `mode` mirrors the job (`getWorkerJobMode`), so looks, the worker tree and older clients keep reading it. The starting four workers keep their old defaults: two gatherers on the nearest energy and gunpowder nodes, one hauler on the nearest energy building and one on the nearest armory.
 
 ## Production chains
 
-- Energy crystal nodes -> gatherer -> energy reactor -> carrier -> buildings.
-- Gunpowder -> gatherer -> warehouse -> assigned input carrier -> ammunition factory + energy -> bullets -> carrier -> compatible towers.
-- Mystic essence from purple portals -> warehouse -> input carrier -> factory + energy -> aura/psychic ammunition.
-- Power crystals from plasma deposits -> warehouse -> input carrier -> factory + energy -> power ammunition.
-- Iron -> gatherer -> warehouse -> input carrier -> repair depot + energy -> repair parts -> repair worker -> damaged structure.
+- Energy crystal nodes -> worker on the node -> energy building -> worker on the energy building -> buildings.
+- Gunpowder -> worker on the node -> warehouse -> worker on the warehouse -> ammunition factory + energy -> bullets -> worker on the factory -> compatible towers.
+- Mystic essence from purple portals -> warehouse -> worker on the warehouse -> factory + energy -> aura/psychic ammunition.
+- Power crystals from plasma deposits -> warehouse -> worker on the warehouse -> factory + energy -> power ammunition.
+- Iron -> worker on the node -> warehouse -> worker on the warehouse -> repair depot + energy -> repair parts -> worker on the repair depot -> damaged structure.
 
 One ammunition costs one matching raw material and 0.25 energy. Each factory produces only its selected recipe, using its entire level-dependent production budget. Finished ammunition types have separate stock counters and share the factory capacity. Switching recipes preserves existing stock. Each raw material has its own level-dependent capacity. Psychic tower profiles use aura ammunition, including psychic projectile towers.
 
@@ -18,9 +27,9 @@ One repair part costs one iron and one energy and restores at most 10 HP. Repair
 
 Everything about workers lives in one bottom-bar drawer, **Worker** (TR "İşçi"), with three sections switched from its header row: **Manage** (assignment), **Hire** and **Tree** (the worker development tree). The last section used is remembered for the match; the default is Manage when the player has workers in the field, otherwise Hire. Hiring is no longer in Inventory and no longer opens a full-screen sheet: the tier buttons and the hire button sit in the Hire section. The earlier floating "Workers" panel is gone.
 
-Manage lists the player's workers: profession, job, target, cargo and (for gatherers) the reserve left in the node. Targets are written in plain names, never internal ids: a resource kind with a per-kind ordinal ("Energy crystal 2", "Gunpowder deposit 1") or the localized building name. A worker that has not been assigned by hand shows "Automatic"; the server marks its default job with `autoAssigned` in the snapshot and sends a hand-made assignment without the flag, including one still queued behind cargo, so the choice is visible at once.
+Manage lists the player's workers: job (Gathering, Material/Energy/Ammo hauling, Repair, Idle), target, cargo and (for gatherers) the reserve left in the node. The row color and the map look follow the job (purple gatherer, amber hauler, green-plus repairer, grey idle). Targets are written in plain names, never internal ids: a resource kind with a per-kind ordinal ("Energy crystal 2", "Gunpowder deposit 1") or the localized building name. A worker that has not been assigned by hand shows "Automatic"; the server marks its default job with `autoAssigned` in the snapshot and sends a hand-made assignment without the flag, including one still queued behind cargo, so the choice is visible at once.
 
-To assign: tap a worker, then tap a resource node (gatherer) or a building (carrier/repairer) on the map. While a target is awaited the drawer collapses to an instruction strip so the map stays visible and tappable: one line with the instruction and Cancel, plus a row of product buttons for carriers (raw material, energy, bullet, aura crystal, power crystal). After assigning or cancelling, the drawer returns to Manage; opening another drawer also cancels. A depleted node is refused with a short notice, on the client before the request and on the server in `assignWorker` (`worker:rejected`, text key `worker.nodeDepleted`); a building that does not fit the job is refused with a notice too. Existing cargo is delivered before a queued assignment takes effect. Assignments are owner-validated, persist through respawn and move with reconnection. Delivery priorities and blocked-route rerouting remain in force.
+To assign: tap a worker (in Manage or on the map; a tap on a structure selects the structure instead), then tap a resource node or a Material Warehouse, energy building, armory or Repair Depot. A newly hired worker comes already selected, so hiring and posting take two taps. While a target is awaited the drawer collapses to an instruction strip so the map stays visible and tappable, and every valid spot is ringed in its job color. After assigning or cancelling, the drawer returns to Manage; opening another drawer also cancels. A depleted node is refused with a short notice, on the client before the request and on the server in `assignWorker` (`worker:rejected`, text key `worker.nodeDepleted`); a building that does not fit the job is refused with a notice too. Existing cargo is delivered before a queued assignment takes effect. Assignments are owner-validated, persist through respawn and move with reconnection. Delivery priorities and blocked-route rerouting remain in force.
 
 The roster is drawn by the bottom bar's own render pipeline (`game-control-ui.ts`; logic in `worker-roster.ts`). Rows are rebuilt only when their structure changes, and never while a finger is down on the panel; cargo and remaining amounts are written in place. Checked at a 375 x 812 viewport in Turkish and English: Manage with five workers 332px (the drawer is capped at min(54vh, 380px), other drawers at 300px), Hire 229px, gatherer strip 54px, carrier strip 101px; no horizontal overflow. Worker research has three columns and resource-specific extraction/capacity/speed choices.
 

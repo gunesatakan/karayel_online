@@ -9,7 +9,7 @@ import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper, type Message
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { parseTowerView, readTowerViewPreference, requestTowerCameraReset, setTowerViewPreference, supportsTowers3d } from "./render3d/renderer-mode";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
-import { describeWorkerRow, formatTransportProduct, formatWorkerCargo, formatWorkerReserve, formatWorkerRole, getWorkerPickHint, getWorkerProductOptions, getWorkerRosterStructureKey, type WorkerRosterState } from "./worker-roster";
+import { describeWorkerRow, formatWorkerCargo, formatWorkerReserve, formatWorkerRole, getWorkerPickHint, getWorkerRosterStructureKey, type WorkerRosterState } from "./worker-roster";
 import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey, isTowerSheetExpanded, patchTowerSheet, renderTowerSheet, type TowerSheetInput, type TowerSheetModel } from "./tower-sheet";
 
 /**
@@ -196,7 +196,7 @@ type ControlState = {
    * girmiyor, yerinde yaziliyor.
    */
   workerRoster?: WorkerRosterState;
-  /** Isci alimi ("Ise Al" bolumu); uzmanlik ilk secimde, kademe secimleri kalici belirlenir. */
+  /** Isci alimi ("Ise Al" bolumu): tek tip isci, isi atandigi yerden; yalnizca kademe secilir. */
   workerHire?: {
     hired: number;
     /** Normal iscinin bedeli. */
@@ -207,11 +207,6 @@ type ControlState = {
     advanced: boolean;
     /** Secili kademe icin. */
     affordable: boolean;
-    /** İşçinin uzmanlığı sonraki pencerede seçilecek. */
-    generic?: boolean;
-    /** Alinmis ama rolu secilmemis isci var; dugme secimi yeniden acar. */
-    pendingSpecialization?: boolean;
-    roles: Array<{ id: string; label: string; description: string; owned: number; ownedAdvanced: number }>;
   };
   workerDevelopment?: {
     experience: number;
@@ -1068,7 +1063,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     };
     tabs.append(
       makeTab("manage", t("controls.workerTab.manage")),
-      makeTab("hire", `${t("controls.workerTab.hire")}${state.workerHire?.pendingSpecialization ? " •" : ""}`),
+      makeTab("hire", t("controls.workerTab.hire")),
       makeTab("tree", t("controls.workerTab.tree"))
     );
     const body = tab === "manage" ? buildWorkerManageSection(state) : tab === "hire" ? buildWorkerHireSection(state) : buildWorkerDevelopmentDrawer(state);
@@ -1123,8 +1118,8 @@ export function setupGameControlUi(game: Phaser.Game) {
   /**
    * Hedef seridi: cekmecenin yerinde tek satir. Harita gorunur ve dokunulur
    * kaliyor; serit yalnizca ne beklendigini soyluyor ve vazgecmeyi sunuyor.
-   * Tasiyicida urun secimi ikinci satirda, dugmelerle: yerel acilir liste
-   * acikken panel yeniden kurulunca kapaniyordu.
+   * Tek tip isci: urun secimi yok, her isci her yere atanabiliyor; uygun
+   * yerler haritada isin renginde halkali (`renderWorkerPickMarks`).
    */
   const buildWorkerPickStrip = (picking: NonNullable<WorkerRosterState["picking"]>) => {
     const strip = document.createElement("div");
@@ -1136,62 +1131,43 @@ export function setupGameControlUi(game: Phaser.Game) {
     const hint = document.createElement("p");
     hint.className = "worker-pick__hint";
     const who = document.createElement("strong");
-    who.textContent = t("controls.roster.title", { n: picking.order, role: formatWorkerRole(picking.role) });
+    who.textContent = t("controls.roster.title", { n: picking.order, role: formatWorkerRole(picking.role, picking.postKind) });
     const what = document.createElement("span");
-    what.textContent = getWorkerPickHint(picking.role, picking.product);
+    what.textContent = getWorkerPickHint();
     hint.append(who, what);
     line.append(hint, makeActionButton(t("controls.roster.cancel"), "worker-pick__cancel", true, () => dispatch({ action: "cancelWorkerAssign" })));
     strip.append(line);
-    const options = getWorkerProductOptions(picking.role);
-    if (options.length > 0) {
-      const group = makeRow(options.map((product) => {
-        const active = picking.product === product;
-        const button = makeActionButton(formatTransportProduct(product), `worker-pick__product${active ? " is-active" : ""}`, true, () => {
-          if (!active) dispatch({ action: "setWorkerProduct", product });
-        });
-        button.setAttribute("aria-pressed", String(active));
-        // Egitim (tutorial.ts) urun dugmesini etiketinden bagimsiz bulsun.
-        button.dataset.workerProduct = product;
-        return button;
-      }), "worker-pick__products");
-      group.setAttribute("role", "group");
-      group.setAttribute("aria-label", t("controls.roster.productLabel"));
-      strip.append(group);
-    }
     return strip;
   };
 
   /**
    * Ise Al: kademe secimi ve alim dugmesi. Eskiden Envanter'deki bir dugmenin
-   * actigi tam ekran perdeydi; artik cekmecenin bir bolumu. Bekleyen uzmanlik
-   * secimi bir satin alma degil: sunucu bedel almadan secimi yeniden aciyor,
-   * kademeye de bakmiyor -- fiyat ve kademe o zaman gosterilmiyor.
+   * actigi tam ekran perdeydi; artik cekmecenin bir bolumu. Tek tip isci
+   * (sahibin istegi 2026-11-24): uzmanlik secimi yok; alinan isci secili
+   * geliyor ve haritada bir kaynaga ya da binaya dokunmak isini veriyor.
    */
   const buildWorkerHireSection = (state: ControlState) => {
     const hire = state.workerHire;
     if (!hire) return [];
-    const pending = Boolean(hire.pendingSpecialization);
     const body: HTMLElement[] = [];
     const intro = document.createElement("p");
     intro.className = "worker-hire__intro";
-    intro.textContent = pending ? t("controls.workerHire.pendingIntro") : t("controls.workerHire.intro", { hired: hire.hired });
+    intro.textContent = t("controls.workerHire.intro", { hired: hire.hired });
     body.push(intro);
     // Kademe alim dugmesinin ustunde: once ne kadar harcanacagi seciliyor.
-    if (!pending) {
-      body.push(makeRow([
-        makeWorkerTierButton(t("controls.workerHire.tierNormal", { cost: hire.cost }), false, hire),
-        makeWorkerTierButton(t("controls.workerHire.tierAdvanced", { cost: hire.advancedCost }), true, hire)
-      ], "game-controls__underworld-mode game-controls__worker-tier"));
-    }
+    body.push(makeRow([
+      makeWorkerTierButton(t("controls.workerHire.tierNormal", { cost: hire.cost }), false, hire),
+      makeWorkerTierButton(t("controls.workerHire.tierAdvanced", { cost: hire.advancedCost }), true, hire)
+    ], "game-controls__underworld-mode game-controls__worker-tier"));
     body.push(makeActionButton(
-      pending ? t("controls.workerHire.pendingName") : t("controls.workerHire.button", { cost: hire.advanced ? hire.advancedCost : hire.cost }),
-      `game-controls__worker-hire${hire.advanced && !pending ? " game-controls__worker-hire--advanced" : ""}`,
-      hire.affordable || pending,
+      t("controls.workerHire.button", { cost: hire.advanced ? hire.advancedCost : hire.cost }),
+      `game-controls__worker-hire${hire.advanced ? " game-controls__worker-hire--advanced" : ""}`,
+      hire.affordable,
       () => dispatch({ action: "hireWorker" })
     ));
     const note = document.createElement("p");
     note.className = "worker-hire__note";
-    note.textContent = pending ? t("controls.workerHire.pendingDescription") : t("controls.workerHire.description");
+    note.textContent = t("controls.workerHire.description");
     body.push(note);
     return body;
   };
@@ -1948,9 +1924,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     const buttons = [
       makeLaunchButton(t("controls.launch.towers"), "towers"),
       skillsButton,
-      // Rolsuz isci yeni alimi kilitliyor; bildirim kart secimi gibi bir
-      // ortunun altinda kalabilir, bu isaret kalici.
-      makeLaunchButton(`${t("controls.launch.worker")}${state.workerHire?.pendingSpecialization ? " •" : ""}`, "worker"),
+      makeLaunchButton(t("controls.launch.worker"), "worker"),
       makeLaunchButton(t("controls.launch.inventory", { count: total }), "inventory")
     ];
     if (state.creative) buttons.push(makeLaunchButton(t("controls.launch.creative"), "creative"));

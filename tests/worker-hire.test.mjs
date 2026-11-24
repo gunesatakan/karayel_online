@@ -1,10 +1,12 @@
 /**
  * Isci alimi.
  *
- * Her oyuncu dort temel isciyle basliyor: her rolden bir tane. Satin alinan isci
- * bunlarin uzerine biner ve rolu alim aninda secilir. Testler uc seyi sabitliyor
- * -- bedelin her alimda buyudugu, sayida ust sinir olmadigi, ve ayni rolu iki
- * kez almanin iki ayri isci dogurdugu.
+ * Her oyuncu dort temel isciyle basliyor: iki toplayici (enerji kristali ve
+ * barut) ve iki tasiyici (enerji binasi ve cephanelik). Satin alinan isci tek
+ * tip (sahibin istegi, 2026-11-24): rolu yok, alimda uzmanlik secilmiyor,
+ * bosta doguyor; isi atandigi yerden geliyor. Testler bedelin her alimda
+ * buyudugunu, sayida ust sinir olmadigini, iki alimin iki ayri isci
+ * dogurdugunu ve yeni iscinin bir ise atanana kadar bekledigini sabitliyor.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -27,11 +29,17 @@ import { createRoom } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
 
-function hire(room, role, gold = 100000, advanced = false) {
+/**
+ * Altinla bir isci alir. Sunucunun `worker:hired` bildirimi ve bildirimdeki
+ * kimlikle sahaya cikan isci de donuyor (alim basarisizsa ikisi de yok).
+ */
+function hire(room, { gold = 100000, advanced = false } = {}) {
   const player = room.state.players.get("p1");
   player.gold = gold;
-  room.hireWorker(client, { role, advanced });
-  return player;
+  let notice;
+  const listener = { sessionId: "p1", send: (type, value) => { if (type === "worker:hired") notice = value; } };
+  room.hireWorker(listener, { advanced });
+  return { player, notice, drone: notice ? room.drones.get(notice.workerId) : undefined };
 }
 
 function workersOf(room, ownerId = "p1") {
@@ -56,7 +64,7 @@ test("isci sayisinda ust sinir yok", () => {
   player.gold = 10_000_000;
 
   for (let index = 0; index < 12; index += 1) {
-    room.hireWorker(client, { role: "crystalCollector" });
+    room.hireWorker(client, {});
   }
 
   assert.equal(player.hiredWorkers.length, 12, "isci alimi bir yerde durdu");
@@ -78,81 +86,128 @@ test("rol dogrulamasi yalnizca bilinen rolleri gecirir", () => {
   }
 });
 
-test("alinan isci secilen rolle sahaya cikar", () => {
+test("alinan isci rolsuz ve bosta sahaya cikar", () => {
+  // Uzmanlik secimi yok: isci bir ise atanana kadar (dugum ya da bina) bekliyor.
   const room = createRoom("warrior");
   room.ensureLogisticsWorkers();
   const oncekiSayi = workersOf(room).length;
-  const oncekiEnerji = workersOf(room).filter((worker) => worker.mode === "energyTransport").length;
 
-  const player = hire(room, "energyTransport");
-  assert.deepEqual(player.hiredWorkers, [{ role: "energyTransport", advanced: undefined }]);
+  const { player, notice, drone } = hire(room);
+  assert.deepEqual(player.hiredWorkers, [{ advanced: undefined }], "kayda rol yazilmis");
+  assert.equal(notice.workerId, `logistics-p1-worker:${player.hiredWorkers[0].id}`);
+  assert.equal(workersOf(room).length, oncekiSayi + 1, "isci sahaya cikmadi");
+  assert.ok(drone, "alim bildirimindeki kimlikle sahada isci yok");
+  assert.equal(drone.assignment, undefined, "yeni isci kendiliginden bir ise atanmis");
+  // Teldeki kip isin aynasi; bosta isci tasiyici kipinde ama atamasi yok.
+  assert.equal(drone.mode, "energyTransport");
 
-  const isciler = workersOf(room);
-  assert.equal(isciler.length, oncekiSayi + 1, "isci sahaya cikmadi");
-  assert.equal(
-    isciler.filter((worker) => worker.mode === "energyTransport").length,
-    oncekiEnerji + 1,
-    "yeni isci secilen rolde degil"
-  );
+  const { x, y } = drone;
+  for (let tick = 0; tick < 30; tick += 1) room.updateDrones(100, 0.1);
+  assert.deepEqual([drone.x, drone.y, drone.cargo], [x, y, 0], "bosta isci kendiliginden is yapti");
 });
 
-test("ayni rol iki kez alinabilir ve iki ayri isci olur", () => {
+test("iki alim iki ayri isci olur", () => {
   const room = createRoom("warrior");
   room.ensureLogisticsWorkers();
-  const oncekiKristal = workersOf(room).filter((worker) => worker.mode === "crystalCollector").length;
+  const oncekiSayi = workersOf(room).length;
 
-  hire(room, "crystalCollector");
-  hire(room, "crystalCollector");
+  const birinci = hire(room).drone;
+  const ikinci = hire(room).drone;
 
-  const kristalciler = workersOf(room).filter((worker) => worker.mode === "crystalCollector");
-  assert.equal(kristalciler.length, oncekiKristal + 2, "ikinci isci birincinin uzerine yazilmis");
-  assert.equal(new Set(kristalciler.map((worker) => worker.id)).size, kristalciler.length, "isci kimlikleri cakisiyor");
+  assert.equal(workersOf(room).length, oncekiSayi + 2, "ikinci isci birincinin uzerine yazilmis");
+  assert.notEqual(birinci.id, ikinci.id, "isci kimlikleri cakisiyor");
+  assert.ok(room.drones.get(birinci.id) === birinci && room.drones.get(ikinci.id) === ikinci);
 });
 
 test("altin yetmezse isci alinmaz", () => {
   const room = createRoom("warrior");
-  const player = room.state.players.get("p1");
-  player.gold = getWorkerHireCost(0) - 1;
   const oncekiSayi = workersOf(room).length;
 
-  room.hireWorker(client, { role: "ammoCollector" });
+  const { player, notice } = hire(room, { gold: getWorkerHireCost(0) - 1 });
 
   assert.deepEqual(player.hiredWorkers, [], "bedeli karsilanmayan isci alinmis");
+  assert.equal(notice, undefined, "alinmayan isci icin alim bildirimi gitmis");
   assert.equal(workersOf(room).length, oncekiSayi, "bedeli karsilanmayan isci sahaya cikmis");
   assert.equal(canHireWorker(0, player.gold), false);
 });
 
 test("bedel altindan dusulur ve harcama sayacina yazilir", () => {
   const room = createRoom("warrior");
-  const player = room.state.players.get("p1");
-  player.gold = 1000;
-  const oncekiHarcama = player.goldSpent;
+  const oncekiHarcama = room.state.players.get("p1").goldSpent;
   const bedel = getWorkerHireCost(0);
 
-  room.hireWorker(client, { role: "ammoTransport" });
+  const { player, notice } = hire(room, { gold: 1000 });
 
   assert.equal(player.gold, 1000 - bedel);
   assert.equal(player.goldSpent, oncekiHarcama + bedel);
+  assert.equal(notice.cost, bedel, "bildirilen bedel tahsil edilenden farkli");
 });
 
-test("gecersiz rol istegi yok sayilir", () => {
+test("eski istemcinin yolladigi rol yok sayilir", () => {
+  // Eski paket alimda rol yolluyordu. Rol, gecerli olsun olmasin, ne kayda
+  // ne iscinin isine yansiyor: alim her seferinde tek tip isci.
   const room = createRoom("warrior");
   const player = room.state.players.get("p1");
   player.gold = 1000;
 
+  room.hireWorker(client, { role: "crystalCollector" });
   room.hireWorker(client, { role: "attack" });
   room.hireWorker(client, {});
 
-  assert.deepEqual(player.hiredWorkers, []);
-  assert.equal(player.gold, 1000, "gecersiz istek altin harcamis");
+  assert.deepEqual(player.hiredWorkers, [{ advanced: undefined }, { advanced: undefined }, { advanced: undefined }]);
+  assert.equal(player.gold, 1000 - getWorkerHireCost(0) - getWorkerHireCost(1) - getWorkerHireCost(2));
+  const yeniler = workersOf(room).filter((worker) => worker.id.startsWith("logistics-p1-worker:"));
+  assert.equal(yeniler.length, 3);
+  assert.ok(yeniler.every((worker) => worker.assignment === undefined), "rol alani isciye is vermis");
+
+  // Oyuncu olmayan oturumun istegi bir sey yapmiyor.
+  const yabanci = { sessionId: "yabanci", send() { assert.fail("oyuncu olmayana bildirim gitti"); } };
+  room.hireWorker(yabanci, {});
+  assert.equal(player.hiredWorkers.length, 3);
 });
 
 test("alinan isciler anlik goruntuye yazilir", () => {
   const room = createRoom("warrior");
-  hire(room, "ammoCollector");
+  const { drone } = hire(room);
   const snapshot = room.getSnapshot();
   const player = snapshot.players.find((entry) => entry.id === "p1");
-  assert.deepEqual(player.hiredWorkers, [{ role: "ammoCollector", advanced: undefined }]);
+  // Sunucu kaydi rolsuz; tel eski istemci icin bir rol gosteriyor (rolsuz
+  // kaydi "uzmanlik bekliyor" sayip ikinci isci aldiriyordu).
+  assert.deepEqual(player.hiredWorkers, [{ role: "energyTransport", advanced: undefined }]);
+  assert.equal(room.state.players.get("p1").hiredWorkers[0].role, undefined);
+
+  // Bosta iscinin teldeki atamasi bos; temel isciler varsayilan isleriyle.
+  const wire = snapshot.drones.find((entry) => entry.id === drone.id);
+  assert.ok(wire, "alinan isci anlik goruntude yok");
+  assert.equal(wire.assignment, undefined);
+  assert.equal(wire.autoAssigned, undefined);
+  const temel = snapshot.drones.find((entry) => entry.id === "logistics-p1-energyTransport");
+  assert.deepEqual([temel.assignment, temel.autoAssigned], [{ postKind: "energy" }, true]);
+});
+
+test("temel isciler ve Besinci Isci kimliklerini ve varsayilan islerini koruyor", () => {
+  // Eski rol kayitlari yalnizca kimlik ve varsayilan is veriyor; kip isin aynasi.
+  const room = createRoom("warrior");
+  room.state.players.get("p1").ownedShopItemIds.push("besinci-isci");
+  room.ensureLogisticsWorkers();
+  const nodeKind = (worker) => room.getEconomyNodes().find((node) => node.id === worker.assignment?.nodeId)?.kind;
+
+  const kristal = room.drones.get("logistics-p1-crystalCollector");
+  const enerji = room.drones.get("logistics-p1-energyTransport");
+  const barut = room.drones.get("logistics-p1-ammoCollector");
+  const cephane = room.drones.get("logistics-p1-ammoTransport");
+  const besinci = room.drones.get("logistics-p1-ammoTransport:extra0");
+  assert.ok(kristal && enerji && barut && cephane && besinci, "temel isci kimligi degismis");
+
+  assert.equal(nodeKind(kristal), "energy", "kristal toplayici enerji dugumunde degil");
+  assert.equal(nodeKind(barut), "gunpowder", "barut toplayici barut yataginda degil");
+  assert.deepEqual(enerji.assignment, { postKind: "energy" });
+  assert.deepEqual(cephane.assignment, { postKind: "factory" });
+  assert.deepEqual(besinci.assignment, { postKind: "factory" });
+  assert.deepEqual(
+    [kristal, enerji, barut, cephane, besinci].map((worker) => worker.mode),
+    ["crystalCollector", "energyTransport", "crystalCollector", "energyTransport", "energyTransport"]
+  );
 });
 
 /**
@@ -185,7 +240,7 @@ test("sayac ortak: normal alim gelismisin bedelini de yukseltir, tersi de", () =
   player.gold = 10_000_000;
 
   const gelismisIlk = getWorkerHireCost(0, true);
-  room.hireWorker(client, { role: "crystalCollector" });
+  room.hireWorker(client, {});
   assert.equal(
     getWorkerHireCost(player.hiredWorkers.length, true),
     getWorkerHireCost(1, true),
@@ -194,7 +249,7 @@ test("sayac ortak: normal alim gelismisin bedelini de yukseltir, tersi de", () =
   assert.ok(getWorkerHireCost(1, true) > gelismisIlk);
 
   const oncekiAltin = player.gold;
-  room.hireWorker(client, { role: "crystalCollector", advanced: true });
+  room.hireWorker(client, { advanced: true });
   assert.equal(oncekiAltin - player.gold, getWorkerHireCost(1, true), "gelismis alim yanlis bedelle gecti");
   assert.equal(
     getWorkerHireCost(player.hiredWorkers.length),
@@ -209,16 +264,30 @@ test("gelismis isci uc kat tasir ve bir bucuk kat hizli yurur", () => {
   assert.equal(ADVANCED_WORKER_MOVE_SPEED_MULTIPLIER, 1.5);
   const room = createRoom("warrior");
   room.ensureLogisticsWorkers();
-  const normalIsci = workersOf(room).find((worker) => worker.mode === "crystalCollector");
+  const normalIsci = room.drones.get("logistics-p1-crystalCollector");
 
-  hire(room, "crystalCollector", 100000, true);
+  hire(room, { advanced: true });
   room.ensureLogisticsWorkers();
-  const gelismis = workersOf(room).filter((worker) => worker.mode === "crystalCollector" && worker.advanced);
+  const gelismis = workersOf(room).filter((worker) => worker.advanced);
   assert.equal(gelismis.length, 1, "gelismis isci sahaya cikmadi");
   assert.equal(gelismis[0].capacity, normalIsci.capacity * ADVANCED_WORKER_CAPACITY_MULTIPLIER);
   assert.equal(gelismis[0].speed, normalIsci.speed * ADVANCED_WORKER_MOVE_SPEED_MULTIPLIER);
   assert.equal(gelismis[0].speed, normalIsci.speed * 1.5);
 });
+
+/**
+ * Gelismis iscinin toplayici olmasi icin bir dugume atanmasi yetiyor; alimda
+ * secilen bir rol yok. Normal isci, ayni dugumdeki temel kristal toplayici.
+ */
+function gelismisToplayici(room) {
+  room.ensureLogisticsWorkers();
+  const normal = room.drones.get("logistics-p1-crystalCollector");
+  const { drone: gelismis } = hire(room, { advanced: true });
+  room.assignWorker(client, { workerId: gelismis.id, nodeId: normal.assignment.nodeId });
+  assert.equal(gelismis.mode, "crystalCollector", "dugume atanan isci toplayici olmadi");
+  assert.deepEqual(gelismis.assignment, { nodeId: normal.assignment.nodeId });
+  return { normal, gelismis };
+}
 
 test("toplama hizi iki kat ve kart carpaniyla carpiliyor", () => {
   // Toplaniyor degil carpiliyor: isci hizlandiran bir kart, gelismis isciyi de
@@ -227,12 +296,7 @@ test("toplama hizi iki kat ve kart carpaniyla carpiliyor", () => {
   assert.equal(ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER, 2);
   const room = createRoom("warrior");
   const player = room.state.players.get("p1");
-  room.ensureLogisticsWorkers();
-  hire(room, "crystalCollector", 100000, true);
-  room.ensureLogisticsWorkers();
-
-  const normal = workersOf(room).find((worker) => worker.mode === "crystalCollector" && !worker.advanced);
-  const gelismis = workersOf(room).find((worker) => worker.mode === "crystalCollector" && worker.advanced);
+  const { normal, gelismis } = gelismisToplayici(room);
   assert.equal(
     room.getWorkerGatherSpeedMultiplier(gelismis),
     room.getWorkerGatherSpeedMultiplier(normal) * ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER
@@ -252,11 +316,7 @@ test("gelismis iscinin cikarma suresi normalin yarisi", () => {
   // Carpan hiz carpani: sureyi boluyor (7,11 sn -> 3,56 sn), eklemiyor.
   // Ayni saat diliminde gelismis isci tam iki kat ilerlemeli.
   const room = createRoom("warrior");
-  room.ensureLogisticsWorkers();
-  hire(room, "crystalCollector", 100000, true);
-  room.ensureLogisticsWorkers();
-  const normal = workersOf(room).find((worker) => worker.mode === "crystalCollector" && !worker.advanced);
-  const gelismis = workersOf(room).find((worker) => worker.mode === "crystalCollector" && worker.advanced);
+  const { normal, gelismis } = gelismisToplayici(room);
   const sure = (worker) => RESOURCE_EXTRACTION_DURATION_MS / room.getWorkerGatherSpeedMultiplier(worker);
   assert.equal(sure(normal), RESOURCE_EXTRACTION_DURATION_MS);
   assert.equal(sure(gelismis), RESOURCE_EXTRACTION_DURATION_MS / 2);
@@ -270,21 +330,25 @@ test("kademe anlik goruntuye ve alim bildirimine yaziliyor", () => {
   const room = createRoom("warrior");
   const player = room.state.players.get("p1");
   player.gold = 100000;
-  room.hireWorker(dinleyen, { role: "ammoTransport", advanced: true });
+  room.hireWorker(dinleyen, { advanced: true });
   room.ensureLogisticsWorkers();
 
-  assert.deepEqual(gelenler.find(([tip]) => tip === "worker:hired")?.[1], {
-    role: "ammoTransport",
+  const bildirim = gelenler.find(([tip]) => tip === "worker:hired")?.[1];
+  assert.deepEqual(bildirim, {
     advanced: true,
-    cost: getWorkerHireCost(0, true)
+    cost: getWorkerHireCost(0, true),
+    workerId: `logistics-p1-worker:${player.hiredWorkers[0].id}`
   });
+  // Alimin ardindan secim penceresi (uzmanlik ya da kademe) acilmiyor.
+  assert.deepEqual(gelenler.map(([tip]) => tip), ["worker:hired"]);
 
   const snapshot = room.getSnapshot();
   assert.deepEqual(snapshot.players.find((entry) => entry.id === "p1").hiredWorkers, [
-    { role: "ammoTransport", advanced: true }
+    { role: "energyTransport", advanced: true }
   ]);
   const drone = snapshot.drones.find((entry) => entry.advanced);
   assert.ok(drone, "gelismis isci anlik goruntude isaretlenmemis");
+  assert.equal(drone.id, bildirim.workerId);
   assert.equal(drone.mode, "energyTransport");
 });
 
@@ -294,7 +358,7 @@ test("gelismis istegi bedeli karsilanmiyorsa normal isciye dusmuyor", () => {
   const room = createRoom("warrior");
   const player = room.state.players.get("p1");
   player.gold = getWorkerHireCost(0, true) - 1;
-  room.hireWorker(client, { role: "crystalCollector", advanced: true });
+  room.hireWorker(client, { advanced: true });
   assert.deepEqual(player.hiredWorkers, [], "bedeli karsilanmayan gelismis isci alinmis");
   assert.equal(canHireWorker(0, player.gold, true), false);
   assert.equal(canHireWorker(0, player.gold), true, "normal isci hala alinabilmeliydi");
@@ -332,7 +396,7 @@ test("isci pazarligi bedeli hem dusuruyor hem cekmecede gorunuyor", () => {
   assert.equal(gorunen, Math.ceil(WORKER_HIRE_BASE_COST * 0.7));
 
   const oncekiAltin = player.gold;
-  room.hireWorker({ sessionId: "p1", send() {} }, { role: "crystalCollector" });
+  room.hireWorker({ sessionId: "p1", send() {} }, {});
   assert.equal(oncekiAltin - player.gold, gorunen, "tahsil edilen bedel gorunenden farkli");
 });
 
@@ -346,7 +410,7 @@ test("indirim gelismis isciye de isliyor ve iki sayi da tutuyor", () => {
   assert.ok(gorunen < getWorkerHireCost(0, true), "gelismis bedel indirimden etkilenmedi");
 
   const oncekiAltin = player.gold;
-  room.hireWorker({ sessionId: "p1", send() {} }, { role: "crystalCollector", advanced: true });
+  room.hireWorker({ sessionId: "p1", send() {} }, { advanced: true });
   assert.equal(oncekiAltin - player.gold, gorunen);
 });
 
@@ -362,7 +426,7 @@ test("carpan sayac ilerledikce de gorunenle tahsil edileni ayni tutuyor", () => 
     const gelismis = i % 2 === 1;
     const gorunen = getWorkerHireCostWithModifiers(player.hiredWorkers.length, gelismis, carpan);
     const oncekiAltin = player.gold;
-    room.hireWorker({ sessionId: "p1", send() {} }, { role: "crystalCollector", advanced: gelismis });
+    room.hireWorker({ sessionId: "p1", send() {} }, { advanced: gelismis });
     assert.equal(oncekiAltin - player.gold, gorunen, `${i}. alimda gorunen ile tahsil edilen ayrildi`);
   }
 });

@@ -109,9 +109,12 @@ for (const advanced of [false, true]) {
     const room = createRoom("warrior");
     const player = room.state.players.get("p1");
     player.runModifiers.push(...cardCatalog.find(card => card.id === "zirhli-tulum").effects);
-    room.hireWorker(client, { role: "crystalCollector", advanced });
-    const worker = [...room.drones.values()].find(w => w.id.includes(":extra"));
+    // Tek tip isci: kimligi alim bildiriminde (`worker:hired`).
+    let hired;
+    room.hireWorker({ sessionId: "p1", send: (type, value) => { if (type === "worker:hired") hired = value; } }, { advanced });
+    const worker = room.drones.get(hired?.workerId);
     assert.ok(worker);
+    assert.equal(worker.advanced, advanced || undefined);
     const expected = 60 * 1.75 * (advanced ? 3 : 1);
     near(worker.hp, expected);
     near(room.getWorkerMaxHp(worker), expected);
