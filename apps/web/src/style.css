@@ -708,7 +708,7 @@ button.wave-report:active { transform: scale(0.99); }
 
 .gold-shop header { display: flex; justify-content: space-between; color: #f8d86b; font: 800 16px/1.2 var(--mono); letter-spacing: .12em; }
 .gold-shop > p { margin: 0; color: #aab7cc; font-size: 12px; }
-.gold-shop__offers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.gold-shop__offers { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); grid-auto-rows: max-content; gap: 6px; max-height: 58vh; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .gold-shop__item { position: relative; min-width: 0; min-height: 150px; padding: 11px; border: 1px solid rgba(148, 163, 184, .25); border-radius: 12px; color: #eaf2ff; background: rgba(15, 23, 42, .84); text-align: left; }
 .gold-shop__item > span { display: block; color: #7dd3fc; font-size: 9px; text-transform: uppercase; }
 .gold-shop__item > strong { display: block; margin: 8px 0; font-size: 14px; }
@@ -717,6 +717,49 @@ button.wave-report:active { transform: scale(0.99); }
 .gold-shop__item--risk { border-color: rgba(248, 113, 113, .52); }
 .gold-shop__item--class { border-color: rgba(167, 139, 250, .45); }
 .gold-shop__item:disabled { opacity: .42; }
+/*
+ * Magaza karti.
+ *
+ * Magaza alt panelin (`.game-controls`) icinde ve taban `.game-controls
+ * button` kurali (satir ici flex, ortali, kaydirmayi kapatan `touch-action:
+ * none`) daha ozgul: tur, ad, aciklama ve fiyat yan yana diziliyordu; dar
+ * ekranda ad 62 piksele sikisiyor, aciklama 9 piksel kaliyordu. Envanterdeki
+ * gibi kart alt alta ve sola yasli; fiyat sagda. Liste kartin ustunden
+ * surukleyince kayiyor.
+ *
+ * Sahibin istegi (2026-11-24): esya yazilari okunmuyordu, iki kati; tasmasin.
+ * Uzun kelime satir kirarak sigiyor, fiyat kendi sutununda tek satir.
+ */
+.game-controls .gold-shop__offers button.gold-shop__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto 1fr;
+  align-content: start;
+  align-items: start;
+  justify-items: stretch;
+  column-gap: 10px;
+  row-gap: 4px;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow: hidden;
+  text-align: left;
+  white-space: normal;
+  touch-action: pan-y;
+}
+.game-controls .gold-shop__offers button.gold-shop__item > span,
+.game-controls .gold-shop__offers button.gold-shop__item > strong,
+.game-controls .gold-shop__offers button.gold-shop__item > small { grid-column: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.game-controls .gold-shop__offers button.gold-shop__item > span { font-size: 18px; line-height: 1.2; }
+.game-controls .gold-shop__offers button.gold-shop__item > strong { font-size: 28px; line-height: 1.1; }
+.game-controls .gold-shop__offers button.gold-shop__item > small { font-size: 22px; line-height: 1.3; }
+.game-controls .gold-shop__offers button.gold-shop__item > b {
+  position: static;
+  grid-column: 2;
+  grid-row: 1 / 4;
+  align-self: center;
+  font-size: 28px;
+  white-space: nowrap;
+}
 /* "YENİ" (Kart Arsivi): kategori satirinda, kart secimindekiyle ayni sessiz etiket. */
 .gold-shop__new {
   display: inline-block;
@@ -783,7 +826,8 @@ button.wave-report:active { transform: scale(0.99); }
 
   .gold-shop__offers {
     grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: minmax(68px, auto);
+    /* Satir kartin icerigi kadar: liste kutusuna bolunurse uzun aciklama kirpilirdi. */
+    grid-auto-rows: max-content;
     gap: 5px;
     min-height: 0;
     padding-right: 3px;
@@ -820,14 +864,22 @@ button.wave-report:active { transform: scale(0.99); }
 
   .gold-shop__actions { gap: 6px; }
   .gold-shop__actions button { min-height: 32px !important; font-size: 10px; }
+
+  .gold-shop__offers { max-height: none; }
+  .game-controls .gold-shop__offers button.gold-shop__item { padding: 8px 10px; }
+  .game-controls .gold-shop__offers button.gold-shop__item > span { font-size: 16px; }
+  .game-controls .gold-shop__offers button.gold-shop__item > strong { font-size: 24px; }
+  .game-controls .gold-shop__offers button.gold-shop__item > small { font-size: 18px; line-height: 1.25; }
+  .game-controls .gold-shop__offers button.gold-shop__item > b { font-size: 24px; }
 }
 
 @media (max-height: 560px) and (pointer: coarse) {
   .gold-shop { top: 5px; bottom: 5px; gap: 4px; padding: 7px; }
   .gold-shop > p { display: none; }
-  .gold-shop__offers { grid-auto-rows: minmax(54px, auto); gap: 3px; }
+  .gold-shop__offers { grid-auto-rows: max-content; gap: 3px; }
   .gold-shop__item { min-height: 54px; padding: 5px 8px; }
   .gold-shop__item > small { font-size: 8px; line-height: 1.15; }
+  .game-controls .gold-shop__offers button.gold-shop__item > small { font-size: 16px; line-height: 1.15; }
 }
 
 /*
@@ -1216,7 +1268,7 @@ button.wave-report:active { transform: scale(0.99); }
 
 .game-controls__inventory-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 4px;
 }
 
@@ -1231,27 +1283,29 @@ button.wave-report:active { transform: scale(0.99); }
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
   justify-items: stretch;
-  gap: 2px;
+  gap: 4px;
   min-height: 0;
-  padding: 7px 9px;
+  padding: 8px 10px;
   overflow: hidden;
   text-align: left;
   white-space: normal;
+  touch-action: pan-y;
 }
+/* Sahibin istegi (2026-11-24): esya yazilari iki kat (9/12/10/12 -> 18/24/20/24). */
 .game-controls .game-controls__inventory-list button.gold-shop__item > span {
-  padding-right: 22px;
-  font-size: 9px;
+  padding-right: 52px;
+  font-size: 18px;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
 .game-controls .game-controls__inventory-list button.gold-shop__item > strong {
   margin: 0;
-  font-size: 12px;
+  font-size: 24px;
   line-height: 1.15;
   overflow-wrap: anywhere;
 }
 .game-controls .game-controls__inventory-list button.gold-shop__item > small {
-  font-size: 10px;
+  font-size: 20px;
   font-weight: 600;
   line-height: 1.3;
   overflow-wrap: anywhere;
@@ -1264,7 +1318,7 @@ button.wave-report:active { transform: scale(0.99); }
   top: 6px;
   right: 8px;
   bottom: auto;
-  font-size: 12px;
+  font-size: 24px;
 }
 
 /* Cekmecede yer bol: kuleler kendi genisliginde, tasarsa alt satira gecer. */
