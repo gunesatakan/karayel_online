@@ -6670,7 +6670,8 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Hedef bekleyen isci icin haritaya dokunuldu. Uygun hedef varsa atama
-   * sunucuya gider ve cekmece Yonetim'e doner; tukenmis kaynak ya da yanlis
+   * sunucuya gider ve cekmece kapanir, harita acik kalir (game-control-ui
+   * `pickEndDrawer`); tukenmis kaynak ya da yanlis
    * bina reddedilir ve secim acik kalir. Bos kareye dokunus sessiz: serit
    * neyin beklendigini zaten soyluyor.
    */

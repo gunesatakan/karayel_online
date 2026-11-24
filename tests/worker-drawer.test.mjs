@@ -242,11 +242,22 @@ test("canli sayilar yerinde yaziliyor: yapi anahtarinda degiller", () => {
   assert.doesNotMatch(read("apps/web/src/worker-roster.ts"), /JSON\.stringify/);
 });
 
+test("atama bitince cekmece kapanir; Vazgec secimin basladigi yere doner", () => {
+  // Sahibin istegi (2026-11-24): isciye ve calisacagi yere dokununca isci
+  // paneli acilmasin. Secim baslarken onceki cekmece aliniyor; secim bitince
+  // arayuz bitirmediyse (atama, isci kayboldu) cekmece kapaniyor.
+  assert.match(render, /const pickingNow = Boolean\(state\.workerRoster\?\.picking\);\n\s+if \(pickingNow && !workerPickActive\) \{\n\s+drawerBeforePick = openDrawer;\n\s+pickEndDrawer = undefined;\n\s+\} else if \(!pickingNow && workerPickActive\) \{\n\s+openDrawer = pickEndDrawer \? pickEndDrawer\.drawer : undefined;\n\s+pickEndDrawer = undefined;\n\s+\}\n\s+workerPickActive = pickingNow;/);
+  // Onceki cekmece, serit Isci cekmecesine zorlanmadan once aliniyor.
+  assert.ok(render.indexOf("drawerBeforePick = openDrawer;") < render.indexOf('if (state.workerRoster?.picking) openDrawer = "worker";'));
+  // Atama sahnede secimi kapatip durumu yayinliyor; arayuz bitirmedigi icin cekmece kapanir.
+  assert.match(pickTap, /if \(target\.kind === "assign"\) \{\n\s+this\.room\?\.send\("worker:assign", target\.message\);\n\s+this\.workerPick = undefined;\n\s+this\.emitControlState\(\);/);
+});
+
 test("hedef seridi: cekmece yerine tek satir, urun secimi yok; cekmece degisince secim kapanir", () => {
   // Secim varken cekmece seride iniyor, bolumler kurulmuyor.
   assert.match(drawerBuilder, /if \(picking\) return \{ id: "worker:pick", drawer: buildWorkerPickStrip\(picking\) \};/);
   assert.match(pickBuilder, /strip\.className = "game-controls__drawer worker-pick";/);
-  assert.match(pickBuilder, /makeActionButton\(t\("controls\.roster\.cancel"\), "worker-pick__cancel", true, \(\) => dispatch\(\{ action: "cancelWorkerAssign" \}\)\)/);
+  assert.match(pickBuilder, /makeActionButton\(t\("controls\.roster\.cancel"\), "worker-pick__cancel", true, \(\) => \{\n\s+pickEndDrawer = \{ drawer: drawerBeforePick \};\n\s+dispatch\(\{ action: "cancelWorkerAssign" \}\);\n\s+\}\)\)/);
   // Serit kimi (isin adiyla) ve tek yonergeyi yaziyor; urun dugmeleri ve eylemi kalkti.
   assert.match(pickBuilder, /role: formatWorkerRole\(picking\.role, picking\.postKind\)/);
   assert.match(pickBuilder, /what\.textContent = getWorkerPickHint\(\);/);
@@ -257,7 +268,8 @@ test("hedef seridi: cekmece yerine tek satir, urun secimi yok; cekmece degisince
   // Serit gorunmeden secim acik kalmaz: baska cekmece acilinca iptal,
   // secim varken Isci cekmecesi acik.
   const toggle = between(ui, "const toggleDrawer = ", "/** Cekmece kabugu");
-  assert.match(toggle, /if \(latestState\?\.workerRoster\?\.picking\) dispatch\(\{ action: "cancelWorkerAssign" \}\);/);
+  assert.match(toggle, /if \(latestState\?\.workerRoster\?\.picking\) \{\n\s+pickEndDrawer = \{ drawer: openDrawer \};\n\s+dispatch\(\{ action: "cancelWorkerAssign" \}\);\n\s+\}/);
+  assert.ok(toggle.indexOf("openDrawer = openDrawer === next") < toggle.indexOf("pickEndDrawer = { drawer: openDrawer }"), "basilan dugmenin cekmecesi acilmiyor");
   assert.match(render, /if \(state\.workerRoster\?\.picking\) openDrawer = "worker";/);
   // Serit haritayi kapatmiyor: tek satir, kaydirma yok.
   const rule = between(css, ".game-controls__drawer.worker-pick {", "}");

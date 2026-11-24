@@ -838,6 +838,17 @@ export function setupGameControlUi(game: Phaser.Game) {
   type WorkerTab = "manage" | "hire" | "tree";
   let workerTab: WorkerTab | undefined;
   /**
+   * Hedef secimi bitince hangi cekmece (sahibin istegi 2026-11-24: atamadan
+   * sonra isci paneli acilmasin). Atama yapilinca (ya da isci kaybolunca)
+   * cekmece kapanir, harita acik kalir. Vazgec secimin basladigi yere doner:
+   * listeden baslayan listeye, haritadan baslayan haritaya; secim surerken
+   * basilan cekmece dugmesi kendi cekmecesini acar. `pickEndDrawer` yalnizca
+   * secimi arayuz bitirdiyse dolu.
+   */
+  let workerPickActive = false;
+  let drawerBeforePick: DrawerId | undefined;
+  let pickEndDrawer: { drawer: DrawerId | undefined } | undefined;
+  /**
    * Isci agacinin kaydirmasi. Cekmecenin icinde dursaydi her yeniden kurulumda
    * (parmak kalkinca bekleyen kurulum dahil) agac baslangica donerdi.
    * Cekmece kapaninca sifirlaniyor (`render`).
@@ -863,8 +874,11 @@ export function setupGameControlUi(game: Phaser.Game) {
     openDrawer = openDrawer === next ? undefined : next;
     // Hedef bekleyen isci cekmecesiyle birlikte kapanir: serit gorunmezken
     // haritaya her dokunus atamaya gitmesin. Sahne durumu hemen yeniden
-    // yayinliyor, asagidaki cizim onu goruyor.
-    if (latestState?.workerRoster?.picking) dispatch({ action: "cancelWorkerAssign" });
+    // yayinliyor, asagidaki cizim onu goruyor; acilan cekmece basilan dugmenin.
+    if (latestState?.workerRoster?.picking) {
+      pickEndDrawer = { drawer: openDrawer };
+      dispatch({ action: "cancelWorkerAssign" });
+    }
     if (latestState) {
       latestKey = "";
       render(latestState);
@@ -1135,7 +1149,11 @@ export function setupGameControlUi(game: Phaser.Game) {
     const what = document.createElement("span");
     what.textContent = getWorkerPickHint();
     hint.append(who, what);
-    line.append(hint, makeActionButton(t("controls.roster.cancel"), "worker-pick__cancel", true, () => dispatch({ action: "cancelWorkerAssign" })));
+    // Vazgec secimin basladigi yere donduruyor (liste ya da harita).
+    line.append(hint, makeActionButton(t("controls.roster.cancel"), "worker-pick__cancel", true, () => {
+      pickEndDrawer = { drawer: drawerBeforePick };
+      dispatch({ action: "cancelWorkerAssign" });
+    }));
     strip.append(line);
     return strip;
   };
@@ -1955,6 +1973,18 @@ export function setupGameControlUi(game: Phaser.Game) {
       if (state.selectedTowerId) openDrawer = undefined;
       towerEffectFocus = undefined;
     }
+    // Secim basliyor: Vazgec'in donecegi yer. Secim bitiyor: atama haritaya
+    // doner (cekmece kapanir); arayuz bitirdiyse (Vazgec, cekmece dugmesi)
+    // onun sectigi cekmece.
+    const pickingNow = Boolean(state.workerRoster?.picking);
+    if (pickingNow && !workerPickActive) {
+      drawerBeforePick = openDrawer;
+      pickEndDrawer = undefined;
+    } else if (!pickingNow && workerPickActive) {
+      openDrawer = pickEndDrawer ? pickEndDrawer.drawer : undefined;
+      pickEndDrawer = undefined;
+    }
+    workerPickActive = pickingNow;
     // Hedef bekleyen iscinin seridi Isci cekmecesinin yerinde duruyor; serit
     // gorunmeden secim acik kalirsa haritaya dokunuslar sessizce yutulurdu.
     if (state.workerRoster?.picking) openDrawer = "worker";
