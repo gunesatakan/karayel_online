@@ -96,8 +96,13 @@ export const WORKER_HIRE_BASE_COST = 100;
  *
  * %10 cok yumusak bir egri: altinci isci 161, onuncu 236. Zam kadroyu
  * sinirlamiyor, yalnizca sonsuz bir kadroyu bedelsiz kilmiyor.
+ *
+ * Sahibin istegi (2026-11-24): zam yariya, %5. Kule kotasini doldurmak
+ * yerine iki kuleyi en uste cikarmak daha verimliydi; sebeplerinden biri,
+ * cok kuleye kaynak yetistirecek kadronun zamla pahalilasmasi. Simdi
+ * altinci isci 128, onuncu 155.
  */
-export const WORKER_HIRE_COST_GROWTH = 1.1;
+export const WORKER_HIRE_COST_GROWTH = 1.05;
 
 /**
  * Gelismis iscinin normal isciye gore katlari; her eksen kendi sabitinde.
